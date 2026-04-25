@@ -56,19 +56,61 @@ type LocalValidationReport = {
   disclaimer: string;
 };
 
-type SavedInvoiceListItem = {
-  id: string;
-  number: string;
-  buyer: string;
-  buyerCountry: string;
-  issueDate: string;
-  status: string;
-  amount: string;
-  savedAt: string;
+type ApiValidationRequestPayload = {
+  document: {
+    type: "invoice" | "credit_note";
+    number: string;
+    currency: string;
+    issueDate?: string;
+  };
+  seller: {
+    name: string;
+    country: string;
+    vatId: string;
+  };
+  buyer: {
+    name: string;
+    country: string;
+    vatId: string;
+  };
+  lines: {
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    vatCategory: string;
+    vatRate: number;
+  }[];
+};
+
+type ApiValidationTotals = {
+  lineExtensionAmount: number;
+  taxExclusiveAmount: number;
+  taxAmount: number;
+  taxInclusiveAmount: number;
+  payableAmount: number;
+};
+
+type ApiValidationFinding = {
+  code: string;
+  severity: "info" | "warning" | "fatal";
+  field: string;
+  message: string;
+  legalConfidence: "technical" | "educational_simulation" | "review_required";
+};
+
+type ApiValidationResponse = {
+  validationRunId: string;
+  invoiceNumber: string;
+  technicalStatus: "passed" | "failed";
+  standardStatus: "ready" | "warning";
+  countrySimulationStatus: "not_relevant" | "review_required";
+  vidaReadinessStatus: "not_relevant" | "relevant_simulation";
+  totals: ApiValidationTotals;
+  findings: ApiValidationFinding[];
+  disclaimer: string;
 };
 
 const LOCAL_DRAFT_KEY = "fiscalforge.eu.invoiceDraft.local";
-const INVOICE_DRAFTS_STORAGE_KEY = "fiscalforge:invoice-drafts:v1";
 
 export function InvoiceEditorClient({
   initialDraft
@@ -94,6 +136,7 @@ export function InvoiceEditorClient({
   });
 
   const [saveMessage, setSaveMessage] = useState<string>("");
+  const [isRunningValidation, setIsRunningValidation] = useState(false);
   const [validationReport, setValidationReport] =
     useState<LocalValidationReport | null>(null);
 
@@ -212,47 +255,75 @@ export function InvoiceEditorClient({
   }
 
   function saveDraftLocally() {
-    const savedInvoice = buildSavedInvoiceListItem(
-      draft,
-      recalculatedTotals,
-      findings
-    );
-
     window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft));
-    upsertSavedInvoice(savedInvoice);
-
-    setSaveMessage(
-      `Draft saved locally and added to invoice list at ${new Date().toLocaleTimeString()}.`
-    );
+    setSaveMessage(`Draft saved locally at ${new Date().toLocaleTimeString()}.`);
 
     window.setTimeout(() => {
       setSaveMessage("");
     }, 3500);
   }
 
-  function runLocalValidation() {
-    const hasFatalFinding = findings.some((finding) => finding.severity === "fatal");
-    const hasWarningFinding = findings.some(
-      (finding) => finding.severity === "warning"
-    );
-    const isCrossBorder = draft.seller.country !== draft.buyer.country;
+  async function runApiValidation() {
+    setIsRunningValidation(true);
 
-    setValidationReport({
-      id: `local_${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      technicalStatus: hasFatalFinding ? "failed" : "passed",
-      standardStatus: hasWarningFinding ? "warning" : "ready",
-      countrySimulationStatus: isCrossBorder
-        ? "review_required"
-        : "not_relevant",
-      vidaReadinessStatus: isCrossBorder
-        ? "relevant_simulation"
-        : "not_relevant",
-      findings,
-      totals: recalculatedTotals,
-      disclaimer:
-        "This local validation preview checks only browser-side draft logic. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, or authority validation."
-    });
+    try {
+      const apiPayload = buildApiValidationPayload(draft);
+
+      const response = await fetch("/api/local/invoices/validate", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(apiPayload)
+      });
+
+      const responseData: unknown = await response.json();
+
+      if (!response.ok) {
+        const apiError = extractApiError(responseData);
+
+        setValidationReport(
+          buildApiErrorReport({
+            draft,
+            totals: recalculatedTotals,
+            code: apiError.code,
+            message: apiError.message
+          })
+        );
+
+        return;
+      }
+
+      const apiReport = responseData as ApiValidationResponse;
+
+      setValidationReport({
+        id: apiReport.validationRunId,
+        createdAt: new Date().toISOString(),
+        technicalStatus: apiReport.technicalStatus,
+        standardStatus: apiReport.standardStatus,
+        countrySimulationStatus: apiReport.countrySimulationStatus,
+        vidaReadinessStatus: apiReport.vidaReadinessStatus,
+        findings: apiReport.findings.map((finding) => ({
+          code: finding.code,
+          severity: finding.severity,
+          message: finding.message
+        })),
+        totals: mapApiTotals(apiReport.totals, recalculatedTotals),
+        disclaimer: apiReport.disclaimer
+      });
+    } catch {
+      setValidationReport(
+        buildApiErrorReport({
+          draft,
+          totals: recalculatedTotals,
+          code: "API_UNAVAILABLE",
+          message:
+            "The local API could not be reached. Make sure apps/api and apps/web are both running."
+        })
+      );
+    } finally {
+      setIsRunningValidation(false);
+    }
   }
 
   return (
@@ -278,10 +349,11 @@ export function InvoiceEditorClient({
           <button
             type="button"
             className={styles.primaryButton}
-            onClick={runLocalValidation}
+            onClick={runApiValidation}
+            disabled={isRunningValidation}
           >
             <WandSparkles size={16} />
-            Run validation
+            {isRunningValidation ? "Running..." : "Run validation"}
           </button>
         </div>
       </div>
@@ -291,9 +363,9 @@ export function InvoiceEditorClient({
           <p className={styles.kicker}>Invoice Editor</p>
           <h2>Build a structured invoice from canonical data, not pixels.</h2>
           <p>
-            This editor is still local-only, but it now behaves like a real invoice
-            surface: line values update totals, validation readiness reacts to the data,
-            and the UBL preview follows the current draft.
+            This editor now sends validation requests through the local Next.js API
+            proxy into the dedicated FiscalForge EU API service. The draft remains
+            browser-side, but validation is no longer only mock logic.
           </p>
         </div>
 
@@ -312,7 +384,7 @@ export function InvoiceEditorClient({
         <section className={styles.validationReportPanel}>
           <div className={styles.validationReportTop}>
             <div>
-              <p className={styles.kicker}>Local validation report</p>
+              <p className={styles.kicker}>API validation report</p>
               <h3>{validationReport.id}</h3>
               <span>
                 Created {new Date(validationReport.createdAt).toLocaleString()}
@@ -352,7 +424,7 @@ export function InvoiceEditorClient({
             {validationReport.findings.length === 0 ? (
               <div className={styles.emptyFinding}>
                 <BadgeCheck size={18} />
-                <p>No local browser-side findings in this draft.</p>
+                <p>No API findings returned for this draft.</p>
               </div>
             ) : (
               validationReport.findings.map((finding) => (
@@ -978,6 +1050,36 @@ function buildFindings(
   return findings;
 }
 
+function buildApiValidationPayload(
+  draft: InvoiceEditorDraft
+): ApiValidationRequestPayload {
+  return {
+    document: {
+      type: draft.document.invoiceType,
+      number: draft.document.number,
+      currency: draft.document.currency,
+      issueDate: draft.document.issueDate
+    },
+    seller: {
+      name: draft.seller.name,
+      country: draft.seller.country,
+      vatId: draft.seller.vatId
+    },
+    buyer: {
+      name: draft.buyer.name,
+      country: draft.buyer.country,
+      vatId: draft.buyer.vatId
+    },
+    lines: draft.lines.map((line) => ({
+      description: line.description,
+      quantity: toDecimalNumber(line.quantity),
+      unitPrice: toDecimalNumber(line.unitPrice),
+      vatCategory: line.vatCategory,
+      vatRate: toDecimalNumber(line.vatRate)
+    }))
+  };
+}
+
 function calculateTotals(lines: InvoiceLineEditorDraft[]): InvoiceTotalsDraft {
   const lineExtensionCents = lines.reduce((sum, line) => {
     return sum + decimalToCents(line.netAmount);
@@ -1034,6 +1136,31 @@ function centsToDecimal(value: number) {
   return (value / 100).toFixed(2);
 }
 
+function mapApiTotals(
+  totals: ApiValidationTotals | undefined,
+  fallback: InvoiceTotalsDraft
+): InvoiceTotalsDraft {
+  if (!totals) {
+    return fallback;
+  }
+
+  return {
+    lineExtensionAmount: toMoney(totals.lineExtensionAmount),
+    taxExclusiveAmount: toMoney(totals.taxExclusiveAmount),
+    taxAmount: toMoney(totals.taxAmount),
+    taxInclusiveAmount: toMoney(totals.taxInclusiveAmount),
+    payableAmount: toMoney(totals.payableAmount)
+  };
+}
+
+function toMoney(value: number) {
+  if (!Number.isFinite(value)) {
+    return "0.00";
+  }
+
+  return value.toFixed(2);
+}
+
 function cleanDecimalInput(value: string) {
   const cleaned = value.replace(",", ".").replace(/[^\d.]/g, "");
   const [first, ...rest] = cleaned.split(".");
@@ -1041,95 +1168,90 @@ function cleanDecimalInput(value: string) {
   return rest.length === 0 ? first : `${first}.${rest.join("")}`;
 }
 
-function buildSavedInvoiceListItem(
-  draft: InvoiceEditorDraft,
-  totals: InvoiceTotalsDraft,
-  findings: FindingPreview[]
-): SavedInvoiceListItem {
-  const fatalCount = findings.filter((finding) => finding.severity === "fatal").length;
-  const warningCount = findings.filter(
-    (finding) => finding.severity === "warning"
-  ).length;
-
-  let status = "Draft ready";
-
-  if (fatalCount > 0) {
-    status = "Review required";
-  } else if (warningCount > 0) {
-    status = "Warnings";
-  }
+function buildApiErrorReport({
+  draft,
+  totals,
+  code,
+  message
+}: {
+  draft: InvoiceEditorDraft;
+  totals: InvoiceTotalsDraft;
+  code: string;
+  message: string;
+}): LocalValidationReport {
+  const isCrossBorder = draft.seller.country !== draft.buyer.country;
 
   return {
-    id: buildLocalInvoiceId(draft.document.number),
-    number: draft.document.number.trim() || "Untitled invoice",
-    buyer: draft.buyer.name.trim() || "Unknown buyer",
-    buyerCountry: draft.buyer.country || "EU",
-    issueDate: draft.document.issueDate || new Date().toISOString().slice(0, 10),
-    status,
-    amount: `€${totals.payableAmount}`,
-    savedAt: new Date().toISOString()
+    id: `api_error_${Date.now()}`,
+    createdAt: new Date().toISOString(),
+    technicalStatus: "failed",
+    standardStatus: "warning",
+    countrySimulationStatus: isCrossBorder ? "review_required" : "not_relevant",
+    vidaReadinessStatus: isCrossBorder ? "relevant_simulation" : "not_relevant",
+    totals,
+    findings: [
+      {
+        code,
+        severity: "fatal",
+        message
+      }
+    ],
+    disclaimer:
+      "The local API validation request did not complete successfully. This is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
   };
 }
 
-function buildLocalInvoiceId(invoiceNumber: string) {
-  const normalizedNumber = invoiceNumber
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-
-  return normalizedNumber ? `local-${normalizedNumber}` : "local-untitled-invoice";
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function upsertSavedInvoice(invoice: SavedInvoiceListItem) {
-  const currentInvoices = readSavedInvoices();
-  const nextInvoices = [
-    invoice,
-    ...currentInvoices.filter((item) => item.id !== invoice.id)
-  ];
+function getStringField(source: Record<string, unknown>, key: string) {
+  const value = source[key];
 
-  window.localStorage.setItem(
-    INVOICE_DRAFTS_STORAGE_KEY,
-    JSON.stringify(nextInvoices)
-  );
+  return typeof value === "string" ? value : "";
 }
 
-function readSavedInvoices(): SavedInvoiceListItem[] {
-  try {
-    const storedValue = window.localStorage.getItem(INVOICE_DRAFTS_STORAGE_KEY);
-
-    if (!storedValue) {
-      return [];
-    }
-
-    const parsedValue: unknown = JSON.parse(storedValue);
-
-    if (!Array.isArray(parsedValue)) {
-      return [];
-    }
-
-    return parsedValue.filter(isSavedInvoiceListItem);
-  } catch {
-    return [];
-  }
-}
-
-function isSavedInvoiceListItem(value: unknown): value is SavedInvoiceListItem {
-  if (!value || typeof value !== "object") {
-    return false;
+function extractApiError(data: unknown) {
+  if (!isPlainObject(data) || !isPlainObject(data.error)) {
+    return {
+      code: "API_ERROR",
+      message: "The API returned an unexpected error response."
+    };
   }
 
-  const record = value as Record<string, unknown>;
+  const code = getStringField(data.error, "code") || "API_ERROR";
+  const message =
+    getStringField(data.error, "message") ||
+    "The API returned an error response.";
 
-  return (
-    typeof record.id === "string" &&
-    typeof record.number === "string" &&
-    typeof record.buyer === "string" &&
-    typeof record.buyerCountry === "string" &&
-    typeof record.issueDate === "string" &&
-    typeof record.status === "string" &&
-    typeof record.amount === "string"
-  );
+  const details = data.error.details;
+
+  if (!Array.isArray(details)) {
+    return { code, message };
+  }
+
+  const detailText = details
+    .map((item) => {
+      if (!isPlainObject(item)) {
+        return "";
+      }
+
+      const path = getStringField(item, "path");
+      const detailMessage = getStringField(item, "message");
+
+      if (!path && !detailMessage) {
+        return "";
+      }
+
+      return path ? `${path}: ${detailMessage}` : detailMessage;
+    })
+    .filter(Boolean)
+    .join(" ");
+
+  return {
+    code,
+    message: detailText ? `${message} ${detailText}` : message
+  };
 }
 
 function buildUblPreview(draft: InvoiceEditorDraft, totals: InvoiceTotalsDraft) {

@@ -36,11 +36,22 @@ type XmlAnalysis = {
   rootElement: string;
   invoiceId: string;
   issueDate: string;
-  supplierName: string;
-  customerName: string;
+  currency: string;
+  apiStatus: string;
   status: UploadStatus;
   note: string;
   preview: string;
+};
+
+type ApiXmlInspectResponse = {
+  uploadInspectionId: string;
+  detectedDocument: string;
+  rootElement: string;
+  invoiceId: string;
+  issueDate: string;
+  currency: string;
+  status: string;
+  disclaimer: string;
 };
 
 const XML_UPLOAD_STORAGE_KEY = "fiscalforge.eu.workspace.xmlUploads";
@@ -52,22 +63,22 @@ const defaultUploadHistory: XmlUploadRecord[] = [
     fileName: "sample-peppol-invoice.xml",
     fileSize: "42.6 KB",
     uploadedAt: "2026-04-24 17:20",
-    detectedDocument: "Invoice",
+    detectedDocument: "invoice",
     rootElement: "Invoice",
     invoiceId: "FF-2026-001",
     status: "accepted",
-    note: "Local preview only. No official validation performed."
+    note: "Backend inspection structure preview."
   },
   {
     id: "xml_002",
     fileName: "supplier-credit-note.xml",
     fileSize: "31.2 KB",
     uploadedAt: "2026-04-23 13:08",
-    detectedDocument: "Credit note",
+    detectedDocument: "credit_note",
     rootElement: "CreditNote",
     invoiceId: "CN-2026-002",
     status: "accepted",
-    note: "Detected XML structure. Backend parser not connected yet."
+    note: "Detected XML structure. Official validation not performed."
   }
 ];
 
@@ -119,82 +130,24 @@ function readStoredUploads() {
   }
 }
 
-function getFirstTextValue(document: Document, tagName: string) {
-  const direct = document.getElementsByTagName(tagName)[0];
-
-  if (direct?.textContent?.trim()) {
-    return direct.textContent.trim();
-  }
-
-  const namespaced = Array.from(document.getElementsByTagName("*")).find(
-    (element) => element.localName === tagName
-  );
-
-  return namespaced?.textContent?.trim() || "Not detected";
+function normalizeUploadStatus(apiStatus: string): UploadStatus {
+  return apiStatus === "parsed" ? "accepted" : "rejected";
 }
 
-function detectDocumentType(rootElement: string) {
-  const normalizedRoot = rootElement.toLowerCase();
-
-  if (normalizedRoot.includes("creditnote")) {
-    return "Credit note";
-  }
-
-  if (normalizedRoot.includes("invoice")) {
-    return "Invoice";
-  }
-
-  return "Unknown XML document";
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function analyzeXmlFile(file: File, xmlText: string): XmlAnalysis {
-  const parser = new DOMParser();
-  const parsedDocument = parser.parseFromString(xmlText, "application/xml");
-  const parserError = parsedDocument.getElementsByTagName("parsererror")[0];
-
-  if (parserError) {
-    return {
-      fileName: file.name,
-      fileSize: formatBytes(file.size),
-      uploadedAt: formatDateTime(new Date()),
-      detectedDocument: "Invalid XML",
-      rootElement: "Parser error",
-      invoiceId: "Not detected",
-      issueDate: "Not detected",
-      supplierName: "Not detected",
-      customerName: "Not detected",
-      status: "rejected",
-      note: "The uploaded file could not be parsed as XML.",
-      preview: xmlText.slice(0, 1400)
-    };
+function getApiErrorMessage(data: unknown) {
+  if (!isPlainObject(data) || !isPlainObject(data.error)) {
+    return "The XML inspection request failed.";
   }
 
-  const rootElement = parsedDocument.documentElement?.localName || "Unknown";
-  const detectedDocument = detectDocumentType(rootElement);
-  const invoiceId = getFirstTextValue(parsedDocument, "ID");
-  const issueDate = getFirstTextValue(parsedDocument, "IssueDate");
-  const supplierName =
-    getFirstTextValue(parsedDocument, "RegistrationName") ||
-    getFirstTextValue(parsedDocument, "Name");
-  const customerName = getFirstTextValue(parsedDocument, "CustomerAssignedAccountID");
+  const message = data.error.message;
 
-  return {
-    fileName: file.name,
-    fileSize: formatBytes(file.size),
-    uploadedAt: formatDateTime(new Date()),
-    detectedDocument,
-    rootElement,
-    invoiceId,
-    issueDate,
-    supplierName,
-    customerName,
-    status: detectedDocument === "Unknown XML document" ? "rejected" : "accepted",
-    note:
-      detectedDocument === "Unknown XML document"
-        ? "The file is valid XML, but it does not look like a supported invoice document yet."
-        : "XML structure detected. This is still a browser-side preview, not official validation.",
-    preview: xmlText.slice(0, 1400)
-  };
+  return typeof message === "string"
+    ? message
+    : "The XML inspection request failed.";
 }
 
 export default function WorkspaceXmlUploadPage() {
@@ -202,6 +155,7 @@ export default function WorkspaceXmlUploadPage() {
     useState<XmlUploadRecord[]>(defaultUploadHistory);
   const [analysis, setAnalysis] = useState<XmlAnalysis | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isInspecting, setIsInspecting] = useState(false);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
 
   const acceptedUploads = useMemo(() => {
@@ -227,6 +181,59 @@ export default function WorkspaceXmlUploadPage() {
       JSON.stringify(uploadHistory)
     );
   }, [uploadHistory, hasLoadedStorage]);
+
+  async function inspectXmlWithApi(file: File, xmlText: string) {
+    const response = await fetch("/api/local/xml/inspect", {
+      method: "POST",
+      headers: {
+        "content-type": "application/xml"
+      },
+      body: xmlText
+    });
+
+    const responseData: unknown = await response.json();
+
+    if (!response.ok) {
+      throw new Error(getApiErrorMessage(responseData));
+    }
+
+    const apiData = responseData as ApiXmlInspectResponse;
+    const uploadedAt = formatDateTime(new Date());
+    const status = normalizeUploadStatus(apiData.status);
+
+    const nextAnalysis: XmlAnalysis = {
+      fileName: file.name,
+      fileSize: formatBytes(file.size),
+      uploadedAt,
+      detectedDocument: apiData.detectedDocument,
+      rootElement: apiData.rootElement,
+      invoiceId: apiData.invoiceId,
+      issueDate: apiData.issueDate,
+      currency: apiData.currency,
+      apiStatus: apiData.status,
+      status,
+      note: apiData.disclaimer,
+      preview: xmlText.slice(0, 1400)
+    };
+
+    const nextRecord: XmlUploadRecord = {
+      id: apiData.uploadInspectionId,
+      fileName: nextAnalysis.fileName,
+      fileSize: nextAnalysis.fileSize,
+      uploadedAt: nextAnalysis.uploadedAt,
+      detectedDocument: nextAnalysis.detectedDocument,
+      rootElement: nextAnalysis.rootElement,
+      invoiceId: nextAnalysis.invoiceId,
+      status: nextAnalysis.status,
+      note:
+        status === "accepted"
+          ? "Inspected through local API proxy."
+          : "API returned review-required or unsupported XML status."
+    };
+
+    setAnalysis(nextAnalysis);
+    setUploadHistory((current) => [nextRecord, ...current].slice(0, 8));
+  }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -256,25 +263,21 @@ export default function WorkspaceXmlUploadPage() {
       return;
     }
 
-    const xmlText = await file.text();
-    const nextAnalysis = analyzeXmlFile(file, xmlText);
+    setIsInspecting(true);
 
-    setAnalysis(nextAnalysis);
-
-    const nextRecord: XmlUploadRecord = {
-      id: `xml_${Date.now()}`,
-      fileName: nextAnalysis.fileName,
-      fileSize: nextAnalysis.fileSize,
-      uploadedAt: nextAnalysis.uploadedAt,
-      detectedDocument: nextAnalysis.detectedDocument,
-      rootElement: nextAnalysis.rootElement,
-      invoiceId: nextAnalysis.invoiceId,
-      status: nextAnalysis.status,
-      note: nextAnalysis.note
-    };
-
-    setUploadHistory((current) => [nextRecord, ...current].slice(0, 8));
-    event.target.value = "";
+    try {
+      const xmlText = await file.text();
+      await inspectXmlWithApi(file, xmlText);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not inspect XML. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsInspecting(false);
+      event.target.value = "";
+    }
   }
 
   function clearAnalysis() {
@@ -286,11 +289,11 @@ export default function WorkspaceXmlUploadPage() {
     <div className="workspace-page">
       <section className="workspace-page-head">
         <p className="workspace-kicker">XML Upload</p>
-        <h2>Inspect invoice XML before backend validation.</h2>
+        <h2>Inspect invoice XML through the local API.</h2>
         <p>
-          Upload a local XML file to preview document structure, detected root element,
-          invoice ID, file size, and parsing readiness. This page does not send files to
-          a server yet.
+          Upload a local XML file to preview document structure, root element,
+          invoice ID, issue date, currency, and parsing readiness. The browser sends
+          the XML through the Next.js proxy into the dedicated FiscalForge EU API.
         </p>
       </section>
 
@@ -304,19 +307,19 @@ export default function WorkspaceXmlUploadPage() {
         <div className="workspace-stat">
           <p>Accepted</p>
           <strong>{acceptedUploads}</strong>
-          <span>Files that looked parseable as invoice-like XML.</span>
+          <span>Files that the API inspection classified as parseable.</span>
         </div>
 
         <div className="workspace-stat">
           <p>Rejected</p>
           <strong>{rejectedUploads}</strong>
-          <span>Invalid XML or unsupported document structure.</span>
+          <span>Invalid, unsupported, or review-required XML entries.</span>
         </div>
 
         <div className="workspace-stat">
           <p>Max size</p>
           <strong>2MB</strong>
-          <span>Local browser-side limit before the real API exists.</span>
+          <span>Frontend limit before production upload storage exists.</span>
         </div>
       </section>
 
@@ -329,28 +332,29 @@ export default function WorkspaceXmlUploadPage() {
 
           <label className="text-link-button">
             <Upload size={16} />
-            Select XML
+            {isInspecting ? "Inspecting..." : "Select XML"}
             <input
               type="file"
               accept=".xml,text/xml,application/xml"
               onChange={handleFileChange}
               style={{ display: "none" }}
+              disabled={isInspecting}
             />
           </label>
         </div>
 
-        <pre>{`Accepted input:
-- .xml files only
-- maximum 2 MB
-- parsed locally in the browser
-- not uploaded to any server yet
+        <pre>{`Current flow:
+1. select .xml file
+2. browser checks file extension and size
+3. Next.js route handler forwards XML to apps/api
+4. apps/api inspects root element and common invoice fields
+5. workspace displays the API response
 
-Future backend flow:
-1. upload XML
-2. validate schema
-3. parse canonical invoice fields
-4. run standards/country simulations
-5. produce validation report`}</pre>
+Backend endpoint:
+POST /api/v1/xml/inspect
+
+Proxy endpoint:
+POST /api/local/xml/inspect`}</pre>
 
         {errorMessage ? (
           <div className="alert-item">
@@ -364,7 +368,7 @@ Future backend flow:
         <section className="workspace-table-shell">
           <div className="workspace-table-head">
             <div>
-              <p>Detected XML metadata</p>
+              <p>API XML metadata</p>
               <h3>{analysis.fileName}</h3>
             </div>
 
@@ -390,7 +394,7 @@ Future backend flow:
                 <span>{analysis.uploadedAt}</span>
               </div>
 
-              <strong>{analysis.status}</strong>
+              <strong>{analysis.apiStatus}</strong>
 
               {analysis.status === "accepted" ? (
                 <BadgeCheck size={17} />
@@ -413,26 +417,26 @@ Future backend flow:
                 <span>{analysis.fileSize}</span>
               </div>
 
-              <strong>local</strong>
+              <strong>{analysis.currency}</strong>
 
               <Database size={17} />
             </div>
 
             <div className="workspace-table-row">
               <div>
-                <strong>Supplier</strong>
-                <span>{analysis.supplierName}</span>
+                <strong>Inspection source</strong>
+                <span>Next.js proxy → FiscalForge EU API</span>
               </div>
 
               <div>
-                <span>Customer</span>
+                <span>Mode</span>
               </div>
 
               <div>
-                <span>{analysis.customerName}</span>
+                <span>local development</span>
               </div>
 
-              <strong>preview</strong>
+              <strong>API</strong>
 
               <FileSearch size={17} />
             </div>
@@ -450,7 +454,7 @@ Future backend flow:
 
             <div className="confidence-label">
               <FileSearch size={17} />
-              browser-side parse
+              API inspected
             </div>
           </div>
 
@@ -501,7 +505,7 @@ Future backend flow:
 
           <div>
             <p>Safety notice</p>
-            <h3>No server upload yet.</h3>
+            <h3>Inspection only, not official validation.</h3>
           </div>
         </div>
 
@@ -509,8 +513,8 @@ Future backend flow:
           <div className="alert-item">
             <span />
             <p>
-              Files are parsed locally in the browser for UI testing. This does not
-              represent official XML, Peppol, EN 16931, ViDA, legal, tax, or authority
+              The API inspection endpoint detects basic XML structure only. It does not
+              perform official XML, Peppol, EN 16931, ViDA, legal, tax, or authority
               validation.
             </p>
           </div>
@@ -518,17 +522,17 @@ Future backend flow:
           <div className="alert-item">
             <span />
             <p>
-              The future API must enforce file-size limits, MIME checks, XML parser
-              hardening, schema validation, audit logging, rate limits, and object
-              authorization.
+              A production upload pipeline must include authentication, object
+              authorization, hardened XML parsing, schema validation, malware-safe file
+              handling, audit logging, and retention controls.
             </p>
           </div>
 
           <div className="alert-item">
             <span />
             <p>
-              Do not upload sensitive real invoices until authentication, backend
-              storage rules, retention controls, and privacy notices are implemented.
+              Do not upload sensitive real invoices until storage, privacy controls,
+              authentication, and retention policies are implemented.
             </p>
           </div>
         </div>
