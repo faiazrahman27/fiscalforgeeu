@@ -56,6 +56,24 @@ type LocalValidationReport = {
   disclaimer: string;
 };
 
+type SavedValidationRun = {
+  id: string;
+  invoiceNumber: string;
+  buyer: string;
+  seller: string;
+  createdAt: string;
+  technicalStatus: string;
+  standardStatus: string;
+  countrySimulationStatus: string;
+  vidaReadinessStatus: string;
+  confidence: string;
+  profile: string;
+  currency: string;
+  totals: InvoiceTotalsDraft;
+  findings: FindingPreview[];
+  disclaimer: string;
+};
+
 type ApiValidationRequestPayload = {
   document: {
     type: "invoice" | "credit_note";
@@ -111,6 +129,7 @@ type ApiValidationResponse = {
 };
 
 const LOCAL_DRAFT_KEY = "fiscalforge.eu.invoiceDraft.local";
+const VALIDATION_RUN_STORAGE_KEY = "fiscalforge.eu.validationRuns.local";
 
 export function InvoiceEditorClient({
   initialDraft
@@ -296,7 +315,7 @@ export function InvoiceEditorClient({
 
       const apiReport = responseData as ApiValidationResponse;
 
-      setValidationReport({
+      const nextReport: LocalValidationReport = {
         id: apiReport.validationRunId,
         createdAt: new Date().toISOString(),
         technicalStatus: apiReport.technicalStatus,
@@ -310,7 +329,10 @@ export function InvoiceEditorClient({
         })),
         totals: mapApiTotals(apiReport.totals, recalculatedTotals),
         disclaimer: apiReport.disclaimer
-      });
+      };
+
+      setValidationReport(nextReport);
+      saveValidationRunToHistory(buildSavedValidationRun(draft, nextReport));
     } catch {
       setValidationReport(
         buildApiErrorReport({
@@ -364,8 +386,8 @@ export function InvoiceEditorClient({
           <h2>Build a structured invoice from canonical data, not pixels.</h2>
           <p>
             This editor now sends validation requests through the local Next.js API
-            proxy into the dedicated FiscalForge EU API service. The draft remains
-            browser-side, but validation is no longer only mock logic.
+            proxy into the dedicated FiscalForge EU API service. Successful API reports
+            are saved into local validation history for the Validation Runs page.
           </p>
         </div>
 
@@ -1166,6 +1188,88 @@ function cleanDecimalInput(value: string) {
   const [first, ...rest] = cleaned.split(".");
 
   return rest.length === 0 ? first : `${first}.${rest.join("")}`;
+}
+
+function buildSavedValidationRun(
+  draft: InvoiceEditorDraft,
+  report: LocalValidationReport
+): SavedValidationRun {
+  const confidence =
+    report.countrySimulationStatus === "review_required" ||
+    report.vidaReadinessStatus === "relevant_simulation"
+      ? "educational_simulation"
+      : "technical_preview";
+
+  return {
+    id: report.id,
+    invoiceNumber: draft.document.number || "Untitled invoice",
+    buyer: draft.buyer.name || "Unknown buyer",
+    seller: draft.seller.name || "Unknown seller",
+    createdAt: formatDateTime(new Date(report.createdAt)),
+    technicalStatus: report.technicalStatus,
+    standardStatus: report.standardStatus,
+    countrySimulationStatus: report.countrySimulationStatus,
+    vidaReadinessStatus: report.vidaReadinessStatus,
+    confidence,
+    profile: draft.document.profile,
+    currency: draft.document.currency,
+    totals: report.totals,
+    findings: report.findings,
+    disclaimer: report.disclaimer
+  };
+}
+
+function readStoredValidationRuns() {
+  if (typeof window === "undefined") {
+    return [] as SavedValidationRun[];
+  }
+
+  const storedValue = window.localStorage.getItem(VALIDATION_RUN_STORAGE_KEY);
+
+  if (!storedValue) {
+    return [] as SavedValidationRun[];
+  }
+
+  try {
+    const parsed = JSON.parse(storedValue);
+
+    if (!Array.isArray(parsed)) {
+      return [] as SavedValidationRun[];
+    }
+
+    return parsed as SavedValidationRun[];
+  } catch {
+    return [] as SavedValidationRun[];
+  }
+}
+
+function saveValidationRunToHistory(run: SavedValidationRun) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentRuns = readStoredValidationRuns();
+  const nextRuns = [
+    run,
+    ...currentRuns.filter((existingRun) => existingRun.id !== run.id)
+  ].slice(0, 25);
+
+  window.localStorage.setItem(
+    VALIDATION_RUN_STORAGE_KEY,
+    JSON.stringify(nextRuns)
+  );
+}
+
+function formatDateTime(date: Date) {
+  return date
+    .toLocaleString("sv-SE", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    })
+    .replace("T", " ");
 }
 
 function buildApiErrorReport({
