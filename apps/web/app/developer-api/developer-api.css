@@ -1,0 +1,7 @@
+.developer-api-page .subpage-card-icon {
+  color: var(--ff-blue);
+}
+
+.developer-api-page .terminal-top p {
+  color: rgba(100,210,255,0.68);
+}

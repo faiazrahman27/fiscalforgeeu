@@ -1,0 +1,11 @@
+.validation-page .subpage-card-icon {
+  color: var(--ff-blue);
+}
+
+.validation-page .validation-band::before {
+  display: none;
+}
+
+.validation-page .validation-band:hover {
+  box-shadow: none;
+}
