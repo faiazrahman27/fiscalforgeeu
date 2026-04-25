@@ -29,6 +29,11 @@ const workspaceNav = [
     icon: <Activity size={18} />
   },
   {
+    href: "/workspace/xml-upload",
+    label: "XML Upload",
+    icon: <FileCode2 size={18} />
+  },
+  {
     href: "/workspace/developer",
     label: "Developer",
     icon: <Braces size={18} />
