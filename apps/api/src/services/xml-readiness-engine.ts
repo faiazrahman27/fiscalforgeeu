@@ -1,11 +1,41 @@
 export type XmlFindingSeverity = "info" | "warning" | "fatal";
 
+export type XmlProfileStatus =
+  | "ubl_surface_check"
+  | "peppol_bis_signal"
+  | "en16931_signal"
+  | "unknown_profile";
+
 export type XmlReadinessFinding = {
   code: string;
   severity: XmlFindingSeverity;
   field: string;
   message: string;
   confidence: "technical" | "readiness_simulation" | "review_required";
+};
+
+export type XmlProfileSignal = {
+  customizationId: string;
+  profileId: string;
+  profileHints: string[];
+  ublNamespaceDetected: boolean;
+  ublDocumentDetected: boolean;
+  peppolSignalDetected: boolean;
+  en16931SignalDetected: boolean;
+  endpointCount: number;
+  sellerEndpointId: string;
+  sellerEndpointScheme: string;
+  buyerEndpointId: string;
+  buyerEndpointScheme: string;
+  sellerCountry: string;
+  buyerCountry: string;
+  countryPair: string;
+  crossBorderSignal: boolean;
+  taxCategoryCodes: string[];
+  vatPercentValues: string[];
+  paymentMeansDetected: boolean;
+  paymentTermsDetected: boolean;
+  allowanceChargeDetected: boolean;
 };
 
 export type XmlExtractedData = {
@@ -28,6 +58,7 @@ export type XmlExtractedData = {
     taxCategoryDetected: boolean;
     taxRateCount: number;
   };
+  profileSignal: XmlProfileSignal;
 };
 
 export type XmlReadinessReport = {
@@ -35,7 +66,7 @@ export type XmlReadinessReport = {
   readinessStatus: "ready_for_review" | "needs_attention" | "unsupported";
   documentStatus: "recognized" | "unsupported";
   calculationStatus: "not_checked" | "surface_checked" | "inconsistent";
-  profileStatus: "ubl_surface_check" | "unknown_profile";
+  profileStatus: XmlProfileStatus;
   extractedData: XmlExtractedData;
   findings: XmlReadinessFinding[];
 };
@@ -122,7 +153,30 @@ function extractFirstTagValue(xml: string, tagName: string) {
 
   const match = xml.match(namespacedPattern);
 
-  return match?.[1]?.trim().slice(0, 180) || "not_detected";
+  return match?.[1]?.trim().slice(0, 240) || "not_detected";
+}
+
+function extractAllTagValues(xml: string, tagName: string, maxResults = 30) {
+  const escapedTag = escapeRegex(tagName);
+  const namespacedPattern = new RegExp(
+    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedTag}>`,
+    "gi"
+  );
+
+  const values: string[] = [];
+  let match = namespacedPattern.exec(xml);
+
+  while (match && values.length < maxResults) {
+    const value = match[1]?.trim().slice(0, 180);
+
+    if (value) {
+      values.push(value);
+    }
+
+    match = namespacedPattern.exec(xml);
+  }
+
+  return values;
 }
 
 function extractFirstBlock(xml: string, blockTag: string) {
@@ -134,6 +188,59 @@ function extractFirstBlock(xml: string, blockTag: string) {
   );
 
   return xml.match(blockPattern)?.[0] ?? "";
+}
+
+function extractAllBlocks(xml: string, blockTag: string, maxResults = 30) {
+  const pattern = buildNamespacedTagGlobalPattern(blockTag);
+  const blocks: string[] = [];
+  let match = pattern.exec(xml);
+
+  while (match && blocks.length < maxResults) {
+    blocks.push(match[0]);
+    match = pattern.exec(xml);
+  }
+
+  return blocks;
+}
+
+function extractFirstTagOpening(xml: string, tagName: string) {
+  const escapedTag = escapeRegex(tagName);
+
+  const pattern = new RegExp(
+    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}(?:\\s[^>]*)?>`,
+    "i"
+  );
+
+  return xml.match(pattern)?.[0] ?? "";
+}
+
+function extractAttributeValueFromOpeningTag(
+  openingTag: string,
+  attributeName: string
+) {
+  const escapedAttribute = escapeRegex(attributeName);
+  const pattern = new RegExp(
+    `${escapedAttribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`,
+    "i"
+  );
+
+  const match = openingTag.match(pattern);
+
+  return match?.[1]?.trim() || match?.[2]?.trim() || "not_detected";
+}
+
+function extractFirstTagAttribute(
+  xml: string,
+  tagName: string,
+  attributeName: string
+) {
+  const openingTag = extractFirstTagOpening(xml, tagName);
+
+  if (!openingTag) {
+    return "not_detected";
+  }
+
+  return extractAttributeValueFromOpeningTag(openingTag, attributeName);
 }
 
 function extractFirstTagValueInsideBlock(
@@ -148,6 +255,10 @@ function extractFirstTagValueInsideBlock(
   }
 
   return extractFirstTagValue(block, tagName);
+}
+
+function uniqueValues(values: string[]) {
+  return [...new Set(values.filter((value) => value && value !== "not_detected"))];
 }
 
 function extractPartyName(xml: string, partyBlockTag: string) {
@@ -181,6 +292,54 @@ function extractPartyName(xml: string, partyBlockTag: string) {
   }
 
   return extractFirstTagValue(partyBlock, "Name");
+}
+
+function extractPartyEndpointId(xml: string, partyBlockTag: string) {
+  const partyBlock = extractFirstBlock(xml, partyBlockTag);
+
+  if (!partyBlock) {
+    return "not_detected";
+  }
+
+  return extractFirstTagValue(partyBlock, "EndpointID");
+}
+
+function extractPartyEndpointScheme(xml: string, partyBlockTag: string) {
+  const partyBlock = extractFirstBlock(xml, partyBlockTag);
+
+  if (!partyBlock) {
+    return "not_detected";
+  }
+
+  return extractFirstTagAttribute(partyBlock, "EndpointID", "schemeID");
+}
+
+function extractPartyCountryCode(xml: string, partyBlockTag: string) {
+  const partyBlock = extractFirstBlock(xml, partyBlockTag);
+
+  if (!partyBlock) {
+    return "not_detected";
+  }
+
+  const countryBlock = extractFirstBlock(partyBlock, "Country");
+
+  if (!countryBlock) {
+    return "not_detected";
+  }
+
+  return extractFirstTagValue(countryBlock, "IdentificationCode");
+}
+
+function extractTaxCategoryCodes(xml: string) {
+  const taxCategoryBlocks = extractAllBlocks(xml, "TaxCategory", 40);
+
+  return uniqueValues(
+    taxCategoryBlocks.map((block) => extractFirstTagValue(block, "ID"))
+  );
+}
+
+function extractVatPercentValues(xml: string) {
+  return uniqueValues(extractAllTagValues(xml, "Percent", 40));
 }
 
 function extractMonetaryTotal(xml: string, tagName: string) {
@@ -241,6 +400,20 @@ function hasParseRisk(xml: string) {
   return closingLikeTags.length === 0;
 }
 
+function hasUblNamespaceSignal(xml: string) {
+  return (
+    /urn:oasis:names:specification:ubl:schema:xsd:(Invoice|CreditNote)-2/i.test(
+      xml
+    ) ||
+    /urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2/i.test(
+      xml
+    ) ||
+    /urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2/i.test(
+      xml
+    )
+  );
+}
+
 function pushMissingTagFinding(
   findings: XmlReadinessFinding[],
   xml: string,
@@ -277,7 +450,311 @@ function pushExtractedInfoFinding(
   });
 }
 
-function buildExtractedData(xml: string, currency: string): XmlExtractedData {
+function buildProfileSignal(
+  xml: string,
+  detectedDocument: string
+): XmlProfileSignal {
+  const customizationId = extractFirstTagValue(xml, "CustomizationID");
+  const profileId = extractFirstTagValue(xml, "ProfileID");
+  const normalizedProfileText = `${customizationId} ${profileId}`.toLowerCase();
+
+  const ublNamespaceDetected = hasUblNamespaceSignal(xml);
+  const ublDocumentDetected =
+    detectedDocument !== "unknown" &&
+    (ublNamespaceDetected ||
+      hasTag(xml, "AccountingSupplierParty") ||
+      hasTag(xml, "AccountingCustomerParty"));
+
+  const peppolSignalDetected =
+    normalizedProfileText.includes("peppol") ||
+    normalizedProfileText.includes("bis") ||
+    normalizedProfileText.includes("urn:fdc:peppol.eu");
+
+  const en16931SignalDetected =
+    normalizedProfileText.includes("en16931") ||
+    normalizedProfileText.includes("en 16931") ||
+    normalizedProfileText.includes("urn:cen.eu:en16931") ||
+    normalizedProfileText.includes("cius");
+
+  const sellerCountry = extractPartyCountryCode(xml, "AccountingSupplierParty");
+  const buyerCountry = extractPartyCountryCode(xml, "AccountingCustomerParty");
+
+  const countryPair =
+    sellerCountry !== "not_detected" || buyerCountry !== "not_detected"
+      ? `${sellerCountry} -> ${buyerCountry}`
+      : "not_detected";
+
+  const crossBorderSignal =
+    sellerCountry !== "not_detected" &&
+    buyerCountry !== "not_detected" &&
+    sellerCountry.toUpperCase() !== buyerCountry.toUpperCase();
+
+  const profileHints: string[] = [];
+
+  if (ublDocumentDetected) {
+    profileHints.push("UBL document surface");
+  }
+
+  if (peppolSignalDetected) {
+    profileHints.push("Peppol BIS profile signal");
+  }
+
+  if (en16931SignalDetected) {
+    profileHints.push("EN 16931 profile signal");
+  }
+
+  if (crossBorderSignal) {
+    profileHints.push("Cross-border party signal");
+  }
+
+  return {
+    customizationId,
+    profileId,
+    profileHints,
+    ublNamespaceDetected,
+    ublDocumentDetected,
+    peppolSignalDetected,
+    en16931SignalDetected,
+    endpointCount: countTags(xml, "EndpointID"),
+    sellerEndpointId: extractPartyEndpointId(xml, "AccountingSupplierParty"),
+    sellerEndpointScheme: extractPartyEndpointScheme(
+      xml,
+      "AccountingSupplierParty"
+    ),
+    buyerEndpointId: extractPartyEndpointId(xml, "AccountingCustomerParty"),
+    buyerEndpointScheme: extractPartyEndpointScheme(
+      xml,
+      "AccountingCustomerParty"
+    ),
+    sellerCountry,
+    buyerCountry,
+    countryPair,
+    crossBorderSignal,
+    taxCategoryCodes: extractTaxCategoryCodes(xml),
+    vatPercentValues: extractVatPercentValues(xml),
+    paymentMeansDetected: hasTag(xml, "PaymentMeans"),
+    paymentTermsDetected: hasTag(xml, "PaymentTerms"),
+    allowanceChargeDetected: hasTag(xml, "AllowanceCharge")
+  };
+}
+
+function determineProfileStatus(
+  detectedDocument: string,
+  profileSignal: XmlProfileSignal
+): XmlProfileStatus {
+  if (detectedDocument === "unknown") {
+    return "unknown_profile";
+  }
+
+  if (profileSignal.peppolSignalDetected) {
+    return "peppol_bis_signal";
+  }
+
+  if (profileSignal.en16931SignalDetected) {
+    return "en16931_signal";
+  }
+
+  if (profileSignal.ublDocumentDetected) {
+    return "ubl_surface_check";
+  }
+
+  return "unknown_profile";
+}
+
+function addProfileSignalFindings(
+  findings: XmlReadinessFinding[],
+  profileSignal: XmlProfileSignal,
+  detectedDocument: string
+) {
+  if (detectedDocument === "unknown") {
+    return;
+  }
+
+  if (profileSignal.ublNamespaceDetected) {
+    pushExtractedInfoFinding(
+      findings,
+      "UBL_NAMESPACE_SIGNAL_DETECTED",
+      "xml.namespace",
+      "Detected UBL namespace signal in the uploaded XML."
+    );
+  }
+
+  if (profileSignal.customizationId !== "not_detected") {
+    pushExtractedInfoFinding(
+      findings,
+      "CUSTOMIZATION_ID_DETECTED",
+      "CustomizationID",
+      `Detected CustomizationID: ${profileSignal.customizationId}.`
+    );
+  } else {
+    findings.push({
+      code: "CUSTOMIZATION_ID_MISSING",
+      severity: "warning",
+      field: "CustomizationID",
+      message:
+        "CustomizationID was not detected. This limits EN 16931, Peppol BIS, and country-profile simulation confidence.",
+      confidence: "readiness_simulation"
+    });
+  }
+
+  if (profileSignal.profileId !== "not_detected") {
+    pushExtractedInfoFinding(
+      findings,
+      "PROFILE_ID_DETECTED",
+      "ProfileID",
+      `Detected ProfileID: ${profileSignal.profileId}.`
+    );
+  } else {
+    findings.push({
+      code: "PROFILE_ID_MISSING",
+      severity: "warning",
+      field: "ProfileID",
+      message:
+        "ProfileID was not detected. This limits business-process profile simulation confidence.",
+      confidence: "readiness_simulation"
+    });
+  }
+
+  if (profileSignal.peppolSignalDetected) {
+    findings.push({
+      code: "PEPPOL_BIS_SIGNAL_DETECTED",
+      severity: "info",
+      field: "CustomizationID/ProfileID",
+      message:
+        "Detected a Peppol BIS-style profile signal. This is a technical simulation only, not Peppol authority validation.",
+      confidence: "readiness_simulation"
+    });
+  }
+
+  if (profileSignal.en16931SignalDetected) {
+    findings.push({
+      code: "EN16931_SIGNAL_DETECTED",
+      severity: "info",
+      field: "CustomizationID/ProfileID",
+      message:
+        "Detected an EN 16931-style profile signal. This is a readiness signal only, not official EN 16931 certification.",
+      confidence: "readiness_simulation"
+    });
+  }
+
+  if (
+    profileSignal.customizationId !== "not_detected" &&
+    !profileSignal.peppolSignalDetected &&
+    !profileSignal.en16931SignalDetected
+  ) {
+    findings.push({
+      code: "PROFILE_SIGNAL_LIMITED",
+      severity: "warning",
+      field: "CustomizationID/ProfileID",
+      message:
+        "A customization/profile value was detected, but Invoice Lantern could not confidently classify it as Peppol BIS or EN 16931 from surface signals.",
+      confidence: "review_required"
+    });
+  }
+
+  if (profileSignal.endpointCount > 0) {
+    pushExtractedInfoFinding(
+      findings,
+      "ELECTRONIC_ENDPOINT_SIGNAL_DETECTED",
+      "EndpointID",
+      `Detected ${profileSignal.endpointCount} electronic endpoint ID value(s).`
+    );
+  } else {
+    findings.push({
+      code: "ELECTRONIC_ENDPOINT_MISSING",
+      severity: "warning",
+      field: "EndpointID",
+      message:
+        "No EndpointID was detected. Electronic delivery simulations usually require seller and buyer electronic addressing.",
+      confidence: "readiness_simulation"
+    });
+  }
+
+  if (
+    profileSignal.sellerCountry !== "not_detected" ||
+    profileSignal.buyerCountry !== "not_detected"
+  ) {
+    pushExtractedInfoFinding(
+      findings,
+      "COUNTRY_SIGNAL_DETECTED",
+      "AccountingSupplierParty/AccountingCustomerParty.Country",
+      `Detected country signal: ${profileSignal.countryPair}.`
+    );
+  }
+
+  if (profileSignal.crossBorderSignal) {
+    findings.push({
+      code: "CROSS_BORDER_REVIEW_REQUIRED",
+      severity: "warning",
+      field: "AccountingSupplierParty/AccountingCustomerParty.Country",
+      message:
+        "Seller and buyer country signals differ. Cross-border VAT, routing, and reporting treatment requires review.",
+      confidence: "review_required"
+    });
+  }
+
+  if (profileSignal.taxCategoryCodes.length > 0) {
+    pushExtractedInfoFinding(
+      findings,
+      "TAX_CATEGORY_CODES_DETECTED",
+      "TaxCategory.ID",
+      `Detected tax category code(s): ${profileSignal.taxCategoryCodes.join(", ")}.`
+    );
+  }
+
+  if (profileSignal.vatPercentValues.length > 0) {
+    pushExtractedInfoFinding(
+      findings,
+      "VAT_PERCENT_VALUES_DETECTED",
+      "TaxCategory.Percent",
+      `Detected VAT percent value(s): ${profileSignal.vatPercentValues.join(", ")}.`
+    );
+  }
+
+  if (profileSignal.paymentMeansDetected) {
+    pushExtractedInfoFinding(
+      findings,
+      "PAYMENT_MEANS_DETECTED",
+      "PaymentMeans",
+      "Detected PaymentMeans block."
+    );
+  } else {
+    findings.push({
+      code: "PAYMENT_MEANS_MISSING",
+      severity: "warning",
+      field: "PaymentMeans",
+      message:
+        "PaymentMeans was not detected. This can be valid in some flows, but payment data may be incomplete for readiness review.",
+      confidence: "readiness_simulation"
+    });
+  }
+
+  if (profileSignal.paymentTermsDetected) {
+    pushExtractedInfoFinding(
+      findings,
+      "PAYMENT_TERMS_DETECTED",
+      "PaymentTerms",
+      "Detected PaymentTerms block."
+    );
+  }
+
+  if (profileSignal.allowanceChargeDetected) {
+    findings.push({
+      code: "ALLOWANCE_OR_CHARGE_DETECTED",
+      severity: "info",
+      field: "AllowanceCharge",
+      message:
+        "Detected AllowanceCharge block. Totals may include allowances or charges beyond simple line-plus-tax arithmetic.",
+      confidence: "readiness_simulation"
+    });
+  }
+}
+
+function buildExtractedData(
+  xml: string,
+  currency: string,
+  detectedDocument: string
+): XmlExtractedData {
   const invoiceLineCount = countTags(xml, "InvoiceLine");
   const creditNoteLineCount = countTags(xml, "CreditNoteLine");
   const lineCount = invoiceLineCount + creditNoteLineCount;
@@ -301,7 +778,8 @@ function buildExtractedData(xml: string, currency: string): XmlExtractedData {
       taxSubtotalDetected: hasTag(xml, "TaxSubtotal"),
       taxCategoryDetected: hasTag(xml, "TaxCategory"),
       taxRateCount: countTags(xml, "Percent")
-    }
+    },
+    profileSignal: buildProfileSignal(xml, detectedDocument)
   };
 }
 
@@ -433,7 +911,7 @@ function buildReadinessReport({
   currency: string;
 }): XmlReadinessReport {
   const findings: XmlReadinessFinding[] = [];
-  const extractedData = buildExtractedData(xml, currency);
+  const extractedData = buildExtractedData(xml, currency, detectedDocument);
 
   if (hasParseRisk(xml)) {
     findings.push({
@@ -466,6 +944,12 @@ function buildReadinessReport({
       confidence: "technical"
     });
   }
+
+  addProfileSignalFindings(
+    findings,
+    extractedData.profileSignal,
+    detectedDocument
+  );
 
   if (invoiceId === "not_detected") {
     findings.push({
@@ -619,6 +1103,11 @@ function buildReadinessReport({
         ? "surface_checked"
         : "not_checked";
 
+  const profileStatus = determineProfileStatus(
+    detectedDocument,
+    extractedData.profileSignal
+  );
+
   return {
     technicalStatus: hasFatal ? "failed" : "passed",
     readinessStatus:
@@ -629,8 +1118,7 @@ function buildReadinessReport({
           : "ready_for_review",
     documentStatus: detectedDocument === "unknown" ? "unsupported" : "recognized",
     calculationStatus,
-    profileStatus:
-      detectedDocument === "unknown" ? "unknown_profile" : "ubl_surface_check",
+    profileStatus,
     extractedData,
     findings
   };

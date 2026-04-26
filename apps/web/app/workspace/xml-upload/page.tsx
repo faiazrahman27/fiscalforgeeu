@@ -11,6 +11,7 @@ import {
   FileCode2,
   FileInput,
   FileSearch,
+  Network,
   ShieldAlert,
   Trash2,
   Upload,
@@ -27,6 +28,30 @@ type XmlReadinessFinding = {
   field: string;
   message: string;
   confidence: "technical" | "readiness_simulation" | "review_required";
+};
+
+type XmlProfileSignal = {
+  customizationId: string;
+  profileId: string;
+  profileHints: string[];
+  ublNamespaceDetected: boolean;
+  ublDocumentDetected: boolean;
+  peppolSignalDetected: boolean;
+  en16931SignalDetected: boolean;
+  endpointCount: number;
+  sellerEndpointId: string;
+  sellerEndpointScheme: string;
+  buyerEndpointId: string;
+  buyerEndpointScheme: string;
+  sellerCountry: string;
+  buyerCountry: string;
+  countryPair: string;
+  crossBorderSignal: boolean;
+  taxCategoryCodes: string[];
+  vatPercentValues: string[];
+  paymentMeansDetected: boolean;
+  paymentTermsDetected: boolean;
+  allowanceChargeDetected: boolean;
 };
 
 type XmlExtractedData = {
@@ -49,6 +74,7 @@ type XmlExtractedData = {
     taxCategoryDetected: boolean;
     taxRateCount: number;
   };
+  profileSignal: XmlProfileSignal;
 };
 
 type XmlUploadSummary = {
@@ -170,6 +196,30 @@ const SAVED_REPORT_PREVIEW =
 const REPORT_DISCLAIMER =
   "Invoice Lantern performs a technical readiness simulation only. This result is not official XML, Peppol, EN 16931, ViDA, tax, legal, accounting, government, or authority validation.";
 
+const emptyProfileSignal: XmlProfileSignal = {
+  customizationId: "not_detected",
+  profileId: "not_detected",
+  profileHints: [],
+  ublNamespaceDetected: false,
+  ublDocumentDetected: false,
+  peppolSignalDetected: false,
+  en16931SignalDetected: false,
+  endpointCount: 0,
+  sellerEndpointId: "not_detected",
+  sellerEndpointScheme: "not_detected",
+  buyerEndpointId: "not_detected",
+  buyerEndpointScheme: "not_detected",
+  sellerCountry: "not_detected",
+  buyerCountry: "not_detected",
+  countryPair: "not_detected",
+  crossBorderSignal: false,
+  taxCategoryCodes: [],
+  vatPercentValues: [],
+  paymentMeansDetected: false,
+  paymentTermsDetected: false,
+  allowanceChargeDetected: false
+};
+
 const emptyExtractedData: XmlExtractedData = {
   sellerName: "not_detected",
   buyerName: "not_detected",
@@ -189,7 +239,8 @@ const emptyExtractedData: XmlExtractedData = {
     taxSubtotalDetected: false,
     taxCategoryDetected: false,
     taxRateCount: 0
-  }
+  },
+  profileSignal: emptyProfileSignal
 };
 
 function formatDateTime(date: Date) {
@@ -250,6 +301,22 @@ function formatMoneyValue(currency: string, value: string) {
   return `${currency} ${value}`;
 }
 
+function formatListValue(values: string[]) {
+  return values.length > 0 ? values.join(", ") : "Not detected";
+}
+
+function formatEndpointValue(endpointId: string, schemeId: string) {
+  if (!endpointId || endpointId === "not_detected") {
+    return "Not detected";
+  }
+
+  if (!schemeId || schemeId === "not_detected") {
+    return endpointId;
+  }
+
+  return `${endpointId} (${schemeId})`;
+}
+
 function isDetected(value: string) {
   return Boolean(value) && value !== "not_detected";
 }
@@ -288,6 +355,34 @@ function readNumberField(
   }
 
   return fallback;
+}
+
+function readBooleanField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: boolean
+) {
+  const value = record[key];
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  return fallback;
+}
+
+function readStringArrayField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 40);
 }
 
 function buildFallbackUploadId(record: Record<string, unknown>) {
@@ -368,6 +463,78 @@ function normalizeFindings(value: unknown): XmlReadinessFinding[] {
     .filter((item): item is XmlReadinessFinding => item !== null);
 }
 
+function normalizeProfileSignal(value: unknown): XmlProfileSignal {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return emptyProfileSignal;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    customizationId: readStringField(record, "customizationId", "not_detected"),
+    profileId: readStringField(record, "profileId", "not_detected"),
+    profileHints: readStringArrayField(record, "profileHints"),
+    ublNamespaceDetected: readBooleanField(
+      record,
+      "ublNamespaceDetected",
+      false
+    ),
+    ublDocumentDetected: readBooleanField(record, "ublDocumentDetected", false),
+    peppolSignalDetected: readBooleanField(
+      record,
+      "peppolSignalDetected",
+      false
+    ),
+    en16931SignalDetected: readBooleanField(
+      record,
+      "en16931SignalDetected",
+      false
+    ),
+    endpointCount: readNumberField(record, "endpointCount", 0),
+    sellerEndpointId: readStringField(
+      record,
+      "sellerEndpointId",
+      "not_detected"
+    ),
+    sellerEndpointScheme: readStringField(
+      record,
+      "sellerEndpointScheme",
+      "not_detected"
+    ),
+    buyerEndpointId: readStringField(
+      record,
+      "buyerEndpointId",
+      "not_detected"
+    ),
+    buyerEndpointScheme: readStringField(
+      record,
+      "buyerEndpointScheme",
+      "not_detected"
+    ),
+    sellerCountry: readStringField(record, "sellerCountry", "not_detected"),
+    buyerCountry: readStringField(record, "buyerCountry", "not_detected"),
+    countryPair: readStringField(record, "countryPair", "not_detected"),
+    crossBorderSignal: readBooleanField(record, "crossBorderSignal", false),
+    taxCategoryCodes: readStringArrayField(record, "taxCategoryCodes"),
+    vatPercentValues: readStringArrayField(record, "vatPercentValues"),
+    paymentMeansDetected: readBooleanField(
+      record,
+      "paymentMeansDetected",
+      false
+    ),
+    paymentTermsDetected: readBooleanField(
+      record,
+      "paymentTermsDetected",
+      false
+    ),
+    allowanceChargeDetected: readBooleanField(
+      record,
+      "allowanceChargeDetected",
+      false
+    )
+  };
+}
+
 function normalizeExtractedData(value: unknown): XmlExtractedData {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return emptyExtractedData;
@@ -423,7 +590,8 @@ function normalizeExtractedData(value: unknown): XmlExtractedData {
       taxSubtotalDetected: taxSignal.taxSubtotalDetected === true,
       taxCategoryDetected: taxSignal.taxCategoryDetected === true,
       taxRateCount: readNumberField(taxSignal, "taxRateCount", 0)
-    }
+    },
+    profileSignal: normalizeProfileSignal(record.profileSignal)
   };
 }
 
@@ -1025,7 +1193,7 @@ export default function WorkspaceXmlUploadPage() {
 1. select .xml file
 2. browser checks file extension and size
 3. Next.js route handler forwards XML and file metadata to apps/api
-4. apps/api extracts invoice fields, party names, line counts, totals, and tax signals
+4. apps/api extracts invoice fields, party names, line counts, totals, tax signals, and profile signals
 5. apps/api runs surface-level readiness and consistency checks
 6. apps/api stores the inspection summary through the repository/storage boundary
 7. workspace displays the readiness report and API-owned upload history
@@ -1165,6 +1333,293 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               </strong>
 
               <FileSearch size={17} />
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {analysis ? (
+        <section className="workspace-table-shell">
+          <div className="workspace-table-head">
+            <div>
+              <p>Format and profile signals</p>
+              <h3>Detected e-invoice format context</h3>
+            </div>
+
+            <div className="confidence-label">
+              <Network size={17} />
+              profile simulation
+            </div>
+          </div>
+
+          <div className="workspace-data-grid">
+            <div
+              className={
+                analysis.extractedData.profileSignal.ublDocumentDetected
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>UBL document signal</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.profileSignal.ublDocumentDetected
+                )}
+              </strong>
+              <span>
+                Root, namespace, and UBL invoice structure surface signal.
+              </span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.en16931SignalDetected
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>EN 16931 signal</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.profileSignal.en16931SignalDetected
+                )}
+              </strong>
+              <span>Detected from CustomizationID/ProfileID surface values.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.peppolSignalDetected
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Peppol BIS signal</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.profileSignal.peppolSignalDetected
+                )}
+              </strong>
+              <span>Profile hint only. Not Peppol authority validation.</span>
+            </div>
+
+            <div
+              className={
+                isDetected(analysis.extractedData.profileSignal.customizationId)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>CustomizationID</p>
+              <strong>
+                {formatDetectedValue(
+                  analysis.extractedData.profileSignal.customizationId
+                )}
+              </strong>
+              <span>Used for format/profile readiness classification.</span>
+            </div>
+
+            <div
+              className={
+                isDetected(analysis.extractedData.profileSignal.profileId)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>ProfileID</p>
+              <strong>
+                {formatDetectedValue(analysis.extractedData.profileSignal.profileId)}
+              </strong>
+              <span>Business-process profile signal.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.endpointCount > 0
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Electronic endpoints</p>
+              <strong>{analysis.extractedData.profileSignal.endpointCount}</strong>
+              <span>EndpointID values detected in the XML.</span>
+            </div>
+
+            <div
+              className={
+                isDetected(analysis.extractedData.profileSignal.sellerEndpointId)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Seller endpoint</p>
+              <strong>
+                {formatEndpointValue(
+                  analysis.extractedData.profileSignal.sellerEndpointId,
+                  analysis.extractedData.profileSignal.sellerEndpointScheme
+                )}
+              </strong>
+              <span>Seller electronic addressing signal.</span>
+            </div>
+
+            <div
+              className={
+                isDetected(analysis.extractedData.profileSignal.buyerEndpointId)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Buyer endpoint</p>
+              <strong>
+                {formatEndpointValue(
+                  analysis.extractedData.profileSignal.buyerEndpointId,
+                  analysis.extractedData.profileSignal.buyerEndpointScheme
+                )}
+              </strong>
+              <span>Buyer electronic addressing signal.</span>
+            </div>
+
+            <div
+              className={
+                isDetected(analysis.extractedData.profileSignal.sellerCountry)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Seller country</p>
+              <strong>
+                {formatDetectedValue(
+                  analysis.extractedData.profileSignal.sellerCountry
+                )}
+              </strong>
+              <span>Supplier country signal.</span>
+            </div>
+
+            <div
+              className={
+                isDetected(analysis.extractedData.profileSignal.buyerCountry)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Buyer country</p>
+              <strong>
+                {formatDetectedValue(
+                  analysis.extractedData.profileSignal.buyerCountry
+                )}
+              </strong>
+              <span>Customer country signal.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.crossBorderSignal
+                  ? "workspace-data-card is-warn"
+                  : "workspace-data-card"
+              }
+            >
+              <p>Cross-border signal</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.profileSignal.crossBorderSignal
+                )}
+              </strong>
+              <span>
+                {analysis.extractedData.profileSignal.countryPair === "not_detected"
+                  ? "Country pair not detected."
+                  : analysis.extractedData.profileSignal.countryPair}
+              </span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.taxCategoryCodes.length > 0
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Tax category codes</p>
+              <strong>
+                {formatListValue(
+                  analysis.extractedData.profileSignal.taxCategoryCodes
+                )}
+              </strong>
+              <span>TaxCategory.ID values.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.vatPercentValues.length > 0
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>VAT percent values</p>
+              <strong>
+                {formatListValue(
+                  analysis.extractedData.profileSignal.vatPercentValues
+                )}
+              </strong>
+              <span>TaxCategory.Percent values.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.paymentMeansDetected
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Payment means</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.profileSignal.paymentMeansDetected
+                )}
+              </strong>
+              <span>PaymentMeans block signal.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.paymentTermsDetected
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card"
+              }
+            >
+              <p>Payment terms</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.profileSignal.paymentTermsDetected
+                )}
+              </strong>
+              <span>PaymentTerms block signal.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.profileSignal.allowanceChargeDetected
+                  ? "workspace-data-card is-warn"
+                  : "workspace-data-card"
+              }
+            >
+              <p>Allowance or charge</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.profileSignal.allowanceChargeDetected
+                )}
+              </strong>
+              <span>Useful for interpreting payable total differences.</span>
+            </div>
+
+            <div className="workspace-data-card is-wide">
+              <p>Profile hints</p>
+              <strong>
+                {formatListValue(analysis.extractedData.profileSignal.profileHints)}
+              </strong>
+              <span>
+                These are readiness simulation hints only. They do not certify legal,
+                tax, EN 16931, ViDA, Peppol, government, or authority compliance.
+              </span>
             </div>
           </div>
         </section>
@@ -1642,9 +2097,10 @@ DELETE /api/local/xml/uploads/:id`}</pre>
             <span />
             <p>
               Invoice Lantern checks XML structure, key invoice fields, extracted
-              parties, line counts, monetary totals, tax signals, and selected
-              readiness indicators. It does not provide official XML, Peppol, EN
-              16931, ViDA, legal, tax, accounting, government, or authority approval.
+              parties, line counts, monetary totals, tax signals, profile signals,
+              and selected readiness indicators. It does not provide official XML,
+              Peppol, EN 16931, ViDA, legal, tax, accounting, government, or
+              authority approval.
             </p>
           </div>
 
