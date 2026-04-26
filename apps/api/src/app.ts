@@ -53,21 +53,23 @@ export async function buildApp() {
   });
 
   app.setErrorHandler((error, request, reply) => {
-    request.log.error(error);
+    request.log.error({ error }, "Unhandled API error");
 
     if (error instanceof HttpError) {
       return sendHttpError(reply, error);
     }
 
+    const errorMessage =
+      error instanceof Error ? error.message : "Unexpected server error.";
+
     return reply.status(500).send({
       error: {
         code: "INTERNAL_SERVER_ERROR",
         message: "Unexpected server error.",
-        details: env.APP_ENV === "development" ? error.message : null
+        details: env.APP_ENV === "development" ? errorMessage : null
       }
     });
   });
 
   return app;
 }
-

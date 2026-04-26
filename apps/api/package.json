@@ -1,5 +1,5 @@
 {
-  "name": "@Invoice Lantern/api",
+  "name": "invoice-lantern-api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
