@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { InvoiceEditorDraftPayload } from "../schemas/invoice.js";
-import { readJsonCollection, writeJsonCollection } from "../storage/json-store.js";
+import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
 export type InvoiceDraftRecord = InvoiceEditorDraftPayload & {
   id: string;
@@ -22,6 +22,7 @@ export type InvoiceDraftSummary = {
 
 const INVOICE_DRAFTS_FILE = "invoice-drafts.json";
 const MAX_STORED_INVOICE_DRAFTS = 250;
+const storageProvider = getCollectionStorageProvider();
 
 export function buildDraftSummary(
   draft: InvoiceDraftRecord
@@ -40,7 +41,7 @@ export function buildDraftSummary(
 }
 
 export async function listInvoiceDrafts() {
-  return readJsonCollection<InvoiceDraftRecord>(INVOICE_DRAFTS_FILE);
+  return storageProvider.readCollection<InvoiceDraftRecord>(INVOICE_DRAFTS_FILE);
 }
 
 export async function listInvoiceDraftSummaries() {
@@ -69,7 +70,7 @@ export async function createInvoiceDraft(
     MAX_STORED_INVOICE_DRAFTS
   );
 
-  await writeJsonCollection(INVOICE_DRAFTS_FILE, nextDrafts);
+  await storageProvider.writeCollection(INVOICE_DRAFTS_FILE, nextDrafts);
 
   return nextDraft;
 }
@@ -88,7 +89,7 @@ export async function deleteInvoiceDraftById(id: string) {
     return false;
   }
 
-  await writeJsonCollection(INVOICE_DRAFTS_FILE, nextDrafts);
+  await storageProvider.writeCollection(INVOICE_DRAFTS_FILE, nextDrafts);
 
   return true;
 }

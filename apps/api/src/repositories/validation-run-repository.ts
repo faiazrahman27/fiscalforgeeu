@@ -1,5 +1,5 @@
 import type { InvoiceValidationRequest } from "../schemas/invoice.js";
-import { readJsonCollection, writeJsonCollection } from "../storage/json-store.js";
+import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
 export type FindingSeverity = "info" | "warning" | "fatal";
 
@@ -39,6 +39,7 @@ export type ValidationRunRecord = {
 
 const VALIDATION_RUNS_FILE = "validation-runs.json";
 const MAX_STORED_VALIDATION_RUNS = 250;
+const storageProvider = getCollectionStorageProvider();
 
 export function calculateValidationTotals(
   payload: InvoiceValidationRequest
@@ -108,7 +109,7 @@ export function buildValidationFindings(
 }
 
 export async function listValidationRuns() {
-  return readJsonCollection<ValidationRunRecord>(VALIDATION_RUNS_FILE);
+  return storageProvider.readCollection<ValidationRunRecord>(VALIDATION_RUNS_FILE);
 }
 
 export async function getValidationRunById(id: string) {
@@ -125,7 +126,7 @@ export async function saveValidationRun(record: ValidationRunRecord) {
     ...currentRuns.filter((existingRun) => existingRun.id !== record.id)
   ].slice(0, MAX_STORED_VALIDATION_RUNS);
 
-  await writeJsonCollection(VALIDATION_RUNS_FILE, nextRuns);
+  await storageProvider.writeCollection(VALIDATION_RUNS_FILE, nextRuns);
 
   return record;
 }
