@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
+  Calculator,
   Database,
   FileCode2,
   FileInput,
@@ -27,6 +28,40 @@ type XmlReadinessFinding = {
   confidence: "technical" | "readiness_simulation" | "review_required";
 };
 
+type XmlExtractedData = {
+  sellerName: string;
+  buyerName: string;
+  lineCount: number;
+  invoiceLineCount: number;
+  creditNoteLineCount: number;
+  currency: string;
+  monetaryTotals: {
+    lineExtensionAmount: string;
+    taxExclusiveAmount: string;
+    taxAmount: string;
+    taxInclusiveAmount: string;
+    payableAmount: string;
+  };
+  taxSignal: {
+    taxTotalDetected: boolean;
+    taxSubtotalDetected: boolean;
+    taxCategoryDetected: boolean;
+    taxRateCount: number;
+  };
+};
+
+type XmlUploadSummary = {
+  technicalStatus: "passed" | "failed";
+  readinessStatus: "ready_for_review" | "needs_attention" | "unsupported";
+  findingsCount: number;
+  sellerName: string;
+  buyerName: string;
+  lineCount: number;
+  payableAmount: string;
+  taxAmount: string;
+  currency: string;
+};
+
 type XmlUploadRecord = {
   id: string;
   fileName: string;
@@ -37,6 +72,7 @@ type XmlUploadRecord = {
   invoiceId: string;
   status: UploadStatus;
   note: string;
+  summary?: XmlUploadSummary;
 };
 
 type XmlAnalysis = {
@@ -55,6 +91,7 @@ type XmlAnalysis = {
   documentStatus: string;
   calculationStatus: string;
   profileStatus: string;
+  extractedData: XmlExtractedData;
   findings: XmlReadinessFinding[];
   status: UploadStatus;
   note: string;
@@ -75,6 +112,7 @@ type ApiXmlUploadRecord = {
   status: string;
   note: string;
   disclaimer?: string;
+  summary?: XmlUploadSummary;
 };
 
 type ApiXmlUploadListResponse = {
@@ -94,12 +132,35 @@ type ApiXmlInspectResponse = {
   documentStatus?: string;
   calculationStatus?: string;
   profileStatus?: string;
+  extractedData?: XmlExtractedData;
   findings?: XmlReadinessFinding[];
   disclaimer: string;
   record?: ApiXmlUploadRecord;
 };
 
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
+
+const emptyExtractedData: XmlExtractedData = {
+  sellerName: "not_detected",
+  buyerName: "not_detected",
+  lineCount: 0,
+  invoiceLineCount: 0,
+  creditNoteLineCount: 0,
+  currency: "not_detected",
+  monetaryTotals: {
+    lineExtensionAmount: "not_detected",
+    taxExclusiveAmount: "not_detected",
+    taxAmount: "not_detected",
+    taxInclusiveAmount: "not_detected",
+    payableAmount: "not_detected"
+  },
+  taxSignal: {
+    taxTotalDetected: false,
+    taxSubtotalDetected: false,
+    taxCategoryDetected: false,
+    taxRateCount: 0
+  }
+};
 
 function formatDateTime(date: Date) {
   return date
@@ -139,6 +200,22 @@ function formatStatus(value: string) {
   return value.replaceAll("_", " ");
 }
 
+function formatDetectedValue(value: string) {
+  return value === "not_detected" ? "Not detected" : value;
+}
+
+function formatMoneyValue(currency: string, value: string) {
+  if (!value || value === "not_detected") {
+    return "Not detected";
+  }
+
+  if (!currency || currency === "not_detected") {
+    return value;
+  }
+
+  return `${currency} ${value}`;
+}
+
 function isUploadStatus(value: unknown): value is UploadStatus {
   return value === "accepted" || value === "rejected";
 }
@@ -161,11 +238,50 @@ function readStringField(
   return fallback;
 }
 
+function readNumberField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: number
+) {
+  const value = record[key];
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  return fallback;
+}
+
 function buildFallbackUploadId(record: Record<string, unknown>) {
   const fileName = readStringField(record, "fileName", "unknown.xml");
   const uploadedAt = readStringField(record, "uploadedAt", "unknown-time");
 
   return `${fileName}-${uploadedAt}`.replaceAll(/\s+/g, "-").toLowerCase();
+}
+
+function normalizeUploadSummary(value: unknown): XmlUploadSummary | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    technicalStatus: record.technicalStatus === "passed" ? "passed" : "failed",
+    readinessStatus:
+      record.readinessStatus === "ready_for_review" ||
+      record.readinessStatus === "needs_attention" ||
+      record.readinessStatus === "unsupported"
+        ? record.readinessStatus
+        : "needs_attention",
+    findingsCount: readNumberField(record, "findingsCount", 0),
+    sellerName: readStringField(record, "sellerName", "not_detected"),
+    buyerName: readStringField(record, "buyerName", "not_detected"),
+    lineCount: readNumberField(record, "lineCount", 0),
+    payableAmount: readStringField(record, "payableAmount", "not_detected"),
+    taxAmount: readStringField(record, "taxAmount", "not_detected"),
+    currency: readStringField(record, "currency", "not_detected")
+  };
 }
 
 function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
@@ -189,7 +305,8 @@ function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
     rootElement: readStringField(record, "rootElement", "unknown"),
     invoiceId: readStringField(record, "invoiceId", "not_detected"),
     status: isUploadStatus(record.status) ? record.status : "rejected",
-    note: readStringField(record, "note", "Stored API XML upload record.")
+    note: readStringField(record, "note", "Stored API XML upload record."),
+    summary: normalizeUploadSummary(record.summary)
   };
 }
 
@@ -199,7 +316,6 @@ function normalizeFinding(value: unknown): XmlReadinessFinding | null {
   }
 
   const record = value as Record<string, unknown>;
-
   const code = readStringField(record, "code", "");
 
   if (!code) {
@@ -238,6 +354,65 @@ function normalizeFindings(value: unknown): XmlReadinessFinding[] {
   return value
     .map((item) => normalizeFinding(item))
     .filter((item): item is XmlReadinessFinding => item !== null);
+}
+
+function normalizeExtractedData(value: unknown): XmlExtractedData {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return emptyExtractedData;
+  }
+
+  const record = value as Record<string, unknown>;
+  const monetaryTotals =
+    record.monetaryTotals &&
+    typeof record.monetaryTotals === "object" &&
+    !Array.isArray(record.monetaryTotals)
+      ? (record.monetaryTotals as Record<string, unknown>)
+      : {};
+
+  const taxSignal =
+    record.taxSignal &&
+    typeof record.taxSignal === "object" &&
+    !Array.isArray(record.taxSignal)
+      ? (record.taxSignal as Record<string, unknown>)
+      : {};
+
+  return {
+    sellerName: readStringField(record, "sellerName", "not_detected"),
+    buyerName: readStringField(record, "buyerName", "not_detected"),
+    lineCount: readNumberField(record, "lineCount", 0),
+    invoiceLineCount: readNumberField(record, "invoiceLineCount", 0),
+    creditNoteLineCount: readNumberField(record, "creditNoteLineCount", 0),
+    currency: readStringField(record, "currency", "not_detected"),
+    monetaryTotals: {
+      lineExtensionAmount: readStringField(
+        monetaryTotals,
+        "lineExtensionAmount",
+        "not_detected"
+      ),
+      taxExclusiveAmount: readStringField(
+        monetaryTotals,
+        "taxExclusiveAmount",
+        "not_detected"
+      ),
+      taxAmount: readStringField(monetaryTotals, "taxAmount", "not_detected"),
+      taxInclusiveAmount: readStringField(
+        monetaryTotals,
+        "taxInclusiveAmount",
+        "not_detected"
+      ),
+      payableAmount: readStringField(
+        monetaryTotals,
+        "payableAmount",
+        "not_detected"
+      )
+    },
+    taxSignal: {
+      taxTotalDetected: taxSignal.taxTotalDetected === true,
+      taxSubtotalDetected: taxSignal.taxSubtotalDetected === true,
+      taxCategoryDetected: taxSignal.taxCategoryDetected === true,
+      taxRateCount: readNumberField(taxSignal, "taxRateCount", 0)
+    }
+  };
 }
 
 function normalizeUploadStatus(apiStatus: string): UploadStatus {
@@ -382,6 +557,7 @@ export default function WorkspaceXmlUploadPage() {
     const uploadedAt = formatDateTime(new Date());
     const status = normalizeUploadStatus(apiData.status);
     const findings = normalizeFindings(apiData.findings);
+    const extractedData = normalizeExtractedData(apiData.extractedData);
 
     const nextAnalysis: XmlAnalysis = {
       id: apiData.record?.id ?? apiData.uploadInspectionId,
@@ -401,6 +577,7 @@ export default function WorkspaceXmlUploadPage() {
       documentStatus: apiData.documentStatus ?? "unsupported",
       calculationStatus: apiData.calculationStatus ?? "not_checked",
       profileStatus: apiData.profileStatus ?? "unknown_profile",
+      extractedData,
       findings,
       status,
       note: apiData.disclaimer,
@@ -538,8 +715,9 @@ export default function WorkspaceXmlUploadPage() {
         <h2>Run an e-invoice readiness simulation from XML.</h2>
         <p>
           Upload a local XML file to inspect document structure, key invoice
-          fields, readiness status, and review findings. Invoice Lantern gives a
-          technical simulation before official submission or professional review.
+          fields, totals, tax signals, readiness status, and review findings.
+          Invoice Lantern gives a technical simulation before official submission
+          or professional review.
         </p>
       </section>
 
@@ -593,9 +771,10 @@ export default function WorkspaceXmlUploadPage() {
 1. select .xml file
 2. browser checks file extension and size
 3. Next.js route handler forwards XML and file metadata to apps/api
-4. apps/api inspects root element, document fields, totals surface, and readiness signals
-5. apps/api stores the inspection record through the repository/storage boundary
-6. workspace displays the readiness report and API-owned upload history
+4. apps/api extracts invoice fields, party names, line counts, totals, and tax signals
+5. apps/api runs surface-level readiness and consistency checks
+6. apps/api stores the inspection summary through the repository/storage boundary
+7. workspace displays the readiness report and API-owned upload history
 
 Backend endpoints:
 POST   /api/v1/xml/inspect
@@ -682,18 +861,18 @@ DELETE /api/local/xml/uploads/:id`}</pre>
             <div className="workspace-table-row">
               <div>
                 <strong>Invoice ID</strong>
-                <span>{analysis.invoiceId}</span>
+                <span>{formatDetectedValue(analysis.invoiceId)}</span>
               </div>
 
               <div>
-                <span>{analysis.issueDate}</span>
+                <span>{formatDetectedValue(analysis.issueDate)}</span>
               </div>
 
               <div>
                 <span>{analysis.fileSize}</span>
               </div>
 
-              <strong>{analysis.currency}</strong>
+              <strong>{formatDetectedValue(analysis.currency)}</strong>
 
               <Database size={17} />
             </div>
@@ -715,6 +894,132 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               <strong>simulation</strong>
 
               <FileSearch size={17} />
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {analysis ? (
+        <section className="workspace-table-shell">
+          <div className="workspace-table-head">
+            <div>
+              <p>Extracted invoice data</p>
+              <h3>Parties, lines, totals, and tax signals</h3>
+            </div>
+
+            <div className="confidence-label">
+              <Calculator size={17} />
+              surface extraction
+            </div>
+          </div>
+
+          <div className="workspace-table">
+            <div className="workspace-table-row">
+              <div>
+                <strong>Seller</strong>
+                <span>{formatDetectedValue(analysis.extractedData.sellerName)}</span>
+              </div>
+
+              <div>
+                <span>Buyer</span>
+              </div>
+
+              <div>
+                <span>{formatDetectedValue(analysis.extractedData.buyerName)}</span>
+              </div>
+
+              <strong>{formatDetectedValue(analysis.extractedData.currency)}</strong>
+
+              <Database size={17} />
+            </div>
+
+            <div className="workspace-table-row">
+              <div>
+                <strong>Line blocks</strong>
+                <span>
+                  Invoice lines: {analysis.extractedData.invoiceLineCount}. Credit
+                  note lines: {analysis.extractedData.creditNoteLineCount}.
+                </span>
+              </div>
+
+              <div>
+                <span>Total lines</span>
+              </div>
+
+              <div>
+                <span>{analysis.extractedData.lineCount}</span>
+              </div>
+
+              <strong>{analysis.detectedDocument}</strong>
+
+              <FileCode2 size={17} />
+            </div>
+
+            <div className="workspace-table-row">
+              <div>
+                <strong>Payable amount</strong>
+                <span>
+                  {formatMoneyValue(
+                    analysis.extractedData.currency,
+                    analysis.extractedData.monetaryTotals.payableAmount
+                  )}
+                </span>
+              </div>
+
+              <div>
+                <span>Tax amount</span>
+              </div>
+
+              <div>
+                <span>
+                  {formatMoneyValue(
+                    analysis.extractedData.currency,
+                    analysis.extractedData.monetaryTotals.taxAmount
+                  )}
+                </span>
+              </div>
+
+              <strong>
+                {formatMoneyValue(
+                  analysis.extractedData.currency,
+                  analysis.extractedData.monetaryTotals.taxInclusiveAmount
+                )}
+              </strong>
+
+              <Calculator size={17} />
+            </div>
+
+            <div className="workspace-table-row">
+              <div>
+                <strong>Tax signal</strong>
+                <span>
+                  Tax total:{" "}
+                  {analysis.extractedData.taxSignal.taxTotalDetected
+                    ? "detected"
+                    : "not detected"}
+                  . Tax category:{" "}
+                  {analysis.extractedData.taxSignal.taxCategoryDetected
+                    ? "detected"
+                    : "not detected"}
+                  .
+                </span>
+              </div>
+
+              <div>
+                <span>Tax rates</span>
+              </div>
+
+              <div>
+                <span>{analysis.extractedData.taxSignal.taxRateCount}</span>
+              </div>
+
+              <strong>
+                {analysis.extractedData.taxSignal.taxSubtotalDetected
+                  ? "subtotal detected"
+                  : "subtotal missing"}
+              </strong>
+
+              <ShieldAlert size={17} />
             </div>
           </div>
         </section>
@@ -858,6 +1163,14 @@ DELETE /api/local/xml/uploads/:id`}</pre>
                 <div>
                   <strong>{upload.fileName}</strong>
                   <span>{upload.note}</span>
+                  {upload.summary ? (
+                    <span>
+                      {formatDetectedValue(upload.summary.sellerName)} to{" "}
+                      {formatDetectedValue(upload.summary.buyerName)}. Lines:{" "}
+                      {upload.summary.lineCount}. Findings:{" "}
+                      {upload.summary.findingsCount}.
+                    </span>
+                  ) : null}
 
                   <button
                     type="button"
@@ -880,14 +1193,25 @@ DELETE /api/local/xml/uploads/:id`}</pre>
                 </div>
 
                 <div>
-                  <span className="status-pill">{upload.status}</span>
+                  <span className="status-pill">
+                    {upload.summary
+                      ? formatStatus(upload.summary.readinessStatus)
+                      : upload.status}
+                  </span>
                 </div>
 
                 <div>
                   <span>{upload.detectedDocument}</span>
                 </div>
 
-                <strong>{upload.fileSize}</strong>
+                <strong>
+                  {upload.summary
+                    ? formatMoneyValue(
+                        upload.summary.currency,
+                        upload.summary.payableAmount
+                      )
+                    : upload.fileSize}
+                </strong>
 
                 <FileCode2 size={17} />
               </div>
@@ -910,9 +1234,10 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           <div className="alert-item">
             <span />
             <p>
-              Invoice Lantern checks XML structure, key invoice fields, and selected
-              readiness signals. It does not provide official XML, Peppol, EN 16931,
-              ViDA, legal, tax, accounting, government, or authority approval.
+              Invoice Lantern checks XML structure, key invoice fields, extracted
+              parties, line counts, monetary totals, tax signals, and selected
+              readiness indicators. It does not provide official XML, Peppol, EN
+              16931, ViDA, legal, tax, accounting, government, or authority approval.
             </p>
           </div>
 

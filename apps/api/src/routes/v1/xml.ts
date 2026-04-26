@@ -6,7 +6,8 @@ import {
   createXmlUploadRecord,
   deleteXmlUploadRecordById,
   listXmlUploadRecords,
-  type XmlApiInspectionStatus
+  type XmlApiInspectionStatus,
+  type XmlUploadSummary
 } from "../../repositories/xml-upload-repository.js";
 
 type XmlFindingSeverity = "info" | "warning" | "fatal";
@@ -19,12 +20,35 @@ type XmlReadinessFinding = {
   confidence: "technical" | "readiness_simulation" | "review_required";
 };
 
+type XmlExtractedData = {
+  sellerName: string;
+  buyerName: string;
+  lineCount: number;
+  invoiceLineCount: number;
+  creditNoteLineCount: number;
+  currency: string;
+  monetaryTotals: {
+    lineExtensionAmount: string;
+    taxExclusiveAmount: string;
+    taxAmount: string;
+    taxInclusiveAmount: string;
+    payableAmount: string;
+  };
+  taxSignal: {
+    taxTotalDetected: boolean;
+    taxSubtotalDetected: boolean;
+    taxCategoryDetected: boolean;
+    taxRateCount: number;
+  };
+};
+
 type XmlReadinessReport = {
   technicalStatus: "passed" | "failed";
   readinessStatus: "ready_for_review" | "needs_attention" | "unsupported";
   documentStatus: "recognized" | "unsupported";
-  calculationStatus: "not_checked" | "surface_checked";
+  calculationStatus: "not_checked" | "surface_checked" | "inconsistent";
   profileStatus: "ubl_surface_check" | "unknown_profile";
+  extractedData: XmlExtractedData;
   findings: XmlReadinessFinding[];
 };
 
@@ -73,8 +97,21 @@ function buildNamespacedTagPattern(tagName: string) {
   );
 }
 
+function buildNamespacedTagGlobalPattern(tagName: string) {
+  const escapedTag = escapeRegex(tagName);
+
+  return new RegExp(
+    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedTag}>`,
+    "gi"
+  );
+}
+
 function hasTag(xml: string, tagName: string) {
   return buildNamespacedTagPattern(tagName).test(xml);
+}
+
+function countTags(xml: string, tagName: string) {
+  return xml.match(buildNamespacedTagGlobalPattern(tagName))?.length ?? 0;
 }
 
 function extractFirstTagValue(xml: string, tagName: string) {
@@ -88,6 +125,111 @@ function extractFirstTagValue(xml: string, tagName: string) {
   const match = xml.match(namespacedPattern);
 
   return match?.[1]?.trim().slice(0, 180) || "not_detected";
+}
+
+function extractFirstBlock(xml: string, blockTag: string) {
+  const escapedTag = escapeRegex(blockTag);
+
+  const blockPattern = new RegExp(
+    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedTag}>`,
+    "i"
+  );
+
+  return xml.match(blockPattern)?.[0] ?? "";
+}
+
+function extractFirstTagValueInsideBlock(
+  xml: string,
+  blockTag: string,
+  tagName: string
+) {
+  const block = extractFirstBlock(xml, blockTag);
+
+  if (!block) {
+    return "not_detected";
+  }
+
+  return extractFirstTagValue(block, tagName);
+}
+
+function extractPartyName(xml: string, partyBlockTag: string) {
+  const partyBlock = extractFirstBlock(xml, partyBlockTag);
+
+  if (!partyBlock) {
+    return "not_detected";
+  }
+
+  const partyNameBlock = extractFirstBlock(partyBlock, "PartyName");
+
+  if (partyNameBlock) {
+    const nameFromPartyName = extractFirstTagValue(partyNameBlock, "Name");
+
+    if (nameFromPartyName !== "not_detected") {
+      return nameFromPartyName;
+    }
+  }
+
+  const partyLegalEntityBlock = extractFirstBlock(partyBlock, "PartyLegalEntity");
+
+  if (partyLegalEntityBlock) {
+    const registrationName = extractFirstTagValue(
+      partyLegalEntityBlock,
+      "RegistrationName"
+    );
+
+    if (registrationName !== "not_detected") {
+      return registrationName;
+    }
+  }
+
+  return extractFirstTagValue(partyBlock, "Name");
+}
+
+function extractMonetaryTotal(xml: string, tagName: string) {
+  const valueInsideLegalTotal = extractFirstTagValueInsideBlock(
+    xml,
+    "LegalMonetaryTotal",
+    tagName
+  );
+
+  if (valueInsideLegalTotal !== "not_detected") {
+    return valueInsideLegalTotal;
+  }
+
+  return extractFirstTagValue(xml, tagName);
+}
+
+function extractTaxAmount(xml: string) {
+  const taxTotalBlock = extractFirstBlock(xml, "TaxTotal");
+
+  if (!taxTotalBlock) {
+    return "not_detected";
+  }
+
+  return extractFirstTagValue(taxTotalBlock, "TaxAmount");
+}
+
+function parseMoney(value: string) {
+  if (value === "not_detected") {
+    return null;
+  }
+
+  const normalized = value
+    .replace(/\s/g, "")
+    .replace(",", ".")
+    .replace(/[^\d.-]/g, "");
+
+  if (!normalized || normalized === "." || normalized === "-" || normalized === "-.") {
+    return null;
+  }
+
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function valuesApproximatelyEqual(first: number, second: number) {
+  return Math.abs(first - second) <= 0.02;
 }
 
 function readHeaderString(value: string | string[] | undefined) {
@@ -159,6 +301,161 @@ function pushMissingTagFinding(
   });
 }
 
+function pushExtractedInfoFinding(
+  findings: XmlReadinessFinding[],
+  code: string,
+  field: string,
+  message: string
+) {
+  findings.push({
+    code,
+    severity: "info",
+    field,
+    message,
+    confidence: "technical"
+  });
+}
+
+function buildExtractedData(xml: string, currency: string): XmlExtractedData {
+  const invoiceLineCount = countTags(xml, "InvoiceLine");
+  const creditNoteLineCount = countTags(xml, "CreditNoteLine");
+  const lineCount = invoiceLineCount + creditNoteLineCount;
+
+  return {
+    sellerName: extractPartyName(xml, "AccountingSupplierParty"),
+    buyerName: extractPartyName(xml, "AccountingCustomerParty"),
+    lineCount,
+    invoiceLineCount,
+    creditNoteLineCount,
+    currency,
+    monetaryTotals: {
+      lineExtensionAmount: extractMonetaryTotal(xml, "LineExtensionAmount"),
+      taxExclusiveAmount: extractMonetaryTotal(xml, "TaxExclusiveAmount"),
+      taxAmount: extractTaxAmount(xml),
+      taxInclusiveAmount: extractMonetaryTotal(xml, "TaxInclusiveAmount"),
+      payableAmount: extractMonetaryTotal(xml, "PayableAmount")
+    },
+    taxSignal: {
+      taxTotalDetected: hasTag(xml, "TaxTotal"),
+      taxSubtotalDetected: hasTag(xml, "TaxSubtotal"),
+      taxCategoryDetected: hasTag(xml, "TaxCategory"),
+      taxRateCount: countTags(xml, "Percent")
+    }
+  };
+}
+
+function addExtractedDataFindings(
+  findings: XmlReadinessFinding[],
+  extractedData: XmlExtractedData
+) {
+  if (extractedData.sellerName !== "not_detected") {
+    pushExtractedInfoFinding(
+      findings,
+      "SELLER_NAME_DETECTED",
+      "AccountingSupplierParty",
+      `Detected seller name: ${extractedData.sellerName}.`
+    );
+  }
+
+  if (extractedData.buyerName !== "not_detected") {
+    pushExtractedInfoFinding(
+      findings,
+      "BUYER_NAME_DETECTED",
+      "AccountingCustomerParty",
+      `Detected buyer name: ${extractedData.buyerName}.`
+    );
+  }
+
+  if (extractedData.lineCount > 0) {
+    pushExtractedInfoFinding(
+      findings,
+      "DOCUMENT_LINES_DETECTED",
+      "InvoiceLine",
+      `Detected ${extractedData.lineCount} invoice/credit note line block(s).`
+    );
+  }
+
+  const payableAmount = extractedData.monetaryTotals.payableAmount;
+
+  if (payableAmount !== "not_detected") {
+    pushExtractedInfoFinding(
+      findings,
+      "PAYABLE_AMOUNT_DETECTED",
+      "LegalMonetaryTotal.PayableAmount",
+      `Detected payable amount: ${payableAmount}.`
+    );
+  }
+}
+
+function addCalculationFindings(
+  findings: XmlReadinessFinding[],
+  extractedData: XmlExtractedData
+) {
+  const taxExclusiveAmount = parseMoney(
+    extractedData.monetaryTotals.taxExclusiveAmount
+  );
+  const taxAmount = parseMoney(extractedData.monetaryTotals.taxAmount);
+  const taxInclusiveAmount = parseMoney(
+    extractedData.monetaryTotals.taxInclusiveAmount
+  );
+  const payableAmount = parseMoney(extractedData.monetaryTotals.payableAmount);
+
+  if (
+    taxExclusiveAmount === null ||
+    taxAmount === null ||
+    taxInclusiveAmount === null
+  ) {
+    findings.push({
+      code: "TOTAL_CONSISTENCY_NOT_CHECKED",
+      severity: "info",
+      field: "LegalMonetaryTotal",
+      message:
+        "Tax-exclusive amount, tax amount, or tax-inclusive amount was not fully detected, so arithmetic consistency was not checked.",
+      confidence: "readiness_simulation"
+    });
+
+    return;
+  }
+
+  const expectedTaxInclusiveAmount = taxExclusiveAmount + taxAmount;
+
+  if (!valuesApproximatelyEqual(expectedTaxInclusiveAmount, taxInclusiveAmount)) {
+    findings.push({
+      code: "TAX_INCLUSIVE_TOTAL_MISMATCH",
+      severity: "warning",
+      field: "LegalMonetaryTotal.TaxInclusiveAmount",
+      message:
+        "Tax-inclusive amount does not match tax-exclusive amount plus tax amount in this surface-level check.",
+      confidence: "readiness_simulation"
+    });
+
+    return;
+  }
+
+  findings.push({
+    code: "TAX_INCLUSIVE_TOTAL_CONSISTENT",
+    severity: "info",
+    field: "LegalMonetaryTotal.TaxInclusiveAmount",
+    message:
+      "Tax-inclusive amount matches tax-exclusive amount plus tax amount in this surface-level check.",
+    confidence: "readiness_simulation"
+  });
+
+  if (
+    payableAmount !== null &&
+    !valuesApproximatelyEqual(payableAmount, taxInclusiveAmount)
+  ) {
+    findings.push({
+      code: "PAYABLE_AMOUNT_REVIEW_REQUIRED",
+      severity: "warning",
+      field: "LegalMonetaryTotal.PayableAmount",
+      message:
+        "Payable amount differs from tax-inclusive amount. This can be valid with allowances, charges, prepaid amounts, or rounding, but requires review.",
+      confidence: "review_required"
+    });
+  }
+}
+
 function buildReadinessReport({
   xml,
   detectedDocument,
@@ -175,6 +472,7 @@ function buildReadinessReport({
   currency: string;
 }): XmlReadinessReport {
   const findings: XmlReadinessFinding[] = [];
+  const extractedData = buildExtractedData(xml, currency);
 
   if (hasParseRisk(xml)) {
     findings.push({
@@ -274,7 +572,7 @@ function buildReadinessReport({
     "warning"
   );
 
-  if (!hasTag(xml, "InvoiceLine") && !hasTag(xml, "CreditNoteLine")) {
+  if (extractedData.lineCount === 0) {
     findings.push({
       code: "DOCUMENT_LINE_MISSING",
       severity: "warning",
@@ -322,8 +620,43 @@ function buildReadinessReport({
     );
   }
 
+  if (!extractedData.taxSignal.taxTotalDetected) {
+    findings.push({
+      code: "TAX_SIGNAL_MISSING",
+      severity: "warning",
+      field: "TaxTotal",
+      message: "Tax total information was not detected.",
+      confidence: "readiness_simulation"
+    });
+  }
+
+  if (
+    extractedData.taxSignal.taxTotalDetected &&
+    !extractedData.taxSignal.taxCategoryDetected
+  ) {
+    findings.push({
+      code: "TAX_CATEGORY_REVIEW_REQUIRED",
+      severity: "warning",
+      field: "TaxCategory",
+      message:
+        "Tax total was detected, but tax category information was not clearly detected.",
+      confidence: "review_required"
+    });
+  }
+
+  addExtractedDataFindings(findings, extractedData);
+  addCalculationFindings(findings, extractedData);
+
   const hasFatal = findings.some((finding) => finding.severity === "fatal");
   const hasWarning = findings.some((finding) => finding.severity === "warning");
+
+  const calculationStatus =
+    hasTag(xml, "LegalMonetaryTotal") &&
+    findings.some((finding) => finding.code === "TAX_INCLUSIVE_TOTAL_MISMATCH")
+      ? "inconsistent"
+      : hasTag(xml, "LegalMonetaryTotal")
+        ? "surface_checked"
+        : "not_checked";
 
   return {
     technicalStatus: hasFatal ? "failed" : "passed",
@@ -334,12 +667,27 @@ function buildReadinessReport({
           ? "needs_attention"
           : "ready_for_review",
     documentStatus: detectedDocument === "unknown" ? "unsupported" : "recognized",
-    calculationStatus: hasTag(xml, "LegalMonetaryTotal")
-      ? "surface_checked"
-      : "not_checked",
+    calculationStatus,
     profileStatus:
       detectedDocument === "unknown" ? "unknown_profile" : "ubl_surface_check",
+    extractedData,
     findings
+  };
+}
+
+function buildUploadSummary(
+  readinessReport: XmlReadinessReport
+): XmlUploadSummary {
+  return {
+    technicalStatus: readinessReport.technicalStatus,
+    readinessStatus: readinessReport.readinessStatus,
+    findingsCount: readinessReport.findings.length,
+    sellerName: readinessReport.extractedData.sellerName,
+    buyerName: readinessReport.extractedData.buyerName,
+    lineCount: readinessReport.extractedData.lineCount,
+    payableAmount: readinessReport.extractedData.monetaryTotals.payableAmount,
+    taxAmount: readinessReport.extractedData.monetaryTotals.taxAmount,
+    currency: readinessReport.extractedData.currency
   };
 }
 
@@ -473,7 +821,8 @@ export async function xmlRoutes(app: FastifyInstance) {
         issueDate,
         currency,
         apiStatus,
-        disclaimer
+        disclaimer,
+        summary: buildUploadSummary(readinessReport)
       });
 
       return reply.status(200).send({
@@ -489,6 +838,7 @@ export async function xmlRoutes(app: FastifyInstance) {
         documentStatus: readinessReport.documentStatus,
         calculationStatus: readinessReport.calculationStatus,
         profileStatus: readinessReport.profileStatus,
+        extractedData: readinessReport.extractedData,
         findings: readinessReport.findings,
         disclaimer: record.disclaimer,
         record

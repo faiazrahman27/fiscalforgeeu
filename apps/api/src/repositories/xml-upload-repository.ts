@@ -5,6 +5,18 @@ export type XmlUploadStatus = "accepted" | "rejected";
 
 export type XmlApiInspectionStatus = "parsed" | "review_required";
 
+export type XmlUploadSummary = {
+  technicalStatus: "passed" | "failed";
+  readinessStatus: "ready_for_review" | "needs_attention" | "unsupported";
+  findingsCount: number;
+  sellerName: string;
+  buyerName: string;
+  lineCount: number;
+  payableAmount: string;
+  taxAmount: string;
+  currency: string;
+};
+
 export type XmlUploadRecord = {
   id: string;
   fileName: string;
@@ -19,6 +31,7 @@ export type XmlUploadRecord = {
   status: XmlUploadStatus;
   note: string;
   disclaimer: string;
+  summary?: XmlUploadSummary;
 };
 
 export type CreateXmlUploadRecordInput = {
@@ -31,6 +44,7 @@ export type CreateXmlUploadRecordInput = {
   currency: string;
   apiStatus: XmlApiInspectionStatus;
   disclaimer: string;
+  summary: XmlUploadSummary;
 };
 
 const XML_UPLOADS_FILE = "xml-uploads.json";
@@ -49,12 +63,16 @@ function mapApiStatusToUploadStatus(
   return apiStatus === "parsed" ? "accepted" : "rejected";
 }
 
-function buildUploadNote(apiStatus: XmlApiInspectionStatus) {
-  if (apiStatus === "parsed") {
-    return "Inspected through the API XML inspection endpoint.";
+function buildUploadNote(input: CreateXmlUploadRecordInput) {
+  if (input.apiStatus !== "parsed") {
+    return "XML structure requires review or uses an unsupported document root.";
   }
 
-  return "XML structure requires review or uses an unsupported document root.";
+  if (input.summary.readinessStatus === "ready_for_review") {
+    return "Readiness simulation completed without blocking findings.";
+  }
+
+  return `Readiness simulation completed with ${input.summary.findingsCount} finding(s).`;
 }
 
 export async function listXmlUploadRecords() {
@@ -79,8 +97,9 @@ export async function createXmlUploadRecord(
     currency: input.currency,
     apiStatus: input.apiStatus,
     status: mapApiStatusToUploadStatus(input.apiStatus),
-    note: buildUploadNote(input.apiStatus),
-    disclaimer: input.disclaimer
+    note: buildUploadNote(input),
+    disclaimer: input.disclaimer,
+    summary: input.summary
   };
 
   const currentRecords = await listXmlUploadRecords();
