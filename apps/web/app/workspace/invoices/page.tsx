@@ -436,6 +436,7 @@ export default function WorkspaceInvoicesPage() {
                 tabIndex={0}
                 onClick={() => openInvoice(invoice)}
                 onKeyDown={(event) => handleRowKeyDown(event, invoice)}
+                style={{ cursor: "pointer" }}
               >
                 <div>
                   <strong>{invoice.number}</strong>
@@ -452,14 +453,18 @@ export default function WorkspaceInvoicesPage() {
                       style={{
                         marginTop: "10px",
                         width: "fit-content",
-                        padding: "8px 12px"
+                        padding: "8px 12px",
+                        cursor:
+                          deletingDraftId === invoice.id ? "not-allowed" : "pointer"
                       }}
                     >
                       <Trash2 size={16} />
                       {deletingDraftId === invoice.id ? "Deleting..." : "Delete draft"}
                     </button>
                   ) : (
-                    <span style={{ marginTop: "8px" }}>Demo row opens a new draft.</span>
+                    <span style={{ marginTop: "8px" }}>
+                      Demo row opens a new draft.
+                    </span>
                   )}
                 </div>
 
