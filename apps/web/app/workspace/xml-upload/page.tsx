@@ -43,6 +43,26 @@ type XmlAnalysis = {
   preview: string;
 };
 
+type ApiXmlUploadRecord = {
+  id: string;
+  fileName: string;
+  fileSize: string;
+  uploadedAt: string;
+  detectedDocument: string;
+  rootElement: string;
+  invoiceId: string;
+  issueDate?: string;
+  currency?: string;
+  apiStatus?: string;
+  status: string;
+  note: string;
+  disclaimer?: string;
+};
+
+type ApiXmlUploadListResponse = {
+  records?: ApiXmlUploadRecord[];
+};
+
 type ApiXmlInspectResponse = {
   uploadInspectionId: string;
   detectedDocument: string;
@@ -52,12 +72,10 @@ type ApiXmlInspectResponse = {
   currency: string;
   status: string;
   disclaimer: string;
+  record?: ApiXmlUploadRecord;
 };
 
-const XML_UPLOAD_STORAGE_KEY = "invoice-lantern.workspace.xmlUploads";
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
-
-const defaultUploadHistory: XmlUploadRecord[] = [];
 
 function formatDateTime(date: Date) {
   return date
@@ -71,6 +89,16 @@ function formatDateTime(date: Date) {
     .replace("T", " ");
 }
 
+function formatDateTimeFromString(value: string) {
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value;
+  }
+
+  return formatDateTime(parsedDate);
+}
+
 function formatBytes(bytes: number) {
   if (bytes < 1024) {
     return `${bytes} B`;
@@ -81,18 +109,6 @@ function formatBytes(bytes: number) {
   }
 
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-}
-
-function readFirstLocalStorageValue(keys: string[]) {
-  for (const key of keys) {
-    const value = window.localStorage.getItem(key);
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
 }
 
 function isUploadStatus(value: unknown): value is UploadStatus {
@@ -126,44 +142,23 @@ function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
   }
 
   const record = value as Record<string, unknown>;
+  const uploadedAt = readStringField(
+    record,
+    "uploadedAt",
+    new Date().toISOString()
+  );
 
   return {
     id: readStringField(record, "id", buildFallbackUploadId(record)),
     fileName: readStringField(record, "fileName", "unknown.xml"),
     fileSize: readStringField(record, "fileSize", "0 B"),
-    uploadedAt: readStringField(record, "uploadedAt", formatDateTime(new Date())),
+    uploadedAt: formatDateTimeFromString(uploadedAt),
     detectedDocument: readStringField(record, "detectedDocument", "unknown"),
     rootElement: readStringField(record, "rootElement", "unknown"),
     invoiceId: readStringField(record, "invoiceId", "not_detected"),
     status: isUploadStatus(record.status) ? record.status : "rejected",
-    note: readStringField(record, "note", "Stored local XML upload record.")
+    note: readStringField(record, "note", "Stored API XML upload record.")
   };
-}
-
-function readStoredUploads() {
-  if (typeof window === "undefined") {
-    return defaultUploadHistory;
-  }
-
-  const storedValue = readFirstLocalStorageValue([XML_UPLOAD_STORAGE_KEY]);
-
-  if (!storedValue) {
-    return defaultUploadHistory;
-  }
-
-  try {
-    const parsed = JSON.parse(storedValue);
-
-    if (!Array.isArray(parsed)) {
-      return defaultUploadHistory;
-    }
-
-    return parsed
-      .map((item) => normalizeUploadRecord(item))
-      .filter((item): item is XmlUploadRecord => item !== null);
-  } catch {
-    return defaultUploadHistory;
-  }
 }
 
 function normalizeUploadStatus(apiStatus: string): UploadStatus {
@@ -176,23 +171,27 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function getApiErrorMessage(data: unknown) {
   if (!isPlainObject(data) || !isPlainObject(data.error)) {
-    return "The XML inspection request failed.";
+    return "The XML request failed.";
   }
 
   const message = data.error.message;
 
-  return typeof message === "string"
+  return typeof message === "string" && message.trim().length > 0
     ? message
-    : "The XML inspection request failed.";
+    : "The XML request failed.";
+}
+
+function sanitizeHeaderValue(value: string) {
+  return value.replace(/[^\x20-\x7E]/g, "_").slice(0, 180);
 }
 
 export default function WorkspaceXmlUploadPage() {
-  const [uploadHistory, setUploadHistory] =
-    useState<XmlUploadRecord[]>(defaultUploadHistory);
+  const [uploadHistory, setUploadHistory] = useState<XmlUploadRecord[]>([]);
   const [analysis, setAnalysis] = useState<XmlAnalysis | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [uploadLoadMessage, setUploadLoadMessage] = useState("");
   const [isInspecting, setIsInspecting] = useState(false);
-  const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
+  const [isLoadingUploads, setIsLoadingUploads] = useState(true);
 
   const acceptedUploads = useMemo(() => {
     return uploadHistory.filter((upload) => upload.status === "accepted").length;
@@ -203,26 +202,67 @@ export default function WorkspaceXmlUploadPage() {
   }, [uploadHistory]);
 
   useEffect(() => {
-    setUploadHistory(readStoredUploads());
-    setHasLoadedStorage(true);
-  }, []);
+    let isMounted = true;
 
-  useEffect(() => {
-    if (!hasLoadedStorage) {
-      return;
+    async function loadUploadHistory() {
+      setIsLoadingUploads(true);
+      setUploadLoadMessage("");
+
+      try {
+        const response = await fetch("/api/local/xml/uploads", {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        const responseData: unknown = await response.json();
+
+        if (!response.ok) {
+          if (isMounted) {
+            setUploadHistory([]);
+            setUploadLoadMessage(getApiErrorMessage(responseData));
+          }
+
+          return;
+        }
+
+        const apiData = responseData as ApiXmlUploadListResponse;
+        const records = Array.isArray(apiData.records) ? apiData.records : [];
+
+        const normalizedRecords = records
+          .map((item) => normalizeUploadRecord(item))
+          .filter((item): item is XmlUploadRecord => item !== null);
+
+        if (isMounted) {
+          setUploadHistory(normalizedRecords);
+        }
+      } catch {
+        if (isMounted) {
+          setUploadHistory([]);
+          setUploadLoadMessage(
+            "Could not load XML upload history. Make sure apps/api and apps/web are both running."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingUploads(false);
+        }
+      }
     }
 
-    window.localStorage.setItem(
-      XML_UPLOAD_STORAGE_KEY,
-      JSON.stringify(uploadHistory)
-    );
-  }, [uploadHistory, hasLoadedStorage]);
+    loadUploadHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   async function inspectXmlWithApi(file: File, xmlText: string) {
     const response = await fetch("/api/local/xml/inspect", {
       method: "POST",
       headers: {
-        "content-type": "application/xml"
+        "content-type": "application/xml",
+        "x-file-name": sanitizeHeaderValue(file.name),
+        "x-file-size": String(file.size)
       },
       body: xmlText
     });
@@ -238,9 +278,11 @@ export default function WorkspaceXmlUploadPage() {
     const status = normalizeUploadStatus(apiData.status);
 
     const nextAnalysis: XmlAnalysis = {
-      fileName: file.name,
-      fileSize: formatBytes(file.size),
-      uploadedAt,
+      fileName: apiData.record?.fileName ?? file.name,
+      fileSize: apiData.record?.fileSize ?? formatBytes(file.size),
+      uploadedAt: apiData.record?.uploadedAt
+        ? formatDateTimeFromString(apiData.record.uploadedAt)
+        : uploadedAt,
       detectedDocument: apiData.detectedDocument,
       rootElement: apiData.rootElement,
       invoiceId: apiData.invoiceId,
@@ -252,23 +294,34 @@ export default function WorkspaceXmlUploadPage() {
       preview: xmlText.slice(0, 1400)
     };
 
-    const nextRecord: XmlUploadRecord = {
-      id: apiData.uploadInspectionId,
-      fileName: nextAnalysis.fileName,
-      fileSize: nextAnalysis.fileSize,
-      uploadedAt: nextAnalysis.uploadedAt,
-      detectedDocument: nextAnalysis.detectedDocument,
-      rootElement: nextAnalysis.rootElement,
-      invoiceId: nextAnalysis.invoiceId,
-      status: nextAnalysis.status,
-      note:
-        status === "accepted"
-          ? "Inspected through local API proxy."
-          : "API returned review-required or unsupported XML status."
-    };
+    const normalizedApiRecord = normalizeUploadRecord(apiData.record);
+
+    const nextRecord: XmlUploadRecord =
+      normalizedApiRecord ?? {
+        id: apiData.uploadInspectionId,
+        fileName: nextAnalysis.fileName,
+        fileSize: nextAnalysis.fileSize,
+        uploadedAt: nextAnalysis.uploadedAt,
+        detectedDocument: nextAnalysis.detectedDocument,
+        rootElement: nextAnalysis.rootElement,
+        invoiceId: nextAnalysis.invoiceId,
+        status: nextAnalysis.status,
+        note:
+          status === "accepted"
+            ? "Inspected through local API proxy."
+            : "API returned review-required or unsupported XML status."
+      };
 
     setAnalysis(nextAnalysis);
-    setUploadHistory((current) => [nextRecord, ...current].slice(0, 8));
+    setUploadHistory((current) => {
+      const nextRecords = [
+        nextRecord,
+        ...current.filter((upload) => upload.id !== nextRecord.id)
+      ];
+
+      return nextRecords.slice(0, 250);
+    });
+    setUploadLoadMessage("");
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -337,7 +390,7 @@ export default function WorkspaceXmlUploadPage() {
         <div className="workspace-stat">
           <p>Recent uploads</p>
           <strong>{uploadHistory.length}</strong>
-          <span>Stored locally in this browser for interface testing.</span>
+          <span>Records loaded from the API-owned XML upload history.</span>
         </div>
 
         <div className="workspace-stat">
@@ -382,15 +435,18 @@ export default function WorkspaceXmlUploadPage() {
         <pre>{`Current flow:
 1. select .xml file
 2. browser checks file extension and size
-3. Next.js route handler forwards XML to apps/api
+3. Next.js route handler forwards XML and file metadata to apps/api
 4. apps/api inspects root element and common invoice fields
-5. workspace displays the API response
+5. apps/api stores the inspection record through the repository/storage boundary
+6. workspace displays the API response and API-owned upload history
 
-Backend endpoint:
+Backend endpoints:
 POST /api/v1/xml/inspect
+GET  /api/v1/xml/uploads
 
-Proxy endpoint:
-POST /api/local/xml/inspect`}</pre>
+Proxy endpoints:
+POST /api/local/xml/inspect
+GET  /api/local/xml/uploads`}</pre>
 
         {errorMessage ? (
           <div className="alert-item">
@@ -502,21 +558,47 @@ POST /api/local/xml/inspect`}</pre>
         <div className="workspace-table-head">
           <div>
             <p>Recent XML uploads</p>
-            <h3>Local upload history</h3>
+            <h3>API-owned upload history</h3>
           </div>
 
           <div className="confidence-label">
             <FileInput size={17} />
-            local session
+            API history
           </div>
         </div>
 
+        {uploadLoadMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{uploadLoadMessage}</p>
+          </div>
+        ) : null}
+
         <div className="workspace-table">
-          {uploadHistory.length === 0 ? (
+          {isLoadingUploads ? (
+            <div className="workspace-table-row">
+              <div>
+                <strong>Loading XML upload history</strong>
+                <span>Reading records from the local API proxy.</span>
+              </div>
+
+              <div>
+                <span className="status-pill">loading</span>
+              </div>
+
+              <div>
+                <span>pending</span>
+              </div>
+
+              <strong>API</strong>
+
+              <FileCode2 size={17} />
+            </div>
+          ) : uploadHistory.length === 0 ? (
             <div className="workspace-table-row">
               <div>
                 <strong>No XML uploads yet</strong>
-                <span>Upload an XML file to create a local inspection record.</span>
+                <span>Upload an XML file to create an API-owned inspection record.</span>
               </div>
 
               <div>

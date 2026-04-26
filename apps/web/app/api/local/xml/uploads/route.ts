@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 const API_BASE_URL = process.env.INVOICE_LANTERN_API_BASE_URL;
 const DEV_API_KEY = process.env.INVOICE_LANTERN_DEV_API_KEY;
@@ -7,7 +7,7 @@ function buildProxyError(message: string, status = 502) {
   return NextResponse.json(
     {
       error: {
-        code: "LOCAL_XML_PROXY_ERROR",
+        code: "LOCAL_XML_UPLOADS_PROXY_ERROR",
         message,
         details: null
       }
@@ -38,11 +38,7 @@ async function readResponseData(response: Response) {
   }
 }
 
-function readHeaderValue(request: NextRequest, key: string) {
-  return request.headers.get(key)?.trim() ?? "";
-}
-
-export async function POST(request: NextRequest) {
+export async function GET() {
   if (!API_BASE_URL || !DEV_API_KEY) {
     return NextResponse.json(
       {
@@ -57,31 +53,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const xmlBody = await request.text();
-
-  if (!xmlBody.trim()) {
-    return NextResponse.json(
-      {
-        error: {
-          code: "XML_BODY_REQUIRED",
-          message: "XML body cannot be empty.",
-          details: null
-        }
-      },
-      { status: 400 }
-    );
-  }
-
   try {
-    const apiResponse = await fetch(`${API_BASE_URL}/api/v1/xml/inspect`, {
-      method: "POST",
+    const apiResponse = await fetch(`${API_BASE_URL}/api/v1/xml/uploads`, {
+      method: "GET",
       headers: {
-        "content-type": "application/xml",
-        "x-api-key": DEV_API_KEY,
-        "x-file-name": readHeaderValue(request, "x-file-name"),
-        "x-file-size": readHeaderValue(request, "x-file-size")
+        "x-api-key": DEV_API_KEY
       },
-      body: xmlBody,
       cache: "no-store"
     });
 
