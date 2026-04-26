@@ -56,24 +56,6 @@ type LocalValidationReport = {
   disclaimer: string;
 };
 
-type SavedValidationRun = {
-  id: string;
-  invoiceNumber: string;
-  buyer: string;
-  seller: string;
-  createdAt: string;
-  technicalStatus: string;
-  standardStatus: string;
-  countrySimulationStatus: string;
-  vidaReadinessStatus: string;
-  confidence: string;
-  profile: string;
-  currency: string;
-  totals: InvoiceTotalsDraft;
-  findings: FindingPreview[];
-  disclaimer: string;
-};
-
 type ApiValidationRequestPayload = {
   document: {
     type: "invoice" | "credit_note";
@@ -148,7 +130,6 @@ type ApiDraftSaveResponse = {
 };
 
 const LOCAL_DRAFT_KEY = "invoice-lantern.invoiceDraft.local";
-const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
 
 export function InvoiceEditorClient({
   initialDraft
@@ -157,7 +138,7 @@ export function InvoiceEditorClient({
 }) {
   const [draft, setDraft] = useState<InvoiceEditorDraft>(initialDraft);
   const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string>("");
+  const [saveMessage, setSaveMessage] = useState("");
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isRunningValidation, setIsRunningValidation] = useState(false);
   const [validationReport, setValidationReport] =
@@ -389,7 +370,6 @@ export function InvoiceEditorClient({
       };
 
       setValidationReport(nextReport);
-      saveValidationRunToHistory(buildSavedValidationRun(draft, nextReport));
     } catch {
       setValidationReport(
         buildApiErrorReport({
@@ -1250,76 +1230,6 @@ function cleanDecimalInput(value: string) {
   return rest.length === 0 ? first : `${first}.${rest.join("")}`;
 }
 
-function buildSavedValidationRun(
-  draft: InvoiceEditorDraft,
-  report: LocalValidationReport
-): SavedValidationRun {
-  const confidence =
-    report.countrySimulationStatus === "review_required" ||
-    report.vidaReadinessStatus === "relevant_simulation"
-      ? "educational_simulation"
-      : "technical_preview";
-
-  return {
-    id: report.id,
-    invoiceNumber: draft.document.number || "Untitled invoice",
-    buyer: draft.buyer.name || "Unknown buyer",
-    seller: draft.seller.name || "Unknown seller",
-    createdAt: formatDateTime(new Date(report.createdAt)),
-    technicalStatus: report.technicalStatus,
-    standardStatus: report.standardStatus,
-    countrySimulationStatus: report.countrySimulationStatus,
-    vidaReadinessStatus: report.vidaReadinessStatus,
-    confidence,
-    profile: draft.document.profile,
-    currency: draft.document.currency,
-    totals: report.totals,
-    findings: report.findings,
-    disclaimer: report.disclaimer
-  };
-}
-
-function readStoredValidationRuns() {
-  if (typeof window === "undefined") {
-    return [] as SavedValidationRun[];
-  }
-
-  const storedValue = readFirstLocalStorageValue([VALIDATION_RUN_STORAGE_KEY]);
-
-  if (!storedValue) {
-    return [] as SavedValidationRun[];
-  }
-
-  try {
-    const parsed = JSON.parse(storedValue);
-
-    if (!Array.isArray(parsed)) {
-      return [] as SavedValidationRun[];
-    }
-
-    return parsed as SavedValidationRun[];
-  } catch {
-    return [] as SavedValidationRun[];
-  }
-}
-
-function saveValidationRunToHistory(run: SavedValidationRun) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const currentRuns = readStoredValidationRuns();
-  const nextRuns = [
-    run,
-    ...currentRuns.filter((existingRun) => existingRun.id !== run.id)
-  ].slice(0, 25);
-
-  window.localStorage.setItem(
-    VALIDATION_RUN_STORAGE_KEY,
-    JSON.stringify(nextRuns)
-  );
-}
-
 function readFirstLocalStorageValue(keys: string[]) {
   for (const key of keys) {
     const value = window.localStorage.getItem(key);
@@ -1330,18 +1240,6 @@ function readFirstLocalStorageValue(keys: string[]) {
   }
 
   return null;
-}
-
-function formatDateTime(date: Date) {
-  return date
-    .toLocaleString("sv-SE", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit"
-    })
-    .replace("T", " ");
 }
 
 function buildApiErrorReport({
