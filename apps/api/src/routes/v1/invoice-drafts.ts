@@ -9,7 +9,8 @@ import {
   createInvoiceDraft,
   deleteInvoiceDraftById,
   getInvoiceDraftById,
-  listInvoiceDraftSummaries
+  listInvoiceDraftSummaries,
+  updateInvoiceDraftById
 } from "../../repositories/invoice-draft-repository.js";
 import { formatZodError } from "../../utils/zod-error.js";
 
@@ -88,6 +89,58 @@ export async function invoiceDraftRoutes(app: FastifyInstance) {
       return {
         record: draft
       };
+    }
+  );
+
+  app.put(
+    "/drafts/:id",
+    {
+      preHandler: requireApiKey
+    },
+    async (request, reply) => {
+      const parsedParams = invoiceDraftParamsSchema.safeParse(request.params);
+
+      if (!parsedParams.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Draft ID failed schema validation.",
+            details: formatZodError(parsedParams.error)
+          }
+        });
+      }
+
+      const parsedBody = invoiceEditorDraftSchema.safeParse(request.body);
+
+      if (!parsedBody.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invoice draft failed schema validation.",
+            details: formatZodError(parsedBody.error)
+          }
+        });
+      }
+
+      const updatedDraft = await updateInvoiceDraftById(
+        parsedParams.data.id,
+        parsedBody.data
+      );
+
+      if (!updatedDraft) {
+        return reply.status(404).send({
+          error: {
+            code: "DRAFT_NOT_FOUND",
+            message: "Invoice draft was not found.",
+            details: null
+          }
+        });
+      }
+
+      return reply.status(200).send({
+        record: updatedDraft,
+        summary: buildDraftSummary(updatedDraft)
+      });
     }
   );
 

@@ -128,6 +128,47 @@ export async function createInvoiceDraft(
   return nextDraft;
 }
 
+export async function updateInvoiceDraftById(
+  id: string,
+  payload: InvoiceEditorDraftPayload
+) {
+  const currentDrafts = await listInvoiceDrafts();
+  const existingDraft = currentDrafts.find((draft) => draft.id === id);
+
+  if (!existingDraft) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const payloadNumberKey = getPayloadNumberKey(payload);
+
+  const nextDraft: InvoiceDraftRecord = {
+    ...payload,
+    id: existingDraft.id,
+    createdAt: existingDraft.createdAt,
+    updatedAt: now
+  };
+
+  const nextDrafts = [
+    nextDraft,
+    ...currentDrafts.filter((draft) => {
+      if (draft.id === id) {
+        return false;
+      }
+
+      if (payloadNumberKey && getDraftNumberKey(draft) === payloadNumberKey) {
+        return false;
+      }
+
+      return true;
+    })
+  ].slice(0, MAX_STORED_INVOICE_DRAFTS);
+
+  await storageProvider.writeCollection(INVOICE_DRAFTS_FILE, nextDrafts);
+
+  return nextDraft;
+}
+
 export async function getInvoiceDraftById(id: string) {
   const drafts = await listInvoiceDrafts();
 

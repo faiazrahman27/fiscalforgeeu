@@ -251,6 +251,7 @@ export default function ExistingInvoiceDraftPage({
     <InvoiceEditorClient
       initialDraft={draft ?? invoiceEditorDraft}
       loadStoredDraft={false}
+      draftId={draftId}
     />
   );
 }

@@ -133,10 +133,12 @@ const LOCAL_DRAFT_KEY = "invoice-lantern.invoiceDraft.local";
 
 export function InvoiceEditorClient({
   initialDraft,
-  loadStoredDraft = true
+  loadStoredDraft = true,
+  draftId
 }: {
   initialDraft: InvoiceEditorDraft;
   loadStoredDraft?: boolean;
+  draftId?: string;
 }) {
   const [draft, setDraft] = useState<InvoiceEditorDraft>(initialDraft);
   const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
@@ -288,15 +290,18 @@ export function InvoiceEditorClient({
     setIsSavingDraft(true);
 
     try {
-      const response = await fetch("/api/local/invoices/drafts", {
-        method: "POST",
+      const saveUrl = draftId
+        ? `/api/local/invoices/drafts/${encodeURIComponent(draftId)}`
+        : "/api/local/invoices/drafts";
+
+      const saveMethod = draftId ? "PUT" : "POST";
+
+      const response = await fetch(saveUrl, {
+        method: saveMethod,
         headers: {
           "content-type": "application/json"
         },
-        body: JSON.stringify({
-          ...draft,
-          totals: recalculatedTotals
-        })
+        body: JSON.stringify(buildDraftSavePayload(draft, recalculatedTotals))
       });
 
       const responseData: unknown = await response.json();
@@ -315,7 +320,9 @@ export function InvoiceEditorClient({
 
       setSaveMessage(
         savedDraft.summary?.id
-          ? `Draft saved through API as ${savedDraft.summary.id}.`
+          ? draftId
+            ? `Draft updated through API as ${savedDraft.summary.id}.`
+            : `Draft saved through API as ${savedDraft.summary.id}.`
           : `Draft saved through API at ${new Date().toLocaleTimeString()}.`
       );
     } catch {
@@ -1121,6 +1128,29 @@ function buildFindings(
   }
 
   return findings;
+}
+
+function buildDraftSavePayload(
+  draft: InvoiceEditorDraft,
+  totals: InvoiceTotalsDraft
+) {
+  const draftRecord = draft as InvoiceEditorDraft & {
+    id?: unknown;
+    createdAt?: unknown;
+    updatedAt?: unknown;
+  };
+
+  const {
+    id: _id,
+    createdAt: _createdAt,
+    updatedAt: _updatedAt,
+    ...draftPayload
+  } = draftRecord;
+
+  return {
+    ...draftPayload,
+    totals
+  };
 }
 
 function buildApiValidationPayload(
