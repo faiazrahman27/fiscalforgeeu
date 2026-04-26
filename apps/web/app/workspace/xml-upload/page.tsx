@@ -204,6 +204,10 @@ function formatDetectedValue(value: string) {
   return value === "not_detected" ? "Not detected" : value;
 }
 
+function formatDetectionStatus(value: boolean) {
+  return value ? "Detected" : "Not detected";
+}
+
 function formatMoneyValue(currency: string, value: string) {
   if (!value || value === "not_detected") {
     return "Not detected";
@@ -214,6 +218,10 @@ function formatMoneyValue(currency: string, value: string) {
   }
 
   return `${currency} ${value}`;
+}
+
+function isDetected(value: string) {
+  return Boolean(value) && value !== "not_detected";
 }
 
 function isUploadStatus(value: unknown): value is UploadStatus {
@@ -913,113 +921,231 @@ DELETE /api/local/xml/uploads/:id`}</pre>
             </div>
           </div>
 
-          <div className="workspace-table">
-            <div className="workspace-table-row">
-              <div>
-                <strong>Seller</strong>
-                <span>{formatDetectedValue(analysis.extractedData.sellerName)}</span>
-              </div>
+          <div className="workspace-data-grid">
+            <div
+              className={
+                isDetected(analysis.extractedData.sellerName)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Seller</p>
+              <strong>
+                {formatDetectedValue(analysis.extractedData.sellerName)}
+              </strong>
+              <span>AccountingSupplierParty</span>
+            </div>
 
-              <div>
-                <span>Buyer</span>
-              </div>
+            <div
+              className={
+                isDetected(analysis.extractedData.buyerName)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Buyer</p>
+              <strong>
+                {formatDetectedValue(analysis.extractedData.buyerName)}
+              </strong>
+              <span>AccountingCustomerParty</span>
+            </div>
 
-              <div>
-                <span>{formatDetectedValue(analysis.extractedData.buyerName)}</span>
-              </div>
-
+            <div
+              className={
+                isDetected(analysis.extractedData.currency)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Currency</p>
               <strong>{formatDetectedValue(analysis.extractedData.currency)}</strong>
-
-              <Database size={17} />
+              <span>DocumentCurrencyCode</span>
             </div>
 
-            <div className="workspace-table-row">
-              <div>
-                <strong>Line blocks</strong>
-                <span>
-                  Invoice lines: {analysis.extractedData.invoiceLineCount}. Credit
-                  note lines: {analysis.extractedData.creditNoteLineCount}.
-                </span>
-              </div>
-
-              <div>
-                <span>Total lines</span>
-              </div>
-
-              <div>
-                <span>{analysis.extractedData.lineCount}</span>
-              </div>
-
-              <strong>{analysis.detectedDocument}</strong>
-
-              <FileCode2 size={17} />
+            <div
+              className={
+                analysis.extractedData.lineCount > 0
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Document lines</p>
+              <strong>{analysis.extractedData.lineCount}</strong>
+              <span>Total invoice or credit note line blocks.</span>
             </div>
 
-            <div className="workspace-table-row">
-              <div>
-                <strong>Payable amount</strong>
-                <span>
-                  {formatMoneyValue(
-                    analysis.extractedData.currency,
-                    analysis.extractedData.monetaryTotals.payableAmount
-                  )}
-                </span>
-              </div>
+            <div className="workspace-data-card">
+              <p>Invoice lines</p>
+              <strong>{analysis.extractedData.invoiceLineCount}</strong>
+              <span>InvoiceLine blocks detected.</span>
+            </div>
 
-              <div>
-                <span>Tax amount</span>
-              </div>
+            <div className="workspace-data-card">
+              <p>Credit note lines</p>
+              <strong>{analysis.extractedData.creditNoteLineCount}</strong>
+              <span>CreditNoteLine blocks detected.</span>
+            </div>
 
-              <div>
-                <span>
-                  {formatMoneyValue(
-                    analysis.extractedData.currency,
-                    analysis.extractedData.monetaryTotals.taxAmount
-                  )}
-                </span>
-              </div>
+            <div
+              className={
+                isDetected(analysis.extractedData.monetaryTotals.payableAmount)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Payable amount</p>
+              <strong>
+                {formatMoneyValue(
+                  analysis.extractedData.currency,
+                  analysis.extractedData.monetaryTotals.payableAmount
+                )}
+              </strong>
+              <span>LegalMonetaryTotal.PayableAmount</span>
+            </div>
 
+            <div
+              className={
+                isDetected(analysis.extractedData.monetaryTotals.taxAmount)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Tax amount</p>
+              <strong>
+                {formatMoneyValue(
+                  analysis.extractedData.currency,
+                  analysis.extractedData.monetaryTotals.taxAmount
+                )}
+              </strong>
+              <span>TaxTotal.TaxAmount</span>
+            </div>
+
+            <div
+              className={
+                isDetected(analysis.extractedData.monetaryTotals.taxInclusiveAmount)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Tax inclusive amount</p>
               <strong>
                 {formatMoneyValue(
                   analysis.extractedData.currency,
                   analysis.extractedData.monetaryTotals.taxInclusiveAmount
                 )}
               </strong>
-
-              <Calculator size={17} />
+              <span>LegalMonetaryTotal.TaxInclusiveAmount</span>
             </div>
 
-            <div className="workspace-table-row">
-              <div>
-                <strong>Tax signal</strong>
-                <span>
-                  Tax total:{" "}
-                  {analysis.extractedData.taxSignal.taxTotalDetected
-                    ? "detected"
-                    : "not detected"}
-                  . Tax category:{" "}
-                  {analysis.extractedData.taxSignal.taxCategoryDetected
-                    ? "detected"
-                    : "not detected"}
-                  .
-                </span>
-              </div>
-
-              <div>
-                <span>Tax rates</span>
-              </div>
-
-              <div>
-                <span>{analysis.extractedData.taxSignal.taxRateCount}</span>
-              </div>
-
+            <div
+              className={
+                isDetected(analysis.extractedData.monetaryTotals.lineExtensionAmount)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Line extension amount</p>
               <strong>
-                {analysis.extractedData.taxSignal.taxSubtotalDetected
-                  ? "subtotal detected"
-                  : "subtotal missing"}
+                {formatMoneyValue(
+                  analysis.extractedData.currency,
+                  analysis.extractedData.monetaryTotals.lineExtensionAmount
+                )}
               </strong>
+              <span>LegalMonetaryTotal.LineExtensionAmount</span>
+            </div>
 
-              <ShieldAlert size={17} />
+            <div
+              className={
+                isDetected(analysis.extractedData.monetaryTotals.taxExclusiveAmount)
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Tax exclusive amount</p>
+              <strong>
+                {formatMoneyValue(
+                  analysis.extractedData.currency,
+                  analysis.extractedData.monetaryTotals.taxExclusiveAmount
+                )}
+              </strong>
+              <span>LegalMonetaryTotal.TaxExclusiveAmount</span>
+            </div>
+
+            <div
+              className={
+                analysis.calculationStatus === "inconsistent"
+                  ? "workspace-data-card is-danger"
+                  : analysis.calculationStatus === "surface_checked"
+                    ? "workspace-data-card is-good"
+                    : "workspace-data-card is-warn"
+              }
+            >
+              <p>Calculation status</p>
+              <strong>{formatStatus(analysis.calculationStatus)}</strong>
+              <span>Surface-level monetary consistency signal.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.taxSignal.taxTotalDetected
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Tax total</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.taxSignal.taxTotalDetected
+                )}
+              </strong>
+              <span>TaxTotal block.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.taxSignal.taxCategoryDetected
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Tax category</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.taxSignal.taxCategoryDetected
+                )}
+              </strong>
+              <span>TaxCategory block.</span>
+            </div>
+
+            <div
+              className={
+                analysis.extractedData.taxSignal.taxSubtotalDetected
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Tax subtotal</p>
+              <strong>
+                {formatDetectionStatus(
+                  analysis.extractedData.taxSignal.taxSubtotalDetected
+                )}
+              </strong>
+              <span>TaxSubtotal block.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Tax rates</p>
+              <strong>{analysis.extractedData.taxSignal.taxRateCount}</strong>
+              <span>Percent tags detected in the XML.</span>
+            </div>
+
+            <div className="workspace-data-card is-wide">
+              <p>Document profile signal</p>
+              <strong>{formatStatus(analysis.profileStatus)}</strong>
+              <span>
+                This is a surface-level profile signal. Official Peppol, EN 16931,
+                ViDA, tax, legal, or authority validation is not performed here.
+              </span>
             </div>
           </div>
         </section>
@@ -1160,9 +1286,10 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           ) : (
             uploadHistory.map((upload) => (
               <div className="workspace-table-row" key={upload.id}>
-                <div>
+                <div className="workspace-history-summary">
                   <strong>{upload.fileName}</strong>
                   <span>{upload.note}</span>
+
                   {upload.summary ? (
                     <span>
                       {formatDetectedValue(upload.summary.sellerName)} to{" "}
@@ -1172,24 +1299,19 @@ DELETE /api/local/xml/uploads/:id`}</pre>
                     </span>
                   ) : null}
 
-                  <button
-                    type="button"
-                    className="text-link-button"
-                    onClick={(event) => deleteUploadRecord(event, upload)}
-                    disabled={deletingUploadId === upload.id}
-                    style={{
-                      marginTop: "10px",
-                      width: "fit-content",
-                      padding: "8px 12px",
-                      cursor:
-                        deletingUploadId === upload.id ? "not-allowed" : "pointer"
-                    }}
-                  >
-                    <Trash2 size={16} />
-                    {deletingUploadId === upload.id
-                      ? "Deleting..."
-                      : "Delete upload"}
-                  </button>
+                  <div className="workspace-row-actions">
+                    <button
+                      type="button"
+                      className="text-link-button"
+                      onClick={(event) => deleteUploadRecord(event, upload)}
+                      disabled={deletingUploadId === upload.id}
+                    >
+                      <Trash2 size={16} />
+                      {deletingUploadId === upload.id
+                        ? "Deleting..."
+                        : "Delete upload"}
+                    </button>
+                  </div>
                 </div>
 
                 <div>

@@ -1103,3 +1103,172 @@
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Workspace readability upgrades                                             */
+/* -------------------------------------------------------------------------- */
+
+.workspace-table-row {
+  justify-items: stretch;
+}
+
+.workspace-table-row > div:first-child,
+.workspace-table-row > div:nth-child(2),
+.workspace-table-row > div:nth-child(3),
+.workspace-table-row > strong,
+.workspace-table-row > svg {
+  justify-self: stretch;
+}
+
+.workspace-table-row > strong {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.workspace-table-row > svg {
+  justify-self: end;
+}
+
+.workspace-table-row div:nth-child(2),
+.workspace-table-row div:nth-child(3) {
+  justify-content: flex-start;
+}
+
+.workspace-table-row strong,
+.workspace-table-row span,
+.workspace-table-row p {
+  line-height: 1.45;
+}
+
+.workspace-table-row strong {
+  font-size: 0.98rem;
+}
+
+.workspace-table-row span {
+  font-size: 0.88rem;
+}
+
+.workspace-table-row .text-link-button {
+  align-self: start;
+}
+
+/* Dedicated readable data cards for extracted invoice/XML information. */
+.workspace-data-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1.45rem;
+  margin-top: 1.4rem;
+  background: rgba(255,255,255,0.1);
+}
+
+.workspace-data-card {
+  min-width: 0;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(255,255,255,0.06), transparent 12rem),
+    rgba(5,5,5,0.86);
+  padding: 1.15rem;
+}
+
+.workspace-data-card p {
+  margin: 0;
+  color: rgba(255,255,255,0.42);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.workspace-data-card strong {
+  display: block;
+  margin-top: 0.55rem;
+  color: white;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.workspace-data-card span {
+  display: block;
+  margin-top: 0.45rem;
+  color: rgba(255,255,255,0.52);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.workspace-data-card.is-good {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(48,209,88,0.1), transparent 12rem),
+    rgba(5,5,5,0.86);
+}
+
+.workspace-data-card.is-warn {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(255,159,10,0.11), transparent 12rem),
+    rgba(5,5,5,0.86);
+}
+
+.workspace-data-card.is-danger {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(255,69,58,0.1), transparent 12rem),
+    rgba(5,5,5,0.86);
+}
+
+.workspace-data-card.is-wide {
+  grid-column: span 2;
+}
+
+.workspace-data-card.is-full {
+  grid-column: 1 / -1;
+}
+
+/* Better history rows where a record contains several lines of metadata. */
+.workspace-history-summary {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.workspace-history-summary span {
+  display: block;
+}
+
+.workspace-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
+}
+
+/* Better compact table behavior on mid-size screens. */
+@media (max-width: 1150px) {
+  .workspace-data-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-data-card.is-wide {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 720px) {
+  .workspace-table-row > svg {
+    justify-self: start;
+  }
+
+  .workspace-table-row > strong {
+    justify-content: flex-start;
+  }
+
+  .workspace-data-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-data-card.is-wide,
+  .workspace-data-card.is-full {
+    grid-column: auto;
+  }
+}
