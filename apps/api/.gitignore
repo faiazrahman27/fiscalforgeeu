@@ -19,3 +19,4 @@ out/
 .vercel/
 .DS_Store
 Thumbs.db
+.data/
