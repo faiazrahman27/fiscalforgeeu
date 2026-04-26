@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Calculator,
   Database,
+  Download,
   FileCode2,
   FileInput,
   FileSearch,
@@ -165,6 +166,9 @@ const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
 
 const SAVED_REPORT_PREVIEW =
   "This saved report was reopened from API-owned upload history. Invoice Lantern stores the readiness result, extracted data, findings, and metadata, but it does not store the raw XML body in this development flow.";
+
+const REPORT_DISCLAIMER =
+  "Invoice Lantern performs a technical readiness simulation only. This result is not official XML, Peppol, EN 16931, ViDA, tax, legal, accounting, government, or authority validation.";
 
 const emptyExtractedData: XmlExtractedData = {
   sellerName: "not_detected",
@@ -465,6 +469,84 @@ function sanitizeHeaderValue(value: string) {
   return value.replace(/[^\x20-\x7E]/g, "_").slice(0, 180);
 }
 
+function sanitizeFileNamePart(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/\.[^.]+$/u, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 80);
+
+  return cleaned || "xml-report";
+}
+
+function buildExportFileName(analysis: XmlAnalysis) {
+  const source =
+    analysis.invoiceId !== "not_detected" ? analysis.invoiceId : analysis.fileName;
+
+  const datePart = new Date().toISOString().slice(0, 10);
+
+  return `invoice-lantern-${sanitizeFileNamePart(source)}-${datePart}.json`;
+}
+
+function buildExportPayload(analysis: XmlAnalysis) {
+  return {
+    platform: {
+      name: "Invoice Lantern",
+      productBoundary:
+        "Independent e-invoice readiness and simulation platform. Not official government, tax authority, Peppol authority, EN 16931 certification, ViDA compliance, legal, accounting, or tax validation."
+    },
+    export: {
+      exportedAt: new Date().toISOString(),
+      exportFormat: "invoice_lantern_xml_readiness_report_json_v1",
+      rawXmlIncluded: false,
+      sourceMode: analysis.sourceMode
+    },
+    report: {
+      id: analysis.id,
+      fileName: analysis.fileName,
+      fileSize: analysis.fileSize,
+      uploadedAt: analysis.uploadedAt,
+      detectedDocument: analysis.detectedDocument,
+      rootElement: analysis.rootElement,
+      invoiceId: analysis.invoiceId,
+      issueDate: analysis.issueDate,
+      currency: analysis.currency,
+      apiStatus: analysis.apiStatus,
+      technicalStatus: analysis.technicalStatus,
+      readinessStatus: analysis.readinessStatus,
+      documentStatus: analysis.documentStatus,
+      calculationStatus: analysis.calculationStatus,
+      profileStatus: analysis.profileStatus,
+      uploadStatus: analysis.status
+    },
+    extractedData: analysis.extractedData,
+    findings: analysis.findings,
+    disclaimer: analysis.note || REPORT_DISCLAIMER
+  };
+}
+
+function downloadJsonReport(analysis: XmlAnalysis) {
+  const payload = buildExportPayload(analysis);
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], {
+    type: "application/json;charset=utf-8"
+  });
+
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = objectUrl;
+  anchor.download = buildExportFileName(analysis);
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  URL.revokeObjectURL(objectUrl);
+}
+
 function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -501,11 +583,7 @@ function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
       ? record.status
       : normalizeUploadStatus(apiStatus),
     note: readStringField(record, "note", "Stored API XML upload record."),
-    disclaimer: readStringField(
-      record,
-      "disclaimer",
-      "Invoice Lantern performs a technical readiness simulation only. This result is not official validation."
-    ),
+    disclaimer: readStringField(record, "disclaimer", REPORT_DISCLAIMER),
     technicalStatus: readStringField(
       record,
       "technicalStatus",
@@ -952,6 +1030,7 @@ export default function WorkspaceXmlUploadPage() {
 6. apps/api stores the inspection summary through the repository/storage boundary
 7. workspace displays the readiness report and API-owned upload history
 8. saved reports can be reopened from history without re-uploading XML
+9. current reports can be exported as JSON readiness reports
 
 Backend endpoints:
 POST   /api/v1/xml/inspect
@@ -985,10 +1064,17 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               <h3>{analysis.fileName}</h3>
             </div>
 
-            <button type="button" onClick={clearAnalysis}>
-              <X size={16} />
-              Clear preview
-            </button>
+            <div className="workspace-row-actions">
+              <button type="button" onClick={() => downloadJsonReport(analysis)}>
+                <Download size={16} />
+                Download report JSON
+              </button>
+
+              <button type="button" onClick={clearAnalysis}>
+                <X size={16} />
+                Clear preview
+              </button>
+            </div>
           </div>
 
           <div className="workspace-table">
