@@ -17,6 +17,16 @@ import {
 
 type UploadStatus = "accepted" | "rejected";
 
+type XmlFindingSeverity = "info" | "warning" | "fatal";
+
+type XmlReadinessFinding = {
+  code: string;
+  severity: XmlFindingSeverity;
+  field: string;
+  message: string;
+  confidence: "technical" | "readiness_simulation" | "review_required";
+};
+
 type XmlUploadRecord = {
   id: string;
   fileName: string;
@@ -40,6 +50,12 @@ type XmlAnalysis = {
   issueDate: string;
   currency: string;
   apiStatus: string;
+  technicalStatus: string;
+  readinessStatus: string;
+  documentStatus: string;
+  calculationStatus: string;
+  profileStatus: string;
+  findings: XmlReadinessFinding[];
   status: UploadStatus;
   note: string;
   preview: string;
@@ -73,6 +89,12 @@ type ApiXmlInspectResponse = {
   issueDate: string;
   currency: string;
   status: string;
+  technicalStatus?: string;
+  readinessStatus?: string;
+  documentStatus?: string;
+  calculationStatus?: string;
+  profileStatus?: string;
+  findings?: XmlReadinessFinding[];
   disclaimer: string;
   record?: ApiXmlUploadRecord;
 };
@@ -113,8 +135,16 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function formatStatus(value: string) {
+  return value.replaceAll("_", " ");
+}
+
 function isUploadStatus(value: unknown): value is UploadStatus {
   return value === "accepted" || value === "rejected";
+}
+
+function isFindingSeverity(value: unknown): value is XmlFindingSeverity {
+  return value === "info" || value === "warning" || value === "fatal";
 }
 
 function readStringField(
@@ -161,6 +191,53 @@ function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
     status: isUploadStatus(record.status) ? record.status : "rejected",
     note: readStringField(record, "note", "Stored API XML upload record.")
   };
+}
+
+function normalizeFinding(value: unknown): XmlReadinessFinding | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  const code = readStringField(record, "code", "");
+
+  if (!code) {
+    return null;
+  }
+
+  const confidence = readStringField(
+    record,
+    "confidence",
+    "readiness_simulation"
+  );
+
+  return {
+    code,
+    severity: isFindingSeverity(record.severity) ? record.severity : "info",
+    field: readStringField(record, "field", "xml"),
+    message: readStringField(
+      record,
+      "message",
+      "Readiness finding returned without a message."
+    ),
+    confidence:
+      confidence === "technical" ||
+      confidence === "readiness_simulation" ||
+      confidence === "review_required"
+        ? confidence
+        : "readiness_simulation"
+  };
+}
+
+function normalizeFindings(value: unknown): XmlReadinessFinding[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => normalizeFinding(item))
+    .filter((item): item is XmlReadinessFinding => item !== null);
 }
 
 function normalizeUploadStatus(apiStatus: string): UploadStatus {
@@ -304,6 +381,7 @@ export default function WorkspaceXmlUploadPage() {
     const apiData = responseData as ApiXmlInspectResponse;
     const uploadedAt = formatDateTime(new Date());
     const status = normalizeUploadStatus(apiData.status);
+    const findings = normalizeFindings(apiData.findings);
 
     const nextAnalysis: XmlAnalysis = {
       id: apiData.record?.id ?? apiData.uploadInspectionId,
@@ -318,6 +396,12 @@ export default function WorkspaceXmlUploadPage() {
       issueDate: apiData.issueDate,
       currency: apiData.currency,
       apiStatus: apiData.status,
+      technicalStatus: apiData.technicalStatus ?? "failed",
+      readinessStatus: apiData.readinessStatus ?? "needs_attention",
+      documentStatus: apiData.documentStatus ?? "unsupported",
+      calculationStatus: apiData.calculationStatus ?? "not_checked",
+      profileStatus: apiData.profileStatus ?? "unknown_profile",
+      findings,
       status,
       note: apiData.disclaimer,
       preview: xmlText.slice(0, 1400)
@@ -451,11 +535,11 @@ export default function WorkspaceXmlUploadPage() {
     <div className="workspace-page">
       <section className="workspace-page-head">
         <p className="workspace-kicker">XML Upload</p>
-        <h2>Inspect invoice XML through the local API.</h2>
+        <h2>Run an e-invoice readiness simulation from XML.</h2>
         <p>
-          Upload a local XML file to preview document structure, root element,
-          invoice ID, issue date, currency, and parsing readiness. The browser sends
-          the XML through the Next.js proxy into the dedicated Invoice Lantern API.
+          Upload a local XML file to inspect document structure, key invoice
+          fields, readiness status, and review findings. Invoice Lantern gives a
+          technical simulation before official submission or professional review.
         </p>
       </section>
 
@@ -509,9 +593,9 @@ export default function WorkspaceXmlUploadPage() {
 1. select .xml file
 2. browser checks file extension and size
 3. Next.js route handler forwards XML and file metadata to apps/api
-4. apps/api inspects root element and common invoice fields
+4. apps/api inspects root element, document fields, totals surface, and readiness signals
 5. apps/api stores the inspection record through the repository/storage boundary
-6. workspace displays the API response and API-owned upload history
+6. workspace displays the readiness report and API-owned upload history
 
 Backend endpoints:
 POST   /api/v1/xml/inspect
@@ -535,7 +619,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
         <section className="workspace-table-shell">
           <div className="workspace-table-head">
             <div>
-              <p>API XML metadata</p>
+              <p>Invoice Lantern readiness report</p>
               <h3>{analysis.fileName}</h3>
             </div>
 
@@ -546,6 +630,31 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           </div>
 
           <div className="workspace-table">
+            <div className="workspace-table-row">
+              <div>
+                <strong>Technical status</strong>
+                <span>{formatStatus(analysis.technicalStatus)}</span>
+              </div>
+
+              <div>
+                <span className="status-pill">
+                  {formatStatus(analysis.readinessStatus)}
+                </span>
+              </div>
+
+              <div>
+                <span>{formatStatus(analysis.documentStatus)}</span>
+              </div>
+
+              <strong>{formatStatus(analysis.profileStatus)}</strong>
+
+              {analysis.technicalStatus === "passed" ? (
+                <BadgeCheck size={17} />
+              ) : (
+                <AlertTriangle size={17} />
+              )}
+            </div>
+
             <div className="workspace-table-row">
               <div>
                 <strong>Detected document</strong>
@@ -591,22 +700,77 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
             <div className="workspace-table-row">
               <div>
-                <strong>Inspection source</strong>
-                <span>Next.js proxy -&gt; Invoice Lantern API</span>
+                <strong>Calculation status</strong>
+                <span>{formatStatus(analysis.calculationStatus)}</span>
               </div>
 
               <div>
-                <span>Mode</span>
+                <span>Findings</span>
               </div>
 
               <div>
-                <span>local development</span>
+                <span>{analysis.findings.length}</span>
               </div>
 
-              <strong>API</strong>
+              <strong>simulation</strong>
 
               <FileSearch size={17} />
             </div>
+          </div>
+        </section>
+      ) : null}
+
+      {analysis ? (
+        <section className="findings-console">
+          <div className="findings-console-head">
+            <div>
+              <p>Readiness findings</p>
+              <h3>Technical checks and review signals</h3>
+            </div>
+
+            <div className="confidence-label">
+              <ShieldAlert size={17} />
+              {analysis.findings.length > 0 ? "review findings" : "no findings"}
+            </div>
+          </div>
+
+          <div className="finding-console-list">
+            {analysis.findings.length === 0 ? (
+              <div className="finding-console-row">
+                <BadgeCheck size={18} />
+
+                <div>
+                  <strong>NO_FINDINGS_RETURNED</strong>
+                  <p>The XML readiness simulation did not return findings.</p>
+                </div>
+
+                <span>info</span>
+              </div>
+            ) : (
+              analysis.findings.map((finding) => (
+                <div
+                  className="finding-console-row"
+                  key={`${finding.code}-${finding.field}`}
+                >
+                  {finding.severity === "info" ? (
+                    <BadgeCheck size={18} />
+                  ) : (
+                    <AlertTriangle size={18} />
+                  )}
+
+                  <div>
+                    <strong>{finding.code}</strong>
+                    <p>{finding.message}</p>
+                    <p>
+                      Field: {finding.field}. Confidence:{" "}
+                      {formatStatus(finding.confidence)}.
+                    </p>
+                  </div>
+
+                  <span>{finding.severity}</span>
+                </div>
+              ))
+            )}
           </div>
         </section>
       ) : null}
@@ -737,8 +901,8 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           <ShieldAlert size={22} />
 
           <div>
-            <p>Safety notice</p>
-            <h3>Inspection only, not official validation.</h3>
+            <p>Boundary notice</p>
+            <h3>Readiness simulation, not official validation.</h3>
           </div>
         </div>
 
@@ -746,9 +910,9 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           <div className="alert-item">
             <span />
             <p>
-              The API inspection endpoint detects basic XML structure only. It does not
-              perform official XML, Peppol, EN 16931, ViDA, legal, tax, or authority
-              validation.
+              Invoice Lantern checks XML structure, key invoice fields, and selected
+              readiness signals. It does not provide official XML, Peppol, EN 16931,
+              ViDA, legal, tax, accounting, government, or authority approval.
             </p>
           </div>
 
