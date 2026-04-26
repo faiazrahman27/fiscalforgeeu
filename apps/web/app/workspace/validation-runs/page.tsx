@@ -51,11 +51,6 @@ type SavedValidationRun = {
 
 const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
 
-const LEGACY_VALIDATION_RUN_STORAGE_KEYS = [
-  "Invoice Lantern.eu.validationRuns.local",
-  "invoice-lantern.validationRuns.local"
-];
-
 const fallbackRuns: SavedValidationRun[] = [
   {
     id: "val_01HXABC",
@@ -178,10 +173,7 @@ function readStoredValidationRuns() {
     return fallbackRuns;
   }
 
-  const storedValue = readFirstLocalStorageValue([
-    VALIDATION_RUN_STORAGE_KEY,
-    ...LEGACY_VALIDATION_RUN_STORAGE_KEYS
-  ]);
+  const storedValue = readFirstLocalStorageValue([VALIDATION_RUN_STORAGE_KEY]);
 
   if (!storedValue) {
     return fallbackRuns;

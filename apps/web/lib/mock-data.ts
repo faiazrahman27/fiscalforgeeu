@@ -73,7 +73,7 @@ export const commandFlow: WorkspaceAction[] = [
 export const workspaceAlerts: WorkspaceAlert[] = [
   {
     id: "alert_buyer_vat_missing",
-    message: "Buyer VAT ID missing in FF-2026-001",
+    message: "Buyer VAT ID missing in IL-2026-001",
     severity: "fatal"
   },
   {
@@ -138,7 +138,7 @@ export const invoiceStages: InvoiceStage[] = [
 export const invoiceDrafts: InvoiceDraft[] = [
   {
     id: "inv_001",
-    number: "FF-2026-001",
+    number: "IL-2026-001",
     buyer: "Berlin Digital GmbH",
     buyerCountry: "DE",
     issueDate: "2026-04-25",
@@ -148,7 +148,7 @@ export const invoiceDrafts: InvoiceDraft[] = [
   },
   {
     id: "inv_002",
-    number: "FF-2026-002",
+    number: "IL-2026-002",
     buyer: "Debrecen Research Lab",
     buyerCountry: "HU",
     issueDate: "2026-04-25",
@@ -158,7 +158,7 @@ export const invoiceDrafts: InvoiceDraft[] = [
   },
   {
     id: "inv_003",
-    number: "FF-2026-003",
+    number: "IL-2026-003",
     buyer: "Milan Studio SRL",
     buyerCountry: "IT",
     issueDate: "2026-04-25",
@@ -278,7 +278,7 @@ export const developerEndpointPreview: DeveloperEndpointPreview = {
   method: "POST",
   path: "/api/v1/invoices/validate",
   payload: {
-    keyPrefix: "ff_test_4x9p",
+    keyPrefix: "il_test_4x9p",
     scope: "invoices:validate",
     rateLimit: "120 requests / minute",
     status: "sandbox_ready",
@@ -364,7 +364,7 @@ export const vatCategoryOptions: SelectOption[] = [
 
 export const invoiceEditorDraft: InvoiceEditorDraft = {
   document: {
-    number: "FF-2026-004",
+    number: "IL-2026-004",
     issueDate: "2026-04-25",
     dueDate: "2026-05-25",
     currency: "EUR",
@@ -388,7 +388,7 @@ export const invoiceEditorDraft: InvoiceEditorDraft = {
     vatId: "DE123456789",
     city: "Berlin",
     postalCode: "10115",
-    street: "InvalidenstraÃŸe 44",
+    street: "Invalidenstrasse 44",
     electronicAddress: "0088:buyer-demo"
   },
   lines: [

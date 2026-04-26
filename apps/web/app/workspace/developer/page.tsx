@@ -46,16 +46,6 @@ type RequestLog = {
 const API_KEY_STORAGE_KEY = "invoice-lantern.workspace.apiKeys";
 const REQUEST_LOG_STORAGE_KEY = "invoice-lantern.workspace.requestLogs";
 
-const LEGACY_API_KEY_STORAGE_KEYS = [
-  "Invoice Lantern.eu.workspace.apiKeys",
-  "invoice-lantern.workspace.apiKeys"
-];
-
-const LEGACY_REQUEST_LOG_STORAGE_KEYS = [
-  "Invoice Lantern.eu.workspace.requestLogs",
-  "invoice-lantern.workspace.requestLogs"
-];
-
 const defaultApiKeys: SandboxApiKey[] = [
   {
     id: "key_sbx_001",
@@ -147,31 +137,19 @@ function generateApiKeyValue() {
   return `il_sbx_${secret}`;
 }
 
-function readFirstLocalStorageValue(keys: string[]) {
-  for (const key of keys) {
-    const value = window.localStorage.getItem(key);
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
-}
-
-function readStoredArray<T>(keys: string[], fallback: T[]): T[] {
+function readStoredArray<T>(key: string, fallback: T[]): T[] {
   if (typeof window === "undefined") {
     return fallback;
   }
 
-  const storedValue = readFirstLocalStorageValue(keys);
+  const storedValue = window.localStorage.getItem(key);
 
   if (!storedValue) {
     return fallback;
   }
 
   try {
-    const parsed = JSON.parse(storedValue);
+    const parsed: unknown = JSON.parse(storedValue);
 
     if (!Array.isArray(parsed)) {
       return fallback;
@@ -181,13 +159,6 @@ function readStoredArray<T>(keys: string[], fallback: T[]): T[] {
   } catch {
     return fallback;
   }
-}
-
-function normalizeApiKey(apiKey: SandboxApiKey): SandboxApiKey {
-  return {
-    ...apiKey,
-    prefix: apiKey.prefix.replace("ff_sbx", "il_sbx")
-  };
 }
 
 export default function WorkspaceDeveloperPage() {
@@ -208,16 +179,16 @@ export default function WorkspaceDeveloperPage() {
 
   useEffect(() => {
     const storedApiKeys = readStoredArray<SandboxApiKey>(
-      [API_KEY_STORAGE_KEY, ...LEGACY_API_KEY_STORAGE_KEYS],
+      API_KEY_STORAGE_KEY,
       defaultApiKeys
     );
 
     const storedRequestLogs = readStoredArray<RequestLog>(
-      [REQUEST_LOG_STORAGE_KEY, ...LEGACY_REQUEST_LOG_STORAGE_KEYS],
+      REQUEST_LOG_STORAGE_KEY,
       defaultRequestLogs
     );
 
-    setApiKeys(storedApiKeys.map(normalizeApiKey));
+    setApiKeys(storedApiKeys);
     setRequestLogs(storedRequestLogs);
     setHasLoadedStorage(true);
   }, []);

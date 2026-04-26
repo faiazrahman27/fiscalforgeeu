@@ -56,11 +56,6 @@ type ApiXmlInspectResponse = {
 
 const XML_UPLOAD_STORAGE_KEY = "invoice-lantern.workspace.xmlUploads";
 
-const LEGACY_XML_UPLOAD_STORAGE_KEYS = [
-  "Invoice Lantern.eu.workspace.xmlUploads",
-  "invoice-lantern.workspace.xmlUploads"
-];
-
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
 
 const defaultUploadHistory: XmlUploadRecord[] = [
@@ -167,10 +162,7 @@ function readStoredUploads() {
     return defaultUploadHistory;
   }
 
-  const storedValue = readFirstLocalStorageValue([
-    XML_UPLOAD_STORAGE_KEY,
-    ...LEGACY_XML_UPLOAD_STORAGE_KEYS
-  ]);
+  const storedValue = readFirstLocalStorageValue([XML_UPLOAD_STORAGE_KEY]);
 
   if (!storedValue) {
     return defaultUploadHistory;

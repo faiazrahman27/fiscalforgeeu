@@ -142,16 +142,6 @@ const LOCAL_DRAFT_KEY = "invoice-lantern.invoiceDraft.local";
 const INVOICE_DRAFTS_STORAGE_KEY = "Invoice Lantern:invoice-drafts:v1";
 const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
 
-const LEGACY_LOCAL_DRAFT_KEYS = [
-  "Invoice Lantern.eu.invoiceDraft.local",
-  "invoice-lantern.invoiceDraft.local"
-];
-
-const LEGACY_VALIDATION_RUN_STORAGE_KEYS = [
-  "Invoice Lantern.eu.validationRuns.local",
-  "invoice-lantern.validationRuns.local"
-];
-
 export function InvoiceEditorClient({
   initialDraft
 }: {
@@ -162,10 +152,7 @@ export function InvoiceEditorClient({
       return initialDraft;
     }
 
-    const storedDraft = readFirstLocalStorageValue([
-      LOCAL_DRAFT_KEY,
-      ...LEGACY_LOCAL_DRAFT_KEYS
-    ]);
+    const storedDraft = readFirstLocalStorageValue([LOCAL_DRAFT_KEY]);
 
     if (!storedDraft) {
       return initialDraft;
@@ -1266,10 +1253,7 @@ function readStoredValidationRuns() {
     return [] as SavedValidationRun[];
   }
 
-  const storedValue = readFirstLocalStorageValue([
-    VALIDATION_RUN_STORAGE_KEY,
-    ...LEGACY_VALIDATION_RUN_STORAGE_KEYS
-  ]);
+  const storedValue = readFirstLocalStorageValue([VALIDATION_RUN_STORAGE_KEY]);
 
   if (!storedValue) {
     return [] as SavedValidationRun[];

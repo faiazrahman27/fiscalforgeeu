@@ -51,7 +51,7 @@ export function DocumentTheatre() {
           <div className="code-block">
             &lt;Invoice&gt;
             <br />
-            &nbsp;&lt;ID&gt;FF-001&lt;/ID&gt;
+            &nbsp;&lt;ID&gt;IL-001&lt;/ID&gt;
             <br />
             &nbsp;&lt;TaxTotal&gt;...&lt;/TaxTotal&gt;
             <br />
