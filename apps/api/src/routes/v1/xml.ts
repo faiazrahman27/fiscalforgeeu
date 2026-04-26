@@ -5,6 +5,7 @@ import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
   createXmlUploadRecord,
   deleteXmlUploadRecordById,
+  getXmlUploadRecordById,
   listXmlUploadRecords,
   type XmlApiInspectionStatus
 } from "../../repositories/xml-upload-repository.js";
@@ -72,6 +73,46 @@ export async function xmlRoutes(app: FastifyInstance) {
 
       return {
         records
+      };
+    }
+  );
+
+  app.get(
+    "/uploads/:id",
+    {
+      preHandler: requireApiKey
+    },
+    async (request, reply) => {
+      const parsedParams = xmlUploadParamsSchema.safeParse(request.params);
+
+      if (!parsedParams.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "XML upload ID failed schema validation.",
+            details: parsedParams.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+              code: issue.code
+            }))
+          }
+        });
+      }
+
+      const record = await getXmlUploadRecordById(parsedParams.data.id);
+
+      if (!record) {
+        return reply.status(404).send({
+          error: {
+            code: "XML_UPLOAD_NOT_FOUND",
+            message: "XML upload record was not found.",
+            details: null
+          }
+        });
+      }
+
+      return {
+        record
       };
     }
   );
@@ -180,6 +221,7 @@ export async function xmlRoutes(app: FastifyInstance) {
         currency: inspection.currency,
         apiStatus,
         disclaimer,
+        readinessReport,
         summary: buildXmlUploadSummary(readinessReport)
       });
 
@@ -191,13 +233,13 @@ export async function xmlRoutes(app: FastifyInstance) {
         issueDate: record.issueDate,
         currency: record.currency,
         status: record.apiStatus,
-        technicalStatus: readinessReport.technicalStatus,
-        readinessStatus: readinessReport.readinessStatus,
-        documentStatus: readinessReport.documentStatus,
-        calculationStatus: readinessReport.calculationStatus,
-        profileStatus: readinessReport.profileStatus,
-        extractedData: readinessReport.extractedData,
-        findings: readinessReport.findings,
+        technicalStatus: record.technicalStatus,
+        readinessStatus: record.readinessStatus,
+        documentStatus: record.documentStatus,
+        calculationStatus: record.calculationStatus,
+        profileStatus: record.profileStatus,
+        extractedData: record.extractedData,
+        findings: record.findings,
         disclaimer: record.disclaimer,
         record
       });

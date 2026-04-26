@@ -70,8 +70,19 @@ type XmlUploadRecord = {
   detectedDocument: string;
   rootElement: string;
   invoiceId: string;
+  issueDate: string;
+  currency: string;
+  apiStatus: string;
   status: UploadStatus;
   note: string;
+  disclaimer: string;
+  technicalStatus: string;
+  readinessStatus: string;
+  documentStatus: string;
+  calculationStatus: string;
+  profileStatus: string;
+  extractedData: XmlExtractedData;
+  findings: XmlReadinessFinding[];
   summary?: XmlUploadSummary;
 };
 
@@ -96,6 +107,7 @@ type XmlAnalysis = {
   status: UploadStatus;
   note: string;
   preview: string;
+  sourceMode: "live_upload" | "saved_report";
 };
 
 type ApiXmlUploadRecord = {
@@ -112,11 +124,22 @@ type ApiXmlUploadRecord = {
   status: string;
   note: string;
   disclaimer?: string;
+  technicalStatus?: string;
+  readinessStatus?: string;
+  documentStatus?: string;
+  calculationStatus?: string;
+  profileStatus?: string;
+  extractedData?: XmlExtractedData;
+  findings?: XmlReadinessFinding[];
   summary?: XmlUploadSummary;
 };
 
 type ApiXmlUploadListResponse = {
   records?: ApiXmlUploadRecord[];
+};
+
+type ApiXmlUploadDetailResponse = {
+  record?: ApiXmlUploadRecord;
 };
 
 type ApiXmlInspectResponse = {
@@ -139,6 +162,9 @@ type ApiXmlInspectResponse = {
 };
 
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
+
+const SAVED_REPORT_PREVIEW =
+  "This saved report was reopened from API-owned upload history. Invoice Lantern stores the readiness result, extracted data, findings, and metadata, but it does not store the raw XML body in this development flow.";
 
 const emptyExtractedData: XmlExtractedData = {
   sellerName: "not_detected",
@@ -292,32 +318,6 @@ function normalizeUploadSummary(value: unknown): XmlUploadSummary | undefined {
   };
 }
 
-function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-  const uploadedAt = readStringField(
-    record,
-    "uploadedAt",
-    new Date().toISOString()
-  );
-
-  return {
-    id: readStringField(record, "id", buildFallbackUploadId(record)),
-    fileName: readStringField(record, "fileName", "unknown.xml"),
-    fileSize: readStringField(record, "fileSize", "0 B"),
-    uploadedAt: formatDateTimeFromString(uploadedAt),
-    detectedDocument: readStringField(record, "detectedDocument", "unknown"),
-    rootElement: readStringField(record, "rootElement", "unknown"),
-    invoiceId: readStringField(record, "invoiceId", "not_detected"),
-    status: isUploadStatus(record.status) ? record.status : "rejected",
-    note: readStringField(record, "note", "Stored API XML upload record."),
-    summary: normalizeUploadSummary(record.summary)
-  };
-}
-
 function normalizeFinding(value: unknown): XmlReadinessFinding | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -465,6 +465,104 @@ function sanitizeHeaderValue(value: string) {
   return value.replace(/[^\x20-\x7E]/g, "_").slice(0, 180);
 }
 
+function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const uploadedAt = readStringField(
+    record,
+    "uploadedAt",
+    new Date().toISOString()
+  );
+
+  const summary = normalizeUploadSummary(record.summary);
+  const detectedDocument = readStringField(record, "detectedDocument", "unknown");
+  const apiStatus = readStringField(record, "apiStatus", "review_required");
+  const currency = readStringField(
+    record,
+    "currency",
+    summary?.currency ?? "not_detected"
+  );
+
+  return {
+    id: readStringField(record, "id", buildFallbackUploadId(record)),
+    fileName: readStringField(record, "fileName", "unknown.xml"),
+    fileSize: readStringField(record, "fileSize", "0 B"),
+    uploadedAt: formatDateTimeFromString(uploadedAt),
+    detectedDocument,
+    rootElement: readStringField(record, "rootElement", "unknown"),
+    invoiceId: readStringField(record, "invoiceId", "not_detected"),
+    issueDate: readStringField(record, "issueDate", "not_detected"),
+    currency,
+    apiStatus,
+    status: isUploadStatus(record.status)
+      ? record.status
+      : normalizeUploadStatus(apiStatus),
+    note: readStringField(record, "note", "Stored API XML upload record."),
+    disclaimer: readStringField(
+      record,
+      "disclaimer",
+      "Invoice Lantern performs a technical readiness simulation only. This result is not official validation."
+    ),
+    technicalStatus: readStringField(
+      record,
+      "technicalStatus",
+      summary?.technicalStatus ?? "failed"
+    ),
+    readinessStatus: readStringField(
+      record,
+      "readinessStatus",
+      summary?.readinessStatus ?? "needs_attention"
+    ),
+    documentStatus: readStringField(
+      record,
+      "documentStatus",
+      detectedDocument === "unknown" ? "unsupported" : "recognized"
+    ),
+    calculationStatus: readStringField(
+      record,
+      "calculationStatus",
+      "not_checked"
+    ),
+    profileStatus: readStringField(
+      record,
+      "profileStatus",
+      detectedDocument === "unknown" ? "unknown_profile" : "ubl_surface_check"
+    ),
+    extractedData: normalizeExtractedData(record.extractedData),
+    findings: normalizeFindings(record.findings),
+    summary
+  };
+}
+
+function buildAnalysisFromRecord(record: XmlUploadRecord): XmlAnalysis {
+  return {
+    id: record.id,
+    fileName: record.fileName,
+    fileSize: record.fileSize,
+    uploadedAt: record.uploadedAt,
+    detectedDocument: record.detectedDocument,
+    rootElement: record.rootElement,
+    invoiceId: record.invoiceId,
+    issueDate: record.issueDate,
+    currency: record.currency,
+    apiStatus: record.apiStatus,
+    technicalStatus: record.technicalStatus,
+    readinessStatus: record.readinessStatus,
+    documentStatus: record.documentStatus,
+    calculationStatus: record.calculationStatus,
+    profileStatus: record.profileStatus,
+    extractedData: record.extractedData,
+    findings: record.findings,
+    status: record.status,
+    note: record.disclaimer,
+    preview: SAVED_REPORT_PREVIEW,
+    sourceMode: "saved_report"
+  };
+}
+
 export default function WorkspaceXmlUploadPage() {
   const [uploadHistory, setUploadHistory] = useState<XmlUploadRecord[]>([]);
   const [analysis, setAnalysis] = useState<XmlAnalysis | null>(null);
@@ -473,6 +571,7 @@ export default function WorkspaceXmlUploadPage() {
   const [isInspecting, setIsInspecting] = useState(false);
   const [isLoadingUploads, setIsLoadingUploads] = useState(true);
   const [deletingUploadId, setDeletingUploadId] = useState("");
+  const [openingUploadId, setOpeningUploadId] = useState("");
 
   const acceptedUploads = useMemo(() => {
     return uploadHistory.filter((upload) => upload.status === "accepted").length;
@@ -563,7 +662,8 @@ export default function WorkspaceXmlUploadPage() {
 
     const apiData = responseData as ApiXmlInspectResponse;
     const uploadedAt = formatDateTime(new Date());
-    const status = normalizeUploadStatus(apiData.status);
+    const apiStatus = apiData.status;
+    const status = normalizeUploadStatus(apiStatus);
     const findings = normalizeFindings(apiData.findings);
     const extractedData = normalizeExtractedData(apiData.extractedData);
 
@@ -579,7 +679,7 @@ export default function WorkspaceXmlUploadPage() {
       invoiceId: apiData.invoiceId,
       issueDate: apiData.issueDate,
       currency: apiData.currency,
-      apiStatus: apiData.status,
+      apiStatus,
       technicalStatus: apiData.technicalStatus ?? "failed",
       readinessStatus: apiData.readinessStatus ?? "needs_attention",
       documentStatus: apiData.documentStatus ?? "unsupported",
@@ -589,7 +689,8 @@ export default function WorkspaceXmlUploadPage() {
       findings,
       status,
       note: apiData.disclaimer,
-      preview: xmlText.slice(0, 1400)
+      preview: xmlText.slice(0, 1400),
+      sourceMode: "live_upload"
     };
 
     const normalizedApiRecord = normalizeUploadRecord(apiData.record);
@@ -603,11 +704,22 @@ export default function WorkspaceXmlUploadPage() {
         detectedDocument: nextAnalysis.detectedDocument,
         rootElement: nextAnalysis.rootElement,
         invoiceId: nextAnalysis.invoiceId,
+        issueDate: nextAnalysis.issueDate,
+        currency: nextAnalysis.currency,
+        apiStatus: nextAnalysis.apiStatus,
         status: nextAnalysis.status,
         note:
           status === "accepted"
             ? "Inspected through local API proxy."
-            : "API returned review-required or unsupported XML status."
+            : "API returned review-required or unsupported XML status.",
+        disclaimer: nextAnalysis.note,
+        technicalStatus: nextAnalysis.technicalStatus,
+        readinessStatus: nextAnalysis.readinessStatus,
+        documentStatus: nextAnalysis.documentStatus,
+        calculationStatus: nextAnalysis.calculationStatus,
+        profileStatus: nextAnalysis.profileStatus,
+        extractedData: nextAnalysis.extractedData,
+        findings: nextAnalysis.findings
       };
 
     setAnalysis(nextAnalysis);
@@ -620,6 +732,62 @@ export default function WorkspaceXmlUploadPage() {
       return nextRecords.slice(0, 250);
     });
     setUploadLoadMessage("");
+  }
+
+  async function openSavedUploadReport(
+    event: MouseEvent<HTMLButtonElement>,
+    upload: XmlUploadRecord
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setOpeningUploadId(upload.id);
+    setUploadLoadMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/xml/uploads/${encodeURIComponent(upload.id)}`,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setUploadLoadMessage(
+          getApiErrorMessage(responseData, "Could not open saved XML report.")
+        );
+        return;
+      }
+
+      const apiData = responseData as ApiXmlUploadDetailResponse;
+      const normalizedRecord = normalizeUploadRecord(apiData.record);
+
+      if (!normalizedRecord) {
+        setUploadLoadMessage("The saved XML report record could not be read.");
+        return;
+      }
+
+      setAnalysis(buildAnalysisFromRecord(normalizedRecord));
+      setUploadHistory((current) => {
+        return current.map((item) =>
+          item.id === normalizedRecord.id ? normalizedRecord : item
+        );
+      });
+
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+      });
+    } catch {
+      setUploadLoadMessage(
+        "Could not open saved XML report. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setOpeningUploadId("");
+    }
   }
 
   async function deleteUploadRecord(
@@ -783,15 +951,18 @@ export default function WorkspaceXmlUploadPage() {
 5. apps/api runs surface-level readiness and consistency checks
 6. apps/api stores the inspection summary through the repository/storage boundary
 7. workspace displays the readiness report and API-owned upload history
+8. saved reports can be reopened from history without re-uploading XML
 
 Backend endpoints:
 POST   /api/v1/xml/inspect
 GET    /api/v1/xml/uploads
+GET    /api/v1/xml/uploads/:id
 DELETE /api/v1/xml/uploads/:id
 
 Proxy endpoints:
 POST   /api/local/xml/inspect
 GET    /api/local/xml/uploads
+GET    /api/local/xml/uploads/:id
 DELETE /api/local/xml/uploads/:id`}</pre>
 
         {errorMessage ? (
@@ -806,7 +977,11 @@ DELETE /api/local/xml/uploads/:id`}</pre>
         <section className="workspace-table-shell">
           <div className="workspace-table-head">
             <div>
-              <p>Invoice Lantern readiness report</p>
+              <p>
+                {analysis.sourceMode === "saved_report"
+                  ? "Saved readiness report"
+                  : "Invoice Lantern readiness report"}
+              </p>
               <h3>{analysis.fileName}</h3>
             </div>
 
@@ -899,7 +1074,9 @@ DELETE /api/local/xml/uploads/:id`}</pre>
                 <span>{analysis.findings.length}</span>
               </div>
 
-              <strong>simulation</strong>
+              <strong>
+                {analysis.sourceMode === "saved_report" ? "saved" : "simulation"}
+              </strong>
 
               <FileSearch size={17} />
             </div>
@@ -1210,13 +1387,23 @@ DELETE /api/local/xml/uploads/:id`}</pre>
         <section className="developer-console">
           <div className="developer-console-head">
             <div>
-              <p>XML preview</p>
-              <h3>First 1,400 characters</h3>
+              <p>
+                {analysis.sourceMode === "saved_report"
+                  ? "Saved report source"
+                  : "XML preview"}
+              </p>
+              <h3>
+                {analysis.sourceMode === "saved_report"
+                  ? "Stored result without raw XML"
+                  : "First 1,400 characters"}
+              </h3>
             </div>
 
             <div className="confidence-label">
               <FileSearch size={17} />
-              API inspected
+              {analysis.sourceMode === "saved_report"
+                ? "API history"
+                : "API inspected"}
             </div>
           </div>
 
@@ -1300,6 +1487,18 @@ DELETE /api/local/xml/uploads/:id`}</pre>
                   ) : null}
 
                   <div className="workspace-row-actions">
+                    <button
+                      type="button"
+                      className="text-link-button"
+                      onClick={(event) => openSavedUploadReport(event, upload)}
+                      disabled={openingUploadId === upload.id}
+                    >
+                      <FileSearch size={16} />
+                      {openingUploadId === upload.id
+                        ? "Opening..."
+                        : "Open report"}
+                    </button>
+
                     <button
                       type="button"
                       className="text-link-button"

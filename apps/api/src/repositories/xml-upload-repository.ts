@@ -1,21 +1,17 @@
 import { randomUUID } from "node:crypto";
+import type {
+  XmlExtractedData,
+  XmlReadinessFinding,
+  XmlReadinessReport,
+  XmlUploadSummaryShape
+} from "../services/xml-readiness-engine.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
 export type XmlUploadStatus = "accepted" | "rejected";
 
 export type XmlApiInspectionStatus = "parsed" | "review_required";
 
-export type XmlUploadSummary = {
-  technicalStatus: "passed" | "failed";
-  readinessStatus: "ready_for_review" | "needs_attention" | "unsupported";
-  findingsCount: number;
-  sellerName: string;
-  buyerName: string;
-  lineCount: number;
-  payableAmount: string;
-  taxAmount: string;
-  currency: string;
-};
+export type XmlUploadSummary = XmlUploadSummaryShape;
 
 export type XmlUploadRecord = {
   id: string;
@@ -31,7 +27,16 @@ export type XmlUploadRecord = {
   status: XmlUploadStatus;
   note: string;
   disclaimer: string;
-  summary?: XmlUploadSummary;
+
+  technicalStatus: XmlReadinessReport["technicalStatus"];
+  readinessStatus: XmlReadinessReport["readinessStatus"];
+  documentStatus: XmlReadinessReport["documentStatus"];
+  calculationStatus: XmlReadinessReport["calculationStatus"];
+  profileStatus: XmlReadinessReport["profileStatus"];
+  extractedData: XmlExtractedData;
+  findings: XmlReadinessFinding[];
+
+  summary: XmlUploadSummary;
 };
 
 export type CreateXmlUploadRecordInput = {
@@ -44,6 +49,7 @@ export type CreateXmlUploadRecordInput = {
   currency: string;
   apiStatus: XmlApiInspectionStatus;
   disclaimer: string;
+  readinessReport: XmlReadinessReport;
   summary: XmlUploadSummary;
 };
 
@@ -68,11 +74,11 @@ function buildUploadNote(input: CreateXmlUploadRecordInput) {
     return "XML structure requires review or uses an unsupported document root.";
   }
 
-  if (input.summary.readinessStatus === "ready_for_review") {
+  if (input.readinessReport.readinessStatus === "ready_for_review") {
     return "Readiness simulation completed without blocking findings.";
   }
 
-  return `Readiness simulation completed with ${input.summary.findingsCount} finding(s).`;
+  return `Readiness simulation completed with ${input.readinessReport.findings.length} finding(s).`;
 }
 
 export async function listXmlUploadRecords() {
@@ -80,6 +86,12 @@ export async function listXmlUploadRecords() {
     await storageProvider.readCollection<XmlUploadRecord>(XML_UPLOADS_FILE);
 
   return sortXmlUploadsByUploadedAt(records);
+}
+
+export async function getXmlUploadRecordById(id: string) {
+  const records = await listXmlUploadRecords();
+
+  return records.find((record) => record.id === id) ?? null;
 }
 
 export async function createXmlUploadRecord(
@@ -99,6 +111,15 @@ export async function createXmlUploadRecord(
     status: mapApiStatusToUploadStatus(input.apiStatus),
     note: buildUploadNote(input),
     disclaimer: input.disclaimer,
+
+    technicalStatus: input.readinessReport.technicalStatus,
+    readinessStatus: input.readinessReport.readinessStatus,
+    documentStatus: input.readinessReport.documentStatus,
+    calculationStatus: input.readinessReport.calculationStatus,
+    profileStatus: input.readinessReport.profileStatus,
+    extractedData: input.readinessReport.extractedData,
+    findings: input.readinessReport.findings,
+
     summary: input.summary
   };
 
