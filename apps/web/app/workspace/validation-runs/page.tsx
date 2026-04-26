@@ -187,7 +187,7 @@ function getValidationIcon(iconKey: WorkspaceIconKey) {
   return icons[iconKey] ?? <FileCheck2 size={22} />;
 }
 
-function buildFallbackSummary(run: SavedValidationRun): ValidationRunSummary {
+function buildValidationRunSummary(run: SavedValidationRun): ValidationRunSummary {
   return {
     id: run.id,
     invoiceNumber: run.invoiceNumber,
@@ -204,6 +204,10 @@ function buildFallbackSummary(run: SavedValidationRun): ValidationRunSummary {
     findingsCount: run.findings.length,
     payableAmount: run.totals.payableAmount
   };
+}
+
+function getDemoValidationRunSummaries() {
+  return fallbackRuns.map(buildValidationRunSummary);
 }
 
 function formatStatus(status: string) {
@@ -228,6 +232,34 @@ function formatDateTime(value: string) {
     .replace("T", " ");
 }
 
+function readStringField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: string
+) {
+  const value = record[key];
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return fallback;
+}
+
+function readNumberField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: number
+) {
+  const value = record[key];
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  return fallback;
+}
+
 function normalizeValidationRunSummary(
   value: unknown
 ): ValidationRunSummary | null {
@@ -237,52 +269,153 @@ function normalizeValidationRunSummary(
 
   const record = value as Record<string, unknown>;
 
-  if (typeof record.id !== "string" || record.id.trim().length === 0) {
+  const id = readStringField(record, "id", "");
+
+  if (!id) {
     return null;
   }
 
   return {
-    id: record.id,
-    invoiceNumber:
-      typeof record.invoiceNumber === "string" ? record.invoiceNumber : "Untitled invoice",
-    buyer: typeof record.buyer === "string" ? record.buyer : "Unknown buyer",
-    seller: typeof record.seller === "string" ? record.seller : "Unknown seller",
-    createdAt:
-      typeof record.createdAt === "string"
-        ? record.createdAt
-        : new Date().toISOString(),
-    technicalStatus:
-      typeof record.technicalStatus === "string"
-        ? record.technicalStatus
-        : "failed",
-    standardStatus:
-      typeof record.standardStatus === "string" ? record.standardStatus : "warning",
-    countrySimulationStatus:
-      typeof record.countrySimulationStatus === "string"
-        ? record.countrySimulationStatus
-        : "not_relevant",
-    vidaReadinessStatus:
-      typeof record.vidaReadinessStatus === "string"
-        ? record.vidaReadinessStatus
-        : "not_relevant",
-    confidence:
-      typeof record.confidence === "string" ? record.confidence : "technical_preview",
-    profile: typeof record.profile === "string" ? record.profile : "API_VALIDATION",
-    currency: typeof record.currency === "string" ? record.currency : "EUR",
-    findingsCount:
-      typeof record.findingsCount === "number" && Number.isFinite(record.findingsCount)
-        ? record.findingsCount
-        : 0,
-    payableAmount:
-      typeof record.payableAmount === "number" && Number.isFinite(record.payableAmount)
-        ? record.payableAmount
-        : 0
+    id,
+    invoiceNumber: readStringField(record, "invoiceNumber", "Untitled invoice"),
+    buyer: readStringField(record, "buyer", "Unknown buyer"),
+    seller: readStringField(record, "seller", "Unknown seller"),
+    createdAt: readStringField(record, "createdAt", new Date().toISOString()),
+    technicalStatus: readStringField(record, "technicalStatus", "failed"),
+    standardStatus: readStringField(record, "standardStatus", "warning"),
+    countrySimulationStatus: readStringField(
+      record,
+      "countrySimulationStatus",
+      "not_relevant"
+    ),
+    vidaReadinessStatus: readStringField(
+      record,
+      "vidaReadinessStatus",
+      "not_relevant"
+    ),
+    confidence: readStringField(record, "confidence", "technical_preview"),
+    profile: readStringField(record, "profile", "API_VALIDATION"),
+    currency: readStringField(record, "currency", "EUR"),
+    findingsCount: readNumberField(record, "findingsCount", 0),
+    payableAmount: readNumberField(record, "payableAmount", 0)
+  };
+}
+
+function normalizeValidationRunDetail(value: unknown): SavedValidationRun | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  const id = readStringField(record, "id", "");
+
+  if (!id) {
+    return null;
+  }
+
+  const findings = Array.isArray(record.findings)
+    ? record.findings
+        .map((finding) => normalizeFinding(finding))
+        .filter((finding): finding is ValidationFinding => finding !== null)
+    : [];
+
+  return {
+    id,
+    invoiceNumber: readStringField(record, "invoiceNumber", "Untitled invoice"),
+    buyer: readStringField(record, "buyer", "Unknown buyer"),
+    seller: readStringField(record, "seller", "Unknown seller"),
+    createdAt: readStringField(record, "createdAt", new Date().toISOString()),
+    technicalStatus: readStringField(record, "technicalStatus", "failed"),
+    standardStatus: readStringField(record, "standardStatus", "warning"),
+    countrySimulationStatus: readStringField(
+      record,
+      "countrySimulationStatus",
+      "not_relevant"
+    ),
+    vidaReadinessStatus: readStringField(
+      record,
+      "vidaReadinessStatus",
+      "not_relevant"
+    ),
+    confidence: readStringField(record, "confidence", "technical_preview"),
+    profile: readStringField(record, "profile", "API_VALIDATION"),
+    currency: readStringField(record, "currency", "EUR"),
+    totals: normalizeTotals(record.totals),
+    findings,
+    disclaimer: readStringField(
+      record,
+      "disclaimer",
+      "This validation report is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
+    )
+  };
+}
+
+function normalizeFinding(value: unknown): ValidationFinding | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const code = readStringField(record, "code", "");
+
+  if (!code) {
+    return null;
+  }
+
+  const severity =
+    record.severity === "info" ||
+    record.severity === "warning" ||
+    record.severity === "fatal"
+      ? record.severity
+      : "info";
+
+  return {
+    code,
+    severity,
+    field:
+      typeof record.field === "string" && record.field.trim().length > 0
+        ? record.field.trim()
+        : undefined,
+    message: readStringField(
+      record,
+      "message",
+      "Validation finding returned without a message."
+    ),
+    legalConfidence:
+      record.legalConfidence === "technical" ||
+      record.legalConfidence === "educational_simulation" ||
+      record.legalConfidence === "review_required"
+        ? record.legalConfidence
+        : undefined
+  };
+}
+
+function normalizeTotals(value: unknown): ValidationTotals {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      lineExtensionAmount: 0,
+      taxExclusiveAmount: 0,
+      taxAmount: 0,
+      taxInclusiveAmount: 0,
+      payableAmount: 0
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    lineExtensionAmount: readNumberField(record, "lineExtensionAmount", 0),
+    taxExclusiveAmount: readNumberField(record, "taxExclusiveAmount", 0),
+    taxAmount: readNumberField(record, "taxAmount", 0),
+    taxInclusiveAmount: readNumberField(record, "taxInclusiveAmount", 0),
+    payableAmount: readNumberField(record, "payableAmount", 0)
   };
 }
 
 export default function WorkspaceValidationRunsPage() {
   const [validationRuns, setValidationRuns] = useState<ValidationRunSummary[]>(
-    fallbackRuns.map(buildFallbackSummary)
+    getDemoValidationRunSummaries()
   );
   const [latestRunDetail, setLatestRunDetail] =
     useState<SavedValidationRun | null>(fallbackRuns[0]);
@@ -305,9 +438,14 @@ export default function WorkspaceValidationRunsPage() {
         const responseData: unknown = await response.json();
 
         if (!response.ok) {
-          setRunLoadMessage(
-            "Could not load API-owned validation runs. Showing demo reports instead."
-          );
+          if (isMounted) {
+            setValidationRuns(getDemoValidationRunSummaries());
+            setLatestRunDetail(fallbackRuns[0]);
+            setRunLoadMessage(
+              "Could not load API-owned validation runs. Showing demo reports instead."
+            );
+          }
+
           return;
         }
 
@@ -323,8 +461,11 @@ export default function WorkspaceValidationRunsPage() {
         }
 
         if (normalizedRuns.length === 0) {
-          setValidationRuns(fallbackRuns.map(buildFallbackSummary));
+          setValidationRuns(getDemoValidationRunSummaries());
           setLatestRunDetail(fallbackRuns[0]);
+          setRunLoadMessage(
+            "No API-owned validation runs are saved yet. Showing demo reports for local development."
+          );
           return;
         }
 
@@ -341,23 +482,31 @@ export default function WorkspaceValidationRunsPage() {
 
         const detailData: unknown = await detailResponse.json();
 
+        if (!isMounted) {
+          return;
+        }
+
         if (!detailResponse.ok) {
           setLatestRunDetail(null);
+          setRunLoadMessage(
+            "Validation runs loaded, but the latest run detail could not be loaded."
+          );
           return;
         }
 
         const detailPayload = detailData as ValidationRunDetailResponse;
+        const normalizedDetail = normalizeValidationRunDetail(
+          detailPayload.record
+        );
 
-        if (isMounted) {
-          setLatestRunDetail(detailPayload.record ?? null);
-        }
+        setLatestRunDetail(normalizedDetail);
       } catch {
         if (isMounted) {
+          setValidationRuns(getDemoValidationRunSummaries());
+          setLatestRunDetail(fallbackRuns[0]);
           setRunLoadMessage(
             "The local validation run API is unavailable. Make sure apps/api and apps/web are both running."
           );
-          setValidationRuns(fallbackRuns.map(buildFallbackSummary));
-          setLatestRunDetail(fallbackRuns[0]);
         }
       } finally {
         if (isMounted) {
@@ -374,7 +523,7 @@ export default function WorkspaceValidationRunsPage() {
   }, []);
 
   const latestRun = useMemo(() => {
-    return validationRuns[0] ?? buildFallbackSummary(fallbackRuns[0]);
+    return validationRuns[0] ?? buildValidationRunSummary(fallbackRuns[0]);
   }, [validationRuns]);
 
   const latestFindings = latestRunDetail?.findings ?? [];
@@ -385,9 +534,10 @@ export default function WorkspaceValidationRunsPage() {
         <p className="workspace-kicker">Validation Runs</p>
         <h2>Every validation result must be explainable.</h2>
         <p>
-          This screen reads validation run history through the local Next.js proxy from
-          the dedicated Invoice Lantern API service. Demo reports remain as fallback
-          records during local development.
+          This screen reads validation run history through the local Next.js
+          proxy from the dedicated Invoice Lantern API service. Demo reports only
+          appear when the API is unavailable or no saved API validation runs
+          exist.
         </p>
       </section>
 

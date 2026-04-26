@@ -85,14 +85,20 @@ function readStringField(
   return fallback;
 }
 
+function buildFallbackInvoiceId(record: Record<string, unknown>) {
+  const number = readStringField(record, "number", "draft");
+  const buyer = readStringField(record, "buyer", "buyer");
+  const issueDate = readStringField(record, "issueDate", "date");
+
+  return `${number}-${buyer}-${issueDate}`.replaceAll(/\s+/g, "-").toLowerCase();
+}
+
 function normalizeInvoiceDraft(value: unknown): InvoiceListItem | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
 
   const record = value as Record<string, unknown>;
-
-  const id = readStringField(record, "id", crypto.randomUUID());
 
   const number =
     readStringField(record, "number", "") ||
@@ -104,19 +110,33 @@ function normalizeInvoiceDraft(value: unknown): InvoiceListItem | null {
     readStringField(record, "buyerName", "") ||
     "Unknown buyer";
 
+  const issueDate = readStringField(
+    record,
+    "issueDate",
+    new Date().toISOString().slice(0, 10)
+  );
+
   return {
-    id,
+    id: readStringField(record, "id", buildFallbackInvoiceId(record)),
     number,
     buyer,
     buyerCountry: readStringField(record, "buyerCountry", "EU"),
-    issueDate: readStringField(
-      record,
-      "issueDate",
-      new Date().toISOString().slice(0, 10)
-    ),
+    issueDate,
     status: readStringField(record, "status", "Draft"),
     amount: formatAmount(record.amount ?? record.payableAmount)
   };
+}
+
+function getDemoInvoices(): InvoiceListItem[] {
+  return invoiceDrafts.map((invoice) => ({
+    id: invoice.id,
+    number: invoice.number,
+    buyer: invoice.buyer,
+    buyerCountry: invoice.buyerCountry,
+    issueDate: invoice.issueDate,
+    status: invoice.status,
+    amount: formatAmount(invoice.amount)
+  }));
 }
 
 function uniqueInvoices(invoices: InvoiceListItem[]) {
@@ -136,6 +156,7 @@ export default function WorkspaceInvoicesPage() {
   const [apiInvoices, setApiInvoices] = useState<InvoiceListItem[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
   const [invoiceLoadMessage, setInvoiceLoadMessage] = useState("");
+  const [useDemoFallback, setUseDemoFallback] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -143,6 +164,7 @@ export default function WorkspaceInvoicesPage() {
     async function loadInvoiceDrafts() {
       setIsLoadingInvoices(true);
       setInvoiceLoadMessage("");
+      setUseDemoFallback(false);
 
       try {
         const response = await fetch("/api/local/invoices/drafts", {
@@ -153,9 +175,14 @@ export default function WorkspaceInvoicesPage() {
         const responseData: unknown = await response.json();
 
         if (!response.ok) {
-          setInvoiceLoadMessage(
-            "Could not load API-owned invoice drafts. Showing demo drafts instead."
-          );
+          if (isMounted) {
+            setApiInvoices([]);
+            setUseDemoFallback(true);
+            setInvoiceLoadMessage(
+              "Could not load API-owned invoice drafts. Showing demo drafts instead."
+            );
+          }
+
           return;
         }
 
@@ -168,9 +195,18 @@ export default function WorkspaceInvoicesPage() {
 
         if (isMounted) {
           setApiInvoices(normalizedInvoices);
+          setUseDemoFallback(normalizedInvoices.length === 0);
+
+          if (normalizedInvoices.length === 0) {
+            setInvoiceLoadMessage(
+              "No API-owned invoice drafts are saved yet. Showing demo drafts for local development."
+            );
+          }
         }
       } catch {
         if (isMounted) {
+          setApiInvoices([]);
+          setUseDemoFallback(true);
           setInvoiceLoadMessage(
             "The local invoice draft API is unavailable. Make sure apps/api and apps/web are both running."
           );
@@ -190,18 +226,8 @@ export default function WorkspaceInvoicesPage() {
   }, []);
 
   const tableInvoices = useMemo(() => {
-    const mockInvoices: InvoiceListItem[] = invoiceDrafts.map((invoice) => ({
-      id: invoice.id,
-      number: invoice.number,
-      buyer: invoice.buyer,
-      buyerCountry: invoice.buyerCountry,
-      issueDate: invoice.issueDate,
-      status: invoice.status,
-      amount: formatAmount(invoice.amount)
-    }));
-
-    return uniqueInvoices([...apiInvoices, ...mockInvoices]);
-  }, [apiInvoices]);
+    return uniqueInvoices(useDemoFallback ? getDemoInvoices() : apiInvoices);
+  }, [apiInvoices, useDemoFallback]);
 
   return (
     <div className="workspace-page">
@@ -209,9 +235,9 @@ export default function WorkspaceInvoicesPage() {
         <p className="workspace-kicker">Invoice Studio</p>
         <h2>Create structured invoice data before validation.</h2>
         <p>
-          This screen now reads invoice draft summaries through the local Next.js
-          proxy from the dedicated Invoice Lantern API service. Demo drafts remain as
-          fallback records during local development.
+          This screen reads invoice draft summaries through the local Next.js
+          proxy from the dedicated Invoice Lantern API service. Demo drafts only
+          appear when the API is unavailable or no saved API drafts exist.
         </p>
       </section>
 

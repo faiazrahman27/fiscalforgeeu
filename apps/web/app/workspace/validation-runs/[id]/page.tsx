@@ -215,6 +215,34 @@ function formatTotalAmount(currency: string, value: number | string) {
   return `${safeCurrency} 0.00`;
 }
 
+function readStringField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: string
+) {
+  const value = record[key];
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return fallback;
+}
+
+function readAmountField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return 0;
+}
+
 function buildEvidence(run: SavedValidationRun): EvidenceItem[] {
   return [
     {
@@ -250,8 +278,9 @@ function normalizeFinding(value: unknown): ValidationFinding | null {
   }
 
   const record = value as Record<string, unknown>;
+  const code = readStringField(record, "code", "");
 
-  if (typeof record.code !== "string" || record.code.trim().length === 0) {
+  if (!code) {
     return null;
   }
 
@@ -263,13 +292,17 @@ function normalizeFinding(value: unknown): ValidationFinding | null {
       : "info";
 
   return {
-    code: record.code,
+    code,
     severity,
-    field: typeof record.field === "string" ? record.field : undefined,
-    message:
-      typeof record.message === "string"
-        ? record.message
-        : "Validation finding returned without a message.",
+    field:
+      typeof record.field === "string" && record.field.trim().length > 0
+        ? record.field.trim()
+        : undefined,
+    message: readStringField(
+      record,
+      "message",
+      "Validation finding returned without a message."
+    ),
     legalConfidence:
       record.legalConfidence === "technical" ||
       record.legalConfidence === "educational_simulation" ||
@@ -293,24 +326,12 @@ function normalizeTotals(value: unknown): ValidationTotals {
   const record = value as Record<string, unknown>;
 
   return {
-    lineExtensionAmount: normalizeAmount(record.lineExtensionAmount),
-    taxExclusiveAmount: normalizeAmount(record.taxExclusiveAmount),
-    taxAmount: normalizeAmount(record.taxAmount),
-    taxInclusiveAmount: normalizeAmount(record.taxInclusiveAmount),
-    payableAmount: normalizeAmount(record.payableAmount)
+    lineExtensionAmount: readAmountField(record, "lineExtensionAmount"),
+    taxExclusiveAmount: readAmountField(record, "taxExclusiveAmount"),
+    taxAmount: readAmountField(record, "taxAmount"),
+    taxInclusiveAmount: readAmountField(record, "taxInclusiveAmount"),
+    payableAmount: readAmountField(record, "payableAmount")
   };
-}
-
-function normalizeAmount(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    return value.trim();
-  }
-
-  return 0;
 }
 
 function normalizeValidationRun(value: unknown): SavedValidationRun | null {
@@ -319,8 +340,9 @@ function normalizeValidationRun(value: unknown): SavedValidationRun | null {
   }
 
   const record = value as Record<string, unknown>;
+  const id = readStringField(record, "id", "");
 
-  if (typeof record.id !== "string" || record.id.trim().length === 0) {
+  if (!id) {
     return null;
   }
 
@@ -331,41 +353,33 @@ function normalizeValidationRun(value: unknown): SavedValidationRun | null {
     : [];
 
   return {
-    id: record.id,
-    invoiceNumber:
-      typeof record.invoiceNumber === "string"
-        ? record.invoiceNumber
-        : "Untitled invoice",
-    buyer: typeof record.buyer === "string" ? record.buyer : "Unknown buyer",
-    seller: typeof record.seller === "string" ? record.seller : "Unknown seller",
-    createdAt:
-      typeof record.createdAt === "string"
-        ? record.createdAt
-        : new Date().toISOString(),
-    technicalStatus:
-      typeof record.technicalStatus === "string"
-        ? record.technicalStatus
-        : "failed",
-    standardStatus:
-      typeof record.standardStatus === "string" ? record.standardStatus : "warning",
-    countrySimulationStatus:
-      typeof record.countrySimulationStatus === "string"
-        ? record.countrySimulationStatus
-        : "not_relevant",
-    vidaReadinessStatus:
-      typeof record.vidaReadinessStatus === "string"
-        ? record.vidaReadinessStatus
-        : "not_relevant",
-    confidence:
-      typeof record.confidence === "string" ? record.confidence : "technical_preview",
-    profile: typeof record.profile === "string" ? record.profile : "API_VALIDATION",
-    currency: typeof record.currency === "string" ? record.currency : "EUR",
+    id,
+    invoiceNumber: readStringField(record, "invoiceNumber", "Untitled invoice"),
+    buyer: readStringField(record, "buyer", "Unknown buyer"),
+    seller: readStringField(record, "seller", "Unknown seller"),
+    createdAt: readStringField(record, "createdAt", new Date().toISOString()),
+    technicalStatus: readStringField(record, "technicalStatus", "failed"),
+    standardStatus: readStringField(record, "standardStatus", "warning"),
+    countrySimulationStatus: readStringField(
+      record,
+      "countrySimulationStatus",
+      "not_relevant"
+    ),
+    vidaReadinessStatus: readStringField(
+      record,
+      "vidaReadinessStatus",
+      "not_relevant"
+    ),
+    confidence: readStringField(record, "confidence", "technical_preview"),
+    profile: readStringField(record, "profile", "API_VALIDATION"),
+    currency: readStringField(record, "currency", "EUR"),
     totals: normalizeTotals(record.totals),
     findings,
-    disclaimer:
-      typeof record.disclaimer === "string"
-        ? record.disclaimer
-        : "This validation report is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
+    disclaimer: readStringField(
+      record,
+      "disclaimer",
+      "This validation report is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
+    )
   };
 }
 
@@ -409,9 +423,19 @@ export default function ValidationRunDetailPage() {
         const payload = responseData as ValidationRunDetailResponse;
         const normalizedRun = normalizeValidationRun(payload.record);
 
-        if (isMounted) {
-          setRun(normalizedRun ?? getFallbackRunById(params.id));
+        if (!isMounted) {
+          return;
         }
+
+        if (!normalizedRun) {
+          setRun(getFallbackRunById(params.id));
+          setRunLoadMessage(
+            "The API returned an unreadable validation run. Showing the closest demo report instead."
+          );
+          return;
+        }
+
+        setRun(normalizedRun);
       } catch {
         if (isMounted) {
           setRun(getFallbackRunById(params.id));
@@ -446,9 +470,9 @@ export default function ValidationRunDetailPage() {
         <p className="workspace-kicker">Validation report</p>
         <h2>{isLoadingRun ? "Loading validation run" : run.id}</h2>
         <p>
-          Full validation report preview for invoice {run.invoiceNumber}. This page
-          reads the validation run through the local Next.js proxy from the dedicated
-          Invoice Lantern API service.
+          Full validation report preview for invoice {run.invoiceNumber}. This
+          page reads the validation run through the local Next.js proxy from the
+          dedicated Invoice Lantern API service.
         </p>
 
         {runLoadMessage ? (
@@ -502,8 +526,8 @@ export default function ValidationRunDetailPage() {
           <FileText size={24} />
           <h3>Invoice context</h3>
           <p>
-            Invoice {run.invoiceNumber} from {run.seller} to {run.buyer}. Profile:{" "}
-            {run.profile}. Currency: {run.currency}. Created:{" "}
+            Invoice {run.invoiceNumber} from {run.seller} to {run.buyer}.
+            Profile: {run.profile}. Currency: {run.currency}. Created:{" "}
             {formatDateTime(run.createdAt)}.
           </p>
         </div>
@@ -512,9 +536,9 @@ export default function ValidationRunDetailPage() {
           <BadgeCheck size={24} />
           <h3>Confidence label</h3>
           <p>
-            {formatStatus(run.confidence)}. This report is a technical preview and must
-            not be interpreted as legal, tax, accounting, Peppol, ViDA, or authority
-            approval.
+            {formatStatus(run.confidence)}. This report is a technical preview
+            and must not be interpreted as legal, tax, accounting, Peppol, ViDA,
+            or authority approval.
           </p>
         </div>
       </section>
@@ -654,16 +678,17 @@ export default function ValidationRunDetailPage() {
           <div className="alert-item">
             <span />
             <p>
-              A future production report must include rule version, source reference,
-              reviewed date, execution timestamp, organization ID, and audit log ID.
+              A future production report must include rule version, source
+              reference, reviewed date, execution timestamp, organization ID, and
+              audit log ID.
             </p>
           </div>
 
           <div className="alert-item">
             <span />
             <p>
-              Country and ViDA logic should remain clearly marked as simulation unless
-              reviewed and maintained by qualified professionals.
+              Country and ViDA logic should remain clearly marked as simulation
+              unless reviewed and maintained by qualified professionals.
             </p>
           </div>
         </div>

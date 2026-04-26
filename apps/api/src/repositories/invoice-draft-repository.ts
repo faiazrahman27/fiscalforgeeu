@@ -24,6 +24,39 @@ const INVOICE_DRAFTS_FILE = "invoice-drafts.json";
 const MAX_STORED_INVOICE_DRAFTS = 250;
 const storageProvider = getCollectionStorageProvider();
 
+function getDraftNumberKey(draft: Pick<InvoiceDraftRecord, "document">) {
+  return draft.document.number.trim().toUpperCase();
+}
+
+function getPayloadNumberKey(payload: InvoiceEditorDraftPayload) {
+  return payload.document.number.trim().toUpperCase();
+}
+
+function sortDraftsByUpdatedAt(drafts: InvoiceDraftRecord[]) {
+  return [...drafts].sort((first, second) =>
+    second.updatedAt.localeCompare(first.updatedAt)
+  );
+}
+
+function uniqueDraftsByInvoiceNumber(drafts: InvoiceDraftRecord[]) {
+  const seen = new Set<string>();
+
+  return sortDraftsByUpdatedAt(drafts).filter((draft) => {
+    const key = getDraftNumberKey(draft);
+
+    if (!key) {
+      return true;
+    }
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
 export function buildDraftSummary(
   draft: InvoiceDraftRecord
 ): InvoiceDraftSummary {
@@ -47,28 +80,48 @@ export async function listInvoiceDrafts() {
 export async function listInvoiceDraftSummaries() {
   const drafts = await listInvoiceDrafts();
 
-  return drafts
-    .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt))
-    .map(buildDraftSummary);
+  return uniqueDraftsByInvoiceNumber(drafts).map(buildDraftSummary);
 }
 
 export async function createInvoiceDraft(
   payload: InvoiceEditorDraftPayload
 ): Promise<InvoiceDraftRecord> {
   const now = new Date().toISOString();
-
-  const nextDraft: InvoiceDraftRecord = {
-    ...payload,
-    id: `draft_${randomUUID()}`,
-    createdAt: now,
-    updatedAt: now
-  };
-
   const currentDrafts = await listInvoiceDrafts();
-  const nextDrafts = [nextDraft, ...currentDrafts].slice(
-    0,
-    MAX_STORED_INVOICE_DRAFTS
-  );
+  const payloadNumberKey = getPayloadNumberKey(payload);
+
+  const existingDraft = currentDrafts.find((draft) => {
+    return getDraftNumberKey(draft) === payloadNumberKey;
+  });
+
+  const nextDraft: InvoiceDraftRecord = existingDraft
+    ? {
+        ...payload,
+        id: existingDraft.id,
+        createdAt: existingDraft.createdAt,
+        updatedAt: now
+      }
+    : {
+        ...payload,
+        id: `draft_${randomUUID()}`,
+        createdAt: now,
+        updatedAt: now
+      };
+
+  const nextDrafts = [
+    nextDraft,
+    ...currentDrafts.filter((draft) => {
+      if (draft.id === nextDraft.id) {
+        return false;
+      }
+
+      if (payloadNumberKey && getDraftNumberKey(draft) === payloadNumberKey) {
+        return false;
+      }
+
+      return true;
+    })
+  ].slice(0, MAX_STORED_INVOICE_DRAFTS);
 
   await storageProvider.writeCollection(INVOICE_DRAFTS_FILE, nextDrafts);
 
