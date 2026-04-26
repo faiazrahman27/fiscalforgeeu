@@ -293,7 +293,7 @@ export default function WorkspaceInvoicesPage() {
           ) : (
             tableInvoices.map((invoice) => (
               <Link
-                href="/workspace/invoices/new"
+                href={`/workspace/invoices/${encodeURIComponent(invoice.id)}`}
                 className="workspace-table-row invoice-click-row"
                 key={invoice.id}
               >
