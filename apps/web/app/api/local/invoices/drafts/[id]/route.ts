@@ -11,7 +11,13 @@ type RouteContext = {
   }>;
 };
 
-function buildApiHeaders() {
+function buildApiKeyHeaders() {
+  return {
+    "x-api-key": DEV_API_KEY
+  };
+}
+
+function buildJsonApiHeaders() {
   return {
     "content-type": "application/json",
     "x-api-key": DEV_API_KEY
@@ -33,6 +39,26 @@ function buildProxyError(message: string, status = 502) {
   );
 }
 
+async function readResponseData(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return {
+      error: {
+        code: "UPSTREAM_NON_JSON_RESPONSE",
+        message: responseText,
+        details: null
+      }
+    };
+  }
+}
+
 export async function GET(_request: Request, context: RouteContext) {
   if (!DEV_API_KEY) {
     return buildProxyError("Missing INVOICE_LANTERN_DEV_API_KEY.", 500);
@@ -45,12 +71,12 @@ export async function GET(_request: Request, context: RouteContext) {
       `${API_BASE_URL}/api/v1/invoices/drafts/${encodeURIComponent(id)}`,
       {
         method: "GET",
-        headers: buildApiHeaders(),
+        headers: buildApiKeyHeaders(),
         cache: "no-store"
       }
     );
 
-    const responseData: unknown = await response.json();
+    const responseData = await readResponseData(response);
 
     return NextResponse.json(responseData, {
       status: response.status
@@ -76,13 +102,13 @@ export async function PUT(request: Request, context: RouteContext) {
       `${API_BASE_URL}/api/v1/invoices/drafts/${encodeURIComponent(id)}`,
       {
         method: "PUT",
-        headers: buildApiHeaders(),
+        headers: buildJsonApiHeaders(),
         body: JSON.stringify(requestBody),
         cache: "no-store"
       }
     );
 
-    const responseData: unknown = await response.json();
+    const responseData = await readResponseData(response);
 
     return NextResponse.json(responseData, {
       status: response.status
@@ -106,12 +132,12 @@ export async function DELETE(_request: Request, context: RouteContext) {
       `${API_BASE_URL}/api/v1/invoices/drafts/${encodeURIComponent(id)}`,
       {
         method: "DELETE",
-        headers: buildApiHeaders(),
+        headers: buildApiKeyHeaders(),
         cache: "no-store"
       }
     );
 
-    const responseData: unknown = await response.json();
+    const responseData = await readResponseData(response);
 
     return NextResponse.json(responseData, {
       status: response.status

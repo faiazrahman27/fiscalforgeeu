@@ -1,17 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode
+} from "react";
 import {
   CalendarDays,
   FileInput,
   ReceiptText,
   Rows3,
   Send,
+  Trash2,
   UserRoundCheck
 } from "lucide-react";
 import { invoiceDrafts, invoiceStages } from "../../../lib/mock-data";
 import type { WorkspaceIconKey } from "../../../lib/types";
+
+type InvoiceListSource = "api" | "demo";
 
 type InvoiceListItem = {
   id: string;
@@ -21,6 +32,7 @@ type InvoiceListItem = {
   issueDate: string;
   status: string;
   amount: string;
+  source: InvoiceListSource;
 };
 
 type ApiInvoiceDraftSummary = {
@@ -37,6 +49,14 @@ type ApiInvoiceDraftSummary = {
 
 type ApiInvoiceDraftListResponse = {
   records?: ApiInvoiceDraftSummary[];
+};
+
+type ApiErrorShape = {
+  error?: {
+    code?: string;
+    message?: string;
+    details?: unknown;
+  };
 };
 
 function getInvoiceIcon(iconKey: WorkspaceIconKey) {
@@ -123,7 +143,8 @@ function normalizeInvoiceDraft(value: unknown): InvoiceListItem | null {
     buyerCountry: readStringField(record, "buyerCountry", "EU"),
     issueDate,
     status: readStringField(record, "status", "Draft"),
-    amount: formatAmount(record.amount ?? record.payableAmount)
+    amount: formatAmount(record.amount ?? record.payableAmount),
+    source: "api"
   };
 }
 
@@ -135,7 +156,8 @@ function getDemoInvoices(): InvoiceListItem[] {
     buyerCountry: invoice.buyerCountry,
     issueDate: invoice.issueDate,
     status: invoice.status,
-    amount: formatAmount(invoice.amount)
+    amount: formatAmount(invoice.amount),
+    source: "demo"
   }));
 }
 
@@ -143,20 +165,67 @@ function uniqueInvoices(invoices: InvoiceListItem[]) {
   const seen = new Set<string>();
 
   return invoices.filter((invoice) => {
-    if (seen.has(invoice.id)) {
+    const key = `${invoice.source}:${invoice.id}`;
+
+    if (seen.has(key)) {
       return false;
     }
 
-    seen.add(invoice.id);
+    seen.add(key);
     return true;
   });
 }
 
+function getInvoiceHref(invoice: InvoiceListItem) {
+  if (invoice.source === "api") {
+    return `/workspace/invoices/${encodeURIComponent(invoice.id)}`;
+  }
+
+  return "/workspace/invoices/new";
+}
+
+async function readResponseBody(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return responseText;
+  }
+}
+
+function getApiErrorMessage(data: unknown, status: number) {
+  if (typeof data === "string" && data.trim().length > 0) {
+    return `Could not delete invoice draft. Status ${status}: ${data.slice(0, 220)}`;
+  }
+
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return `Could not delete invoice draft. Status ${status}.`;
+  }
+
+  const payload = data as ApiErrorShape;
+  const message = payload.error?.message;
+  const code = payload.error?.code;
+
+  if (typeof message === "string" && message.trim().length > 0) {
+    return code ? `${message} (${code})` : message;
+  }
+
+  return `Could not delete invoice draft. Status ${status}.`;
+}
+
 export default function WorkspaceInvoicesPage() {
+  const router = useRouter();
+
   const [apiInvoices, setApiInvoices] = useState<InvoiceListItem[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
   const [invoiceLoadMessage, setInvoiceLoadMessage] = useState("");
   const [useDemoFallback, setUseDemoFallback] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -172,14 +241,17 @@ export default function WorkspaceInvoicesPage() {
           cache: "no-store"
         });
 
-        const responseData: unknown = await response.json();
+        const responseData = await readResponseBody(response);
 
         if (!response.ok) {
           if (isMounted) {
             setApiInvoices([]);
             setUseDemoFallback(true);
             setInvoiceLoadMessage(
-              "Could not load API-owned invoice drafts. Showing demo drafts instead."
+              getApiErrorMessage(responseData, response.status).replace(
+                "delete invoice draft",
+                "load invoice drafts"
+              )
             );
           }
 
@@ -187,7 +259,7 @@ export default function WorkspaceInvoicesPage() {
         }
 
         const apiData = responseData as ApiInvoiceDraftListResponse;
-        const records = Array.isArray(apiData.records) ? apiData.records : [];
+        const records = Array.isArray(apiData?.records) ? apiData.records : [];
 
         const normalizedInvoices = records
           .map((item) => normalizeInvoiceDraft(item))
@@ -228,6 +300,71 @@ export default function WorkspaceInvoicesPage() {
   const tableInvoices = useMemo(() => {
     return uniqueInvoices(useDemoFallback ? getDemoInvoices() : apiInvoices);
   }, [apiInvoices, useDemoFallback]);
+
+  async function deleteInvoiceDraft(
+    event: MouseEvent<HTMLButtonElement>,
+    invoice: InvoiceListItem
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (invoice.source !== "api") {
+      return;
+    }
+
+    setDeletingDraftId(invoice.id);
+    setInvoiceLoadMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/invoices/drafts/${encodeURIComponent(invoice.id)}`,
+        {
+          method: "DELETE",
+          cache: "no-store"
+        }
+      );
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setInvoiceLoadMessage(getApiErrorMessage(responseData, response.status));
+        return;
+      }
+
+      setApiInvoices((currentInvoices) => {
+        const nextInvoices = currentInvoices.filter((item) => item.id !== invoice.id);
+
+        if (nextInvoices.length === 0) {
+          setUseDemoFallback(true);
+          setInvoiceLoadMessage(
+            "No API-owned invoice drafts are saved now. Showing demo drafts for local development."
+          );
+        }
+
+        return nextInvoices;
+      });
+    } catch {
+      setInvoiceLoadMessage(
+        "Could not delete invoice draft. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setDeletingDraftId("");
+    }
+  }
+
+  function openInvoice(invoice: InvoiceListItem) {
+    router.push(getInvoiceHref(invoice));
+  }
+
+  function handleRowKeyDown(
+    event: KeyboardEvent<HTMLDivElement>,
+    invoice: InvoiceListItem
+  ) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openInvoice(invoice);
+    }
+  }
 
   return (
     <div className="workspace-page">
@@ -292,16 +429,38 @@ export default function WorkspaceInvoicesPage() {
             </div>
           ) : (
             tableInvoices.map((invoice) => (
-              <Link
-                href={`/workspace/invoices/${encodeURIComponent(invoice.id)}`}
+              <div
                 className="workspace-table-row invoice-click-row"
-                key={invoice.id}
+                key={`${invoice.source}-${invoice.id}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => openInvoice(invoice)}
+                onKeyDown={(event) => handleRowKeyDown(event, invoice)}
               >
                 <div>
                   <strong>{invoice.number}</strong>
                   <span>
                     {invoice.buyer} - {invoice.buyerCountry}
                   </span>
+
+                  {invoice.source === "api" ? (
+                    <button
+                      type="button"
+                      className="text-link-button"
+                      onClick={(event) => deleteInvoiceDraft(event, invoice)}
+                      disabled={deletingDraftId === invoice.id}
+                      style={{
+                        marginTop: "10px",
+                        width: "fit-content",
+                        padding: "8px 12px"
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      {deletingDraftId === invoice.id ? "Deleting..." : "Delete draft"}
+                    </button>
+                  ) : (
+                    <span style={{ marginTop: "8px" }}>Demo row opens a new draft.</span>
+                  )}
                 </div>
 
                 <div>
@@ -310,11 +469,13 @@ export default function WorkspaceInvoicesPage() {
                 </div>
 
                 <div>
-                  <span className="status-pill">{invoice.status}</span>
+                  <span className="status-pill">
+                    {invoice.source === "api" ? invoice.status : "demo"}
+                  </span>
                 </div>
 
                 <strong>{invoice.amount}</strong>
-              </Link>
+              </div>
             ))
           )}
         </div>
