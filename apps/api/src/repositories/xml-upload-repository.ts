@@ -93,3 +93,16 @@ export async function createXmlUploadRecord(
 
   return record;
 }
+
+export async function deleteXmlUploadRecordById(id: string) {
+  const records = await listXmlUploadRecords();
+  const nextRecords = records.filter((record) => record.id !== id);
+
+  if (nextRecords.length === records.length) {
+    return false;
+  }
+
+  await storageProvider.writeCollection(XML_UPLOADS_FILE, nextRecords);
+
+  return true;
+}

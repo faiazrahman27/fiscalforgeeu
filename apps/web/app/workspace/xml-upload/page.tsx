@@ -1,6 +1,6 @@
 "use client";
 
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   FileInput,
   FileSearch,
   ShieldAlert,
+  Trash2,
   Upload,
   X
 } from "lucide-react";
@@ -29,6 +30,7 @@ type XmlUploadRecord = {
 };
 
 type XmlAnalysis = {
+  id: string;
   fileName: string;
   fileSize: string;
   uploadedAt: string;
@@ -169,16 +171,34 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function getApiErrorMessage(data: unknown) {
+async function readResponseBody(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return responseText;
+  }
+}
+
+function getApiErrorMessage(data: unknown, fallback = "The XML request failed.") {
+  if (typeof data === "string" && data.trim().length > 0) {
+    return data.slice(0, 240);
+  }
+
   if (!isPlainObject(data) || !isPlainObject(data.error)) {
-    return "The XML request failed.";
+    return fallback;
   }
 
   const message = data.error.message;
 
   return typeof message === "string" && message.trim().length > 0
     ? message
-    : "The XML request failed.";
+    : fallback;
 }
 
 function sanitizeHeaderValue(value: string) {
@@ -192,6 +212,7 @@ export default function WorkspaceXmlUploadPage() {
   const [uploadLoadMessage, setUploadLoadMessage] = useState("");
   const [isInspecting, setIsInspecting] = useState(false);
   const [isLoadingUploads, setIsLoadingUploads] = useState(true);
+  const [deletingUploadId, setDeletingUploadId] = useState("");
 
   const acceptedUploads = useMemo(() => {
     return uploadHistory.filter((upload) => upload.status === "accepted").length;
@@ -214,19 +235,24 @@ export default function WorkspaceXmlUploadPage() {
           cache: "no-store"
         });
 
-        const responseData: unknown = await response.json();
+        const responseData = await readResponseBody(response);
 
         if (!response.ok) {
           if (isMounted) {
             setUploadHistory([]);
-            setUploadLoadMessage(getApiErrorMessage(responseData));
+            setUploadLoadMessage(
+              getApiErrorMessage(
+                responseData,
+                "Could not load XML upload history."
+              )
+            );
           }
 
           return;
         }
 
         const apiData = responseData as ApiXmlUploadListResponse;
-        const records = Array.isArray(apiData.records) ? apiData.records : [];
+        const records = Array.isArray(apiData?.records) ? apiData.records : [];
 
         const normalizedRecords = records
           .map((item) => normalizeUploadRecord(item))
@@ -267,10 +293,12 @@ export default function WorkspaceXmlUploadPage() {
       body: xmlText
     });
 
-    const responseData: unknown = await response.json();
+    const responseData = await readResponseBody(response);
 
     if (!response.ok) {
-      throw new Error(getApiErrorMessage(responseData));
+      throw new Error(
+        getApiErrorMessage(responseData, "The XML inspection request failed.")
+      );
     }
 
     const apiData = responseData as ApiXmlInspectResponse;
@@ -278,6 +306,7 @@ export default function WorkspaceXmlUploadPage() {
     const status = normalizeUploadStatus(apiData.status);
 
     const nextAnalysis: XmlAnalysis = {
+      id: apiData.record?.id ?? apiData.uploadInspectionId,
       fileName: apiData.record?.fileName ?? file.name,
       fileSize: apiData.record?.fileSize ?? formatBytes(file.size),
       uploadedAt: apiData.record?.uploadedAt
@@ -322,6 +351,50 @@ export default function WorkspaceXmlUploadPage() {
       return nextRecords.slice(0, 250);
     });
     setUploadLoadMessage("");
+  }
+
+  async function deleteUploadRecord(
+    event: MouseEvent<HTMLButtonElement>,
+    upload: XmlUploadRecord
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setDeletingUploadId(upload.id);
+    setUploadLoadMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/xml/uploads/${encodeURIComponent(upload.id)}`,
+        {
+          method: "DELETE",
+          cache: "no-store"
+        }
+      );
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setUploadLoadMessage(
+          getApiErrorMessage(responseData, "Could not delete XML upload record.")
+        );
+        return;
+      }
+
+      setUploadHistory((current) =>
+        current.filter((item) => item.id !== upload.id)
+      );
+
+      if (analysis?.id === upload.id) {
+        setAnalysis(null);
+      }
+    } catch {
+      setUploadLoadMessage(
+        "Could not delete XML upload record. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setDeletingUploadId("");
+    }
   }
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -441,12 +514,14 @@ export default function WorkspaceXmlUploadPage() {
 6. workspace displays the API response and API-owned upload history
 
 Backend endpoints:
-POST /api/v1/xml/inspect
-GET  /api/v1/xml/uploads
+POST   /api/v1/xml/inspect
+GET    /api/v1/xml/uploads
+DELETE /api/v1/xml/uploads/:id
 
 Proxy endpoints:
-POST /api/local/xml/inspect
-GET  /api/local/xml/uploads`}</pre>
+POST   /api/local/xml/inspect
+GET    /api/local/xml/uploads
+DELETE /api/local/xml/uploads/:id`}</pre>
 
         {errorMessage ? (
           <div className="alert-item">
@@ -619,6 +694,25 @@ GET  /api/local/xml/uploads`}</pre>
                 <div>
                   <strong>{upload.fileName}</strong>
                   <span>{upload.note}</span>
+
+                  <button
+                    type="button"
+                    className="text-link-button"
+                    onClick={(event) => deleteUploadRecord(event, upload)}
+                    disabled={deletingUploadId === upload.id}
+                    style={{
+                      marginTop: "10px",
+                      width: "fit-content",
+                      padding: "8px 12px",
+                      cursor:
+                        deletingUploadId === upload.id ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    <Trash2 size={16} />
+                    {deletingUploadId === upload.id
+                      ? "Deleting..."
+                      : "Delete upload"}
+                  </button>
                 </div>
 
                 <div>

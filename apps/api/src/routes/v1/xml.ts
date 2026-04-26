@@ -4,6 +4,7 @@ import { env } from "../../config/env.js";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
   createXmlUploadRecord,
+  deleteXmlUploadRecordById,
   listXmlUploadRecords,
   type XmlApiInspectionStatus
 } from "../../repositories/xml-upload-repository.js";
@@ -12,6 +13,12 @@ const xmlBodySchema = z
   .string()
   .min(1, "XML body cannot be empty")
   .max(env.API_BODY_LIMIT_BYTES, "XML body is too large");
+
+const xmlUploadParamsSchema = z
+  .object({
+    id: z.string().trim().min(1).max(120)
+  })
+  .strict();
 
 function detectRootElement(xml: string) {
   const match = xml.match(/<([A-Za-z_][\w:.-]*)(\s|>)/);
@@ -96,6 +103,47 @@ export async function xmlRoutes(app: FastifyInstance) {
       return {
         records
       };
+    }
+  );
+
+  app.delete(
+    "/uploads/:id",
+    {
+      preHandler: requireApiKey
+    },
+    async (request, reply) => {
+      const parsedParams = xmlUploadParamsSchema.safeParse(request.params);
+
+      if (!parsedParams.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "XML upload ID failed schema validation.",
+            details: parsedParams.error.issues.map((issue) => ({
+              path: issue.path.join("."),
+              message: issue.message,
+              code: issue.code
+            }))
+          }
+        });
+      }
+
+      const wasDeleted = await deleteXmlUploadRecordById(parsedParams.data.id);
+
+      if (!wasDeleted) {
+        return reply.status(404).send({
+          error: {
+            code: "XML_UPLOAD_NOT_FOUND",
+            message: "XML upload record was not found.",
+            details: null
+          }
+        });
+      }
+
+      return reply.status(200).send({
+        deleted: true,
+        id: parsedParams.data.id
+      });
     }
   );
 
