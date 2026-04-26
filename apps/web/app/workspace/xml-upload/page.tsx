@@ -22,6 +22,14 @@ type UploadStatus = "accepted" | "rejected";
 
 type XmlFindingSeverity = "info" | "warning" | "fatal";
 
+type XmlReadinessFilter =
+  | "all"
+  | "ready_for_review"
+  | "needs_attention"
+  | "unsupported";
+
+type XmlDocumentFilter = "all" | "invoice" | "credit_note" | "unknown";
+
 type XmlReadinessFinding = {
   code: string;
   severity: XmlFindingSeverity;
@@ -809,6 +817,70 @@ function buildAnalysisFromRecord(record: XmlUploadRecord): XmlAnalysis {
   };
 }
 
+function getUploadReadinessStatus(upload: XmlUploadRecord) {
+  return upload.summary?.readinessStatus ?? upload.readinessStatus;
+}
+
+function getUploadDocumentType(upload: XmlUploadRecord) {
+  if (
+    upload.detectedDocument === "invoice" ||
+    upload.detectedDocument === "credit_note"
+  ) {
+    return upload.detectedDocument;
+  }
+
+  return "unknown";
+}
+
+function getUploadSearchText(upload: XmlUploadRecord) {
+  return [
+    upload.fileName,
+    upload.invoiceId,
+    upload.issueDate,
+    upload.currency,
+    upload.detectedDocument,
+    upload.rootElement,
+    upload.note,
+    upload.summary?.sellerName,
+    upload.summary?.buyerName,
+    upload.extractedData.sellerName,
+    upload.extractedData.buyerName,
+    upload.extractedData.profileSignal.customizationId,
+    upload.extractedData.profileSignal.profileId,
+    upload.extractedData.profileSignal.profileHints.join(" "),
+    upload.findings.map((finding) => finding.code).join(" ")
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function uploadMatchesFilters({
+  upload,
+  searchQuery,
+  readinessFilter,
+  documentFilter
+}: {
+  upload: XmlUploadRecord;
+  searchQuery: string;
+  readinessFilter: XmlReadinessFilter;
+  documentFilter: XmlDocumentFilter;
+}) {
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const matchesSearch =
+    normalizedSearch.length === 0 ||
+    getUploadSearchText(upload).includes(normalizedSearch);
+
+  const matchesReadiness =
+    readinessFilter === "all" || getUploadReadinessStatus(upload) === readinessFilter;
+
+  const matchesDocument =
+    documentFilter === "all" || getUploadDocumentType(upload) === documentFilter;
+
+  return matchesSearch && matchesReadiness && matchesDocument;
+}
+
 export default function WorkspaceXmlUploadPage() {
   const [uploadHistory, setUploadHistory] = useState<XmlUploadRecord[]>([]);
   const [analysis, setAnalysis] = useState<XmlAnalysis | null>(null);
@@ -818,6 +890,10 @@ export default function WorkspaceXmlUploadPage() {
   const [isLoadingUploads, setIsLoadingUploads] = useState(true);
   const [deletingUploadId, setDeletingUploadId] = useState("");
   const [openingUploadId, setOpeningUploadId] = useState("");
+  const [historySearchQuery, setHistorySearchQuery] = useState("");
+  const [readinessFilter, setReadinessFilter] =
+    useState<XmlReadinessFilter>("all");
+  const [documentFilter, setDocumentFilter] = useState<XmlDocumentFilter>("all");
 
   const acceptedUploads = useMemo(() => {
     return uploadHistory.filter((upload) => upload.status === "accepted").length;
@@ -826,6 +902,22 @@ export default function WorkspaceXmlUploadPage() {
   const rejectedUploads = useMemo(() => {
     return uploadHistory.filter((upload) => upload.status === "rejected").length;
   }, [uploadHistory]);
+
+  const filteredUploadHistory = useMemo(() => {
+    return uploadHistory.filter((upload) =>
+      uploadMatchesFilters({
+        upload,
+        searchQuery: historySearchQuery,
+        readinessFilter,
+        documentFilter
+      })
+    );
+  }, [uploadHistory, historySearchQuery, readinessFilter, documentFilter]);
+
+  const hasActiveHistoryFilters =
+    historySearchQuery.trim().length > 0 ||
+    readinessFilter !== "all" ||
+    documentFilter !== "all";
 
   useEffect(() => {
     let isMounted = true;
@@ -1130,6 +1222,12 @@ export default function WorkspaceXmlUploadPage() {
     setErrorMessage("");
   }
 
+  function clearHistoryFilters() {
+    setHistorySearchQuery("");
+    setReadinessFilter("all");
+    setDocumentFilter("all");
+  }
+
   return (
     <div className="workspace-page">
       <section className="workspace-page-head">
@@ -1163,9 +1261,9 @@ export default function WorkspaceXmlUploadPage() {
         </div>
 
         <div className="workspace-stat">
-          <p>Max size</p>
-          <strong>2MB</strong>
-          <span>Frontend limit before production upload storage exists.</span>
+          <p>Visible reports</p>
+          <strong>{filteredUploadHistory.length}</strong>
+          <span>Reports currently matching the search and filters.</span>
         </div>
       </section>
 
@@ -1961,8 +2059,60 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
           <div className="confidence-label">
             <FileInput size={17} />
-            API history
+            {filteredUploadHistory.length} visible
           </div>
+        </div>
+
+        <div className="workspace-history-filters">
+          <label>
+            <span>Search reports</span>
+            <input
+              type="search"
+              value={historySearchQuery}
+              placeholder="File, invoice ID, seller, buyer, profile, finding..."
+              onChange={(event) => setHistorySearchQuery(event.target.value)}
+            />
+          </label>
+
+          <label>
+            <span>Readiness</span>
+            <select
+              value={readinessFilter}
+              onChange={(event) =>
+                setReadinessFilter(event.target.value as XmlReadinessFilter)
+              }
+            >
+              <option value="all">All readiness states</option>
+              <option value="ready_for_review">Ready for review</option>
+              <option value="needs_attention">Needs attention</option>
+              <option value="unsupported">Unsupported</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Document type</span>
+            <select
+              value={documentFilter}
+              onChange={(event) =>
+                setDocumentFilter(event.target.value as XmlDocumentFilter)
+              }
+            >
+              <option value="all">All document types</option>
+              <option value="invoice">Invoice</option>
+              <option value="credit_note">Credit note</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="text-link-button"
+            onClick={clearHistoryFilters}
+            disabled={!hasActiveHistoryFilters}
+          >
+            <X size={16} />
+            Clear filters
+          </button>
         </div>
 
         {uploadLoadMessage ? (
@@ -2011,8 +2161,29 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
               <FileCode2 size={17} />
             </div>
+          ) : filteredUploadHistory.length === 0 ? (
+            <div className="workspace-table-row">
+              <div>
+                <strong>No reports match these filters</strong>
+                <span>
+                  Adjust the search text, readiness filter, or document type filter.
+                </span>
+              </div>
+
+              <div>
+                <span className="status-pill">filtered</span>
+              </div>
+
+              <div>
+                <span>{uploadHistory.length} total</span>
+              </div>
+
+              <strong>0 visible</strong>
+
+              <FileSearch size={17} />
+            </div>
           ) : (
-            uploadHistory.map((upload) => (
+            filteredUploadHistory.map((upload) => (
               <div className="workspace-table-row" key={upload.id}>
                 <div className="workspace-history-summary">
                   <strong>{upload.fileName}</strong>
@@ -2056,9 +2227,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
                 <div>
                   <span className="status-pill">
-                    {upload.summary
-                      ? formatStatus(upload.summary.readinessStatus)
-                      : upload.status}
+                    {formatStatus(getUploadReadinessStatus(upload))}
                   </span>
                 </div>
 
