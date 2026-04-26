@@ -5,6 +5,7 @@ import {
   invoiceValidationRequestSchema,
   type InvoiceValidationRequest
 } from "../../schemas/invoice.js";
+import { readJsonCollection, writeJsonCollection } from "../../storage/json-store.js";
 import { formatZodError } from "../../utils/zod-error.js";
 
 type FindingSeverity = "info" | "warning" | "fatal";
@@ -17,7 +18,35 @@ type Finding = {
   legalConfidence: "technical" | "educational_simulation" | "review_required";
 };
 
-function calculateTotals(payload: InvoiceValidationRequest) {
+type ValidationTotals = {
+  lineExtensionAmount: number;
+  taxExclusiveAmount: number;
+  taxAmount: number;
+  taxInclusiveAmount: number;
+  payableAmount: number;
+};
+
+type ValidationRunRecord = {
+  id: string;
+  invoiceNumber: string;
+  buyer: string;
+  seller: string;
+  createdAt: string;
+  technicalStatus: "passed" | "failed";
+  standardStatus: "ready" | "warning";
+  countrySimulationStatus: "not_relevant" | "review_required";
+  vidaReadinessStatus: "not_relevant" | "relevant_simulation";
+  confidence: "technical_preview" | "educational_simulation";
+  profile: "API_VALIDATION";
+  currency: string;
+  totals: ValidationTotals;
+  findings: Finding[];
+  disclaimer: string;
+};
+
+const VALIDATION_RUNS_FILE = "validation-runs.json";
+
+function calculateTotals(payload: InvoiceValidationRequest): ValidationTotals {
   const lineExtensionAmount = payload.lines.reduce((sum, line) => {
     return sum + line.quantity * line.unitPrice;
   }, 0);
@@ -40,7 +69,6 @@ function calculateTotals(payload: InvoiceValidationRequest) {
 
 function buildFindings(payload: InvoiceValidationRequest): Finding[] {
   const findings: Finding[] = [];
-
   const isCrossBorder = payload.seller.country !== payload.buyer.country;
 
   if (isCrossBorder && !payload.buyer.vatId) {
@@ -81,6 +109,18 @@ function buildFindings(payload: InvoiceValidationRequest): Finding[] {
   return findings;
 }
 
+async function saveValidationRun(record: ValidationRunRecord) {
+  const currentRuns =
+    await readJsonCollection<ValidationRunRecord>(VALIDATION_RUNS_FILE);
+
+  const nextRuns = [
+    record,
+    ...currentRuns.filter((existingRun) => existingRun.id !== record.id)
+  ].slice(0, 250);
+
+  await writeJsonCollection(VALIDATION_RUNS_FILE, nextRuns);
+}
+
 export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
     "/validate",
@@ -110,23 +150,54 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
       );
       const isCrossBorder = payload.seller.country !== payload.buyer.country;
 
-      return reply.status(200).send({
-        validationRunId: `val_${randomUUID()}`,
+      const validationRunId = `val_${randomUUID()}`;
+
+      const technicalStatus = hasFatal ? "failed" : "passed";
+      const standardStatus = hasWarning ? "warning" : "ready";
+      const countrySimulationStatus = isCrossBorder
+        ? "review_required"
+        : "not_relevant";
+      const vidaReadinessStatus = isCrossBorder
+        ? "relevant_simulation"
+        : "not_relevant";
+      const confidence = isCrossBorder
+        ? "educational_simulation"
+        : "technical_preview";
+
+      const disclaimer =
+        "This API response is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation.";
+
+      const record: ValidationRunRecord = {
+        id: validationRunId,
         invoiceNumber: payload.document.number,
-        technicalStatus: hasFatal ? "failed" : "passed",
-        standardStatus: hasWarning ? "warning" : "ready",
-        countrySimulationStatus: isCrossBorder
-          ? "review_required"
-          : "not_relevant",
-        vidaReadinessStatus: isCrossBorder
-          ? "relevant_simulation"
-          : "not_relevant",
+        buyer: payload.buyer.name,
+        seller: payload.seller.name,
+        createdAt: new Date().toISOString(),
+        technicalStatus,
+        standardStatus,
+        countrySimulationStatus,
+        vidaReadinessStatus,
+        confidence,
+        profile: "API_VALIDATION",
+        currency: payload.document.currency,
         totals,
         findings,
-        disclaimer:
-          "This API response is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
+        disclaimer
+      };
+
+      await saveValidationRun(record);
+
+      return reply.status(200).send({
+        validationRunId,
+        invoiceNumber: payload.document.number,
+        technicalStatus,
+        standardStatus,
+        countrySimulationStatus,
+        vidaReadinessStatus,
+        totals,
+        findings,
+        disclaimer
       });
     }
   );
 }
-

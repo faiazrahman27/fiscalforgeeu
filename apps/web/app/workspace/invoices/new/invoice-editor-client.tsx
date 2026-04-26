@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -155,29 +155,30 @@ export function InvoiceEditorClient({
 }: {
   initialDraft: InvoiceEditorDraft;
 }) {
-  const [draft, setDraft] = useState<InvoiceEditorDraft>(() => {
-    if (typeof window === "undefined") {
-      return initialDraft;
-    }
-
-    const storedDraft = readFirstLocalStorageValue([LOCAL_DRAFT_KEY]);
-
-    if (!storedDraft) {
-      return initialDraft;
-    }
-
-    try {
-      return JSON.parse(storedDraft) as InvoiceEditorDraft;
-    } catch {
-      return initialDraft;
-    }
-  });
-
+  const [draft, setDraft] = useState<InvoiceEditorDraft>(initialDraft);
+  const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string>("");
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isRunningValidation, setIsRunningValidation] = useState(false);
   const [validationReport, setValidationReport] =
     useState<LocalValidationReport | null>(null);
+
+  useEffect(() => {
+    const storedDraft = readFirstLocalStorageValue([LOCAL_DRAFT_KEY]);
+
+    if (!storedDraft) {
+      setHasLoadedDraft(true);
+      return;
+    }
+
+    try {
+      setDraft(JSON.parse(storedDraft) as InvoiceEditorDraft);
+    } catch {
+      setDraft(initialDraft);
+    } finally {
+      setHasLoadedDraft(true);
+    }
+  }, [initialDraft]);
 
   const recalculatedTotals = useMemo(
     () => calculateTotals(draft.lines),
@@ -454,7 +455,9 @@ export function InvoiceEditorClient({
             <span>{findings.length === 0 ? "Ready draft" : "Review draft"}</span>
           </div>
 
-          <strong>{draft.document.number}</strong>
+          <strong>
+            {hasLoadedDraft ? draft.document.number : initialDraft.document.number}
+          </strong>
           <p>Profile: {draft.document.profile}</p>
         </div>
       </section>

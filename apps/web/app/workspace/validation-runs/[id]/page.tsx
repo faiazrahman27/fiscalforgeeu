@@ -21,15 +21,17 @@ type FindingSeverity = "info" | "warning" | "fatal";
 type ValidationFinding = {
   code: string;
   severity: FindingSeverity;
+  field?: string;
   message: string;
+  legalConfidence?: "technical" | "educational_simulation" | "review_required";
 };
 
 type ValidationTotals = {
-  lineExtensionAmount: string;
-  taxExclusiveAmount: string;
-  taxAmount: string;
-  taxInclusiveAmount: string;
-  payableAmount: string;
+  lineExtensionAmount: number | string;
+  taxExclusiveAmount: number | string;
+  taxAmount: number | string;
+  taxInclusiveAmount: number | string;
+  payableAmount: number | string;
 };
 
 type SavedValidationRun = {
@@ -50,12 +52,14 @@ type SavedValidationRun = {
   disclaimer: string;
 };
 
+type ValidationRunDetailResponse = {
+  record?: SavedValidationRun;
+};
+
 type EvidenceItem = {
   label: string;
   value: string;
 };
-
-const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
 
 const fallbackRuns: SavedValidationRun[] = [
   {
@@ -63,7 +67,7 @@ const fallbackRuns: SavedValidationRun[] = [
     invoiceNumber: "IL-2026-001",
     buyer: "Muster GmbH",
     seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-24 14:32",
+    createdAt: "2026-04-24T14:32:00.000Z",
     technicalStatus: "failed",
     standardStatus: "warning",
     countrySimulationStatus: "review_required",
@@ -72,23 +76,27 @@ const fallbackRuns: SavedValidationRun[] = [
     profile: "PEPPOL_BIS_3",
     currency: "EUR",
     totals: {
-      lineExtensionAmount: "1250.00",
-      taxExclusiveAmount: "1250.00",
-      taxAmount: "337.50",
-      taxInclusiveAmount: "1587.50",
-      payableAmount: "1587.50"
+      lineExtensionAmount: 1250,
+      taxExclusiveAmount: 1250,
+      taxAmount: 337.5,
+      taxInclusiveAmount: 1587.5,
+      payableAmount: 1587.5
     },
     findings: [
       {
         code: "BUYER_VAT_ID_REQUIRED",
         severity: "fatal",
-        message: "Buyer VAT ID is required for this cross-border B2B simulation."
+        field: "buyer.vatId",
+        message: "Buyer VAT ID is required for this cross-border B2B simulation.",
+        legalConfidence: "educational_simulation"
       },
       {
         code: "CROSS_BORDER_REVIEW_REQUIRED",
         severity: "warning",
+        field: "buyer.country",
         message:
-          "Seller and buyer countries differ. Country and VAT treatment require professional review."
+          "Seller and buyer countries differ. Country and VAT treatment require professional review.",
+        legalConfidence: "review_required"
       }
     ],
     disclaimer:
@@ -99,7 +107,7 @@ const fallbackRuns: SavedValidationRun[] = [
     invoiceNumber: "IL-2026-002",
     buyer: "Danube Consulting Kft.",
     seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-23 18:10",
+    createdAt: "2026-04-23T18:10:00.000Z",
     technicalStatus: "passed",
     standardStatus: "ready",
     countrySimulationStatus: "not_relevant",
@@ -108,11 +116,11 @@ const fallbackRuns: SavedValidationRun[] = [
     profile: "EN16931",
     currency: "EUR",
     totals: {
-      lineExtensionAmount: "800.00",
-      taxExclusiveAmount: "800.00",
-      taxAmount: "216.00",
-      taxInclusiveAmount: "1016.00",
-      payableAmount: "1016.00"
+      lineExtensionAmount: 800,
+      taxExclusiveAmount: 800,
+      taxAmount: 216,
+      taxInclusiveAmount: 1016,
+      payableAmount: 1016
     },
     findings: [],
     disclaimer:
@@ -123,7 +131,7 @@ const fallbackRuns: SavedValidationRun[] = [
     invoiceNumber: "IL-2026-003",
     buyer: "Nordic Trade AB",
     seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-22 09:45",
+    createdAt: "2026-04-22T09:45:00.000Z",
     technicalStatus: "passed",
     standardStatus: "warning",
     countrySimulationStatus: "review_required",
@@ -132,18 +140,20 @@ const fallbackRuns: SavedValidationRun[] = [
     profile: "PEPPOL_BIS_3",
     currency: "EUR",
     totals: {
-      lineExtensionAmount: "2400.00",
-      taxExclusiveAmount: "2400.00",
-      taxAmount: "0.00",
-      taxInclusiveAmount: "2400.00",
-      payableAmount: "2400.00"
+      lineExtensionAmount: 2400,
+      taxExclusiveAmount: 2400,
+      taxAmount: 0,
+      taxInclusiveAmount: 2400,
+      payableAmount: 2400
     },
     findings: [
       {
         code: "CROSS_BORDER_REVIEW_REQUIRED",
         severity: "warning",
+        field: "buyer.country",
         message:
-          "Seller and buyer countries differ. Country and VAT treatment require professional review."
+          "Seller and buyer countries differ. Country and VAT treatment require professional review.",
+        legalConfidence: "review_required"
       }
     ],
     disclaimer:
@@ -151,40 +161,8 @@ const fallbackRuns: SavedValidationRun[] = [
   }
 ];
 
-function readFirstLocalStorageValue(keys: string[]) {
-  for (const key of keys) {
-    const value = window.localStorage.getItem(key);
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
-}
-
-function readStoredValidationRuns() {
-  if (typeof window === "undefined") {
-    return fallbackRuns;
-  }
-
-  const storedValue = readFirstLocalStorageValue([VALIDATION_RUN_STORAGE_KEY]);
-
-  if (!storedValue) {
-    return fallbackRuns;
-  }
-
-  try {
-    const parsed = JSON.parse(storedValue);
-
-    if (!Array.isArray(parsed)) {
-      return fallbackRuns;
-    }
-
-    return parsed as SavedValidationRun[];
-  } catch {
-    return fallbackRuns;
-  }
+function getFallbackRunById(id: string) {
+  return fallbackRuns.find((run) => run.id === id) ?? fallbackRuns[0];
 }
 
 function getStatusTone(status: string) {
@@ -205,11 +183,36 @@ function formatStatus(status: string) {
   return status.replaceAll("_", " ");
 }
 
-function formatTotalAmount(currency: string, value: string) {
-  const safeCurrency = currency || "EUR";
-  const safeValue = value || "0.00";
+function formatDateTime(value: string) {
+  const parsedDate = new Date(value);
 
-  return `${safeCurrency} ${safeValue}`;
+  if (Number.isNaN(parsedDate.getTime())) {
+    return value;
+  }
+
+  return parsedDate
+    .toLocaleString("sv-SE", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit"
+    })
+    .replace("T", " ");
+}
+
+function formatTotalAmount(currency: string, value: number | string) {
+  const safeCurrency = currency || "EUR";
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return `${safeCurrency} ${value.toFixed(2)}`;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return `${safeCurrency} ${value.trim().replace(/^EUR\s*/i, "")}`;
+  }
+
+  return `${safeCurrency} 0.00`;
 }
 
 function buildEvidence(run: SavedValidationRun): EvidenceItem[] {
@@ -241,21 +244,194 @@ function buildEvidence(run: SavedValidationRun): EvidenceItem[] {
   ];
 }
 
-function findRunById(runs: SavedValidationRun[], id: string) {
-  return runs.find((run) => run.id === id) ?? fallbackRuns[0];
+function normalizeFinding(value: unknown): ValidationFinding | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (typeof record.code !== "string" || record.code.trim().length === 0) {
+    return null;
+  }
+
+  const severity =
+    record.severity === "info" ||
+    record.severity === "warning" ||
+    record.severity === "fatal"
+      ? record.severity
+      : "info";
+
+  return {
+    code: record.code,
+    severity,
+    field: typeof record.field === "string" ? record.field : undefined,
+    message:
+      typeof record.message === "string"
+        ? record.message
+        : "Validation finding returned without a message.",
+    legalConfidence:
+      record.legalConfidence === "technical" ||
+      record.legalConfidence === "educational_simulation" ||
+      record.legalConfidence === "review_required"
+        ? record.legalConfidence
+        : undefined
+  };
+}
+
+function normalizeTotals(value: unknown): ValidationTotals {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      lineExtensionAmount: 0,
+      taxExclusiveAmount: 0,
+      taxAmount: 0,
+      taxInclusiveAmount: 0,
+      payableAmount: 0
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    lineExtensionAmount: normalizeAmount(record.lineExtensionAmount),
+    taxExclusiveAmount: normalizeAmount(record.taxExclusiveAmount),
+    taxAmount: normalizeAmount(record.taxAmount),
+    taxInclusiveAmount: normalizeAmount(record.taxInclusiveAmount),
+    payableAmount: normalizeAmount(record.payableAmount)
+  };
+}
+
+function normalizeAmount(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return 0;
+}
+
+function normalizeValidationRun(value: unknown): SavedValidationRun | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (typeof record.id !== "string" || record.id.trim().length === 0) {
+    return null;
+  }
+
+  const findings = Array.isArray(record.findings)
+    ? record.findings
+        .map((finding) => normalizeFinding(finding))
+        .filter((finding): finding is ValidationFinding => finding !== null)
+    : [];
+
+  return {
+    id: record.id,
+    invoiceNumber:
+      typeof record.invoiceNumber === "string"
+        ? record.invoiceNumber
+        : "Untitled invoice",
+    buyer: typeof record.buyer === "string" ? record.buyer : "Unknown buyer",
+    seller: typeof record.seller === "string" ? record.seller : "Unknown seller",
+    createdAt:
+      typeof record.createdAt === "string"
+        ? record.createdAt
+        : new Date().toISOString(),
+    technicalStatus:
+      typeof record.technicalStatus === "string"
+        ? record.technicalStatus
+        : "failed",
+    standardStatus:
+      typeof record.standardStatus === "string" ? record.standardStatus : "warning",
+    countrySimulationStatus:
+      typeof record.countrySimulationStatus === "string"
+        ? record.countrySimulationStatus
+        : "not_relevant",
+    vidaReadinessStatus:
+      typeof record.vidaReadinessStatus === "string"
+        ? record.vidaReadinessStatus
+        : "not_relevant",
+    confidence:
+      typeof record.confidence === "string" ? record.confidence : "technical_preview",
+    profile: typeof record.profile === "string" ? record.profile : "API_VALIDATION",
+    currency: typeof record.currency === "string" ? record.currency : "EUR",
+    totals: normalizeTotals(record.totals),
+    findings,
+    disclaimer:
+      typeof record.disclaimer === "string"
+        ? record.disclaimer
+        : "This validation report is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
+  };
 }
 
 export default function ValidationRunDetailPage() {
   const params = useParams<{ id: string }>();
-  const [runs, setRuns] = useState<SavedValidationRun[]>(fallbackRuns);
+  const fallbackRun = useMemo(() => getFallbackRunById(params.id), [params.id]);
+
+  const [run, setRun] = useState<SavedValidationRun>(fallbackRun);
+  const [isLoadingRun, setIsLoadingRun] = useState(true);
+  const [runLoadMessage, setRunLoadMessage] = useState("");
 
   useEffect(() => {
-    setRuns(readStoredValidationRuns());
-  }, []);
+    let isMounted = true;
 
-  const run = useMemo(() => {
-    return findRunById(runs, params.id);
-  }, [runs, params.id]);
+    async function loadValidationRun() {
+      setIsLoadingRun(true);
+      setRunLoadMessage("");
+
+      try {
+        const response = await fetch(
+          `/api/local/validation-runs/${encodeURIComponent(params.id)}`,
+          {
+            method: "GET",
+            cache: "no-store"
+          }
+        );
+
+        const responseData: unknown = await response.json();
+
+        if (!response.ok) {
+          if (isMounted) {
+            setRun(getFallbackRunById(params.id));
+            setRunLoadMessage(
+              "Could not load this API-owned validation run. Showing the closest demo report instead."
+            );
+          }
+
+          return;
+        }
+
+        const payload = responseData as ValidationRunDetailResponse;
+        const normalizedRun = normalizeValidationRun(payload.record);
+
+        if (isMounted) {
+          setRun(normalizedRun ?? getFallbackRunById(params.id));
+        }
+      } catch {
+        if (isMounted) {
+          setRun(getFallbackRunById(params.id));
+          setRunLoadMessage(
+            "The local validation run API is unavailable. Make sure apps/api and apps/web are both running."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingRun(false);
+        }
+      }
+    }
+
+    loadValidationRun();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [params.id]);
 
   const evidence = useMemo(() => buildEvidence(run), [run]);
 
@@ -268,12 +444,19 @@ export default function ValidationRunDetailPage() {
         </Link>
 
         <p className="workspace-kicker">Validation report</p>
-        <h2>{run.id}</h2>
+        <h2>{isLoadingRun ? "Loading validation run" : run.id}</h2>
         <p>
           Full validation report preview for invoice {run.invoiceNumber}. This page
-          reads saved local validation runs when available, then falls back to seeded
-          demo reports.
+          reads the validation run through the local Next.js proxy from the dedicated
+          Invoice Lantern API service.
         </p>
+
+        {runLoadMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{runLoadMessage}</p>
+          </div>
+        ) : null}
       </section>
 
       <section className="validation-run-grid">
@@ -320,7 +503,8 @@ export default function ValidationRunDetailPage() {
           <h3>Invoice context</h3>
           <p>
             Invoice {run.invoiceNumber} from {run.seller} to {run.buyer}. Profile:{" "}
-            {run.profile}. Currency: {run.currency}. Created: {run.createdAt}.
+            {run.profile}. Currency: {run.currency}. Created:{" "}
+            {formatDateTime(run.createdAt)}.
           </p>
         </div>
 
