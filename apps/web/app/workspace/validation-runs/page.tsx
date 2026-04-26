@@ -53,7 +53,7 @@ const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
 
 const LEGACY_VALIDATION_RUN_STORAGE_KEYS = [
   "Invoice Lantern.eu.validationRuns.local",
-  "fiscalforge.eu.validationRuns.local"
+  "invoice-lantern.validationRuns.local"
 ];
 
 const fallbackRuns: SavedValidationRun[] = [

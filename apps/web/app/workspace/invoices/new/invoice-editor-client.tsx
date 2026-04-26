@@ -144,12 +144,12 @@ const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
 
 const LEGACY_LOCAL_DRAFT_KEYS = [
   "Invoice Lantern.eu.invoiceDraft.local",
-  "fiscalforge.eu.invoiceDraft.local"
+  "invoice-lantern.invoiceDraft.local"
 ];
 
 const LEGACY_VALIDATION_RUN_STORAGE_KEYS = [
   "Invoice Lantern.eu.validationRuns.local",
-  "fiscalforge.eu.validationRuns.local"
+  "invoice-lantern.validationRuns.local"
 ];
 
 export function InvoiceEditorClient({

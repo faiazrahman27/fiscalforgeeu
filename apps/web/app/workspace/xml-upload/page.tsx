@@ -58,7 +58,7 @@ const XML_UPLOAD_STORAGE_KEY = "invoice-lantern.workspace.xmlUploads";
 
 const LEGACY_XML_UPLOAD_STORAGE_KEYS = [
   "Invoice Lantern.eu.workspace.xmlUploads",
-  "fiscalforge.eu.workspace.xmlUploads"
+  "invoice-lantern.workspace.xmlUploads"
 ];
 
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;

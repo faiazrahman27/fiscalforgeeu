@@ -48,12 +48,12 @@ const REQUEST_LOG_STORAGE_KEY = "invoice-lantern.workspace.requestLogs";
 
 const LEGACY_API_KEY_STORAGE_KEYS = [
   "Invoice Lantern.eu.workspace.apiKeys",
-  "fiscalforge.eu.workspace.apiKeys"
+  "invoice-lantern.workspace.apiKeys"
 ];
 
 const LEGACY_REQUEST_LOG_STORAGE_KEYS = [
   "Invoice Lantern.eu.workspace.requestLogs",
-  "fiscalforge.eu.workspace.requestLogs"
+  "invoice-lantern.workspace.requestLogs"
 ];
 
 const defaultApiKeys: SandboxApiKey[] = [
