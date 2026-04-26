@@ -13,8 +13,6 @@ import {
 import { invoiceDrafts, invoiceStages } from "../../../lib/mock-data";
 import type { WorkspaceIconKey } from "../../../lib/types";
 
-const INVOICE_DRAFTS_STORAGE_KEY = "Invoice Lantern:invoice-drafts:v1";
-
 type InvoiceListItem = {
   id: string;
   number: string;
@@ -23,6 +21,22 @@ type InvoiceListItem = {
   issueDate: string;
   status: string;
   amount: string;
+};
+
+type ApiInvoiceDraftSummary = {
+  id: string;
+  number: string;
+  buyer: string;
+  buyerCountry: string;
+  issueDate: string;
+  status: string;
+  amount: string;
+  currency?: string;
+  updatedAt?: string;
+};
+
+type ApiInvoiceDraftListResponse = {
+  records?: ApiInvoiceDraftSummary[];
 };
 
 function getInvoiceIcon(iconKey: WorkspaceIconKey) {
@@ -45,7 +59,7 @@ function formatCurrencyAmount(value: number) {
   return `EUR ${formatted}`;
 }
 
-function formatEuroAmount(value: unknown) {
+function formatAmount(value: unknown) {
   if (typeof value === "string" && value.trim().length > 0) {
     return value.trim().replaceAll(String.fromCharCode(8364), "EUR ");
   }
@@ -71,8 +85,8 @@ function readStringField(
   return fallback;
 }
 
-function normalizeStoredInvoice(value: unknown): InvoiceListItem | null {
-  if (!value || typeof value !== "object") {
+function normalizeInvoiceDraft(value: unknown): InvoiceListItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
 
@@ -90,46 +104,19 @@ function normalizeStoredInvoice(value: unknown): InvoiceListItem | null {
     readStringField(record, "buyerName", "") ||
     "Unknown buyer";
 
-  const buyerCountry = readStringField(record, "buyerCountry", "EU");
-  const issueDate = readStringField(
-    record,
-    "issueDate",
-    new Date().toISOString().slice(0, 10)
-  );
-  const status = readStringField(record, "status", "Draft");
-  const amount = formatEuroAmount(record.amount ?? record.payableAmount);
-
   return {
     id,
     number,
     buyer,
-    buyerCountry,
-    issueDate,
-    status,
-    amount
+    buyerCountry: readStringField(record, "buyerCountry", "EU"),
+    issueDate: readStringField(
+      record,
+      "issueDate",
+      new Date().toISOString().slice(0, 10)
+    ),
+    status: readStringField(record, "status", "Draft"),
+    amount: formatAmount(record.amount ?? record.payableAmount)
   };
-}
-
-function readStoredInvoices(): InvoiceListItem[] {
-  try {
-    const rawValue = window.localStorage.getItem(INVOICE_DRAFTS_STORAGE_KEY);
-
-    if (!rawValue) {
-      return [];
-    }
-
-    const parsedValue: unknown = JSON.parse(rawValue);
-
-    if (!Array.isArray(parsedValue)) {
-      return [];
-    }
-
-    return parsedValue
-      .map((item) => normalizeStoredInvoice(item))
-      .filter((item): item is InvoiceListItem => item !== null);
-  } catch {
-    return [];
-  }
 }
 
 function uniqueInvoices(invoices: InvoiceListItem[]) {
@@ -146,21 +133,59 @@ function uniqueInvoices(invoices: InvoiceListItem[]) {
 }
 
 export default function WorkspaceInvoicesPage() {
-  const [storedInvoices, setStoredInvoices] = useState<InvoiceListItem[]>([]);
+  const [apiInvoices, setApiInvoices] = useState<InvoiceListItem[]>([]);
+  const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
+  const [invoiceLoadMessage, setInvoiceLoadMessage] = useState("");
 
   useEffect(() => {
-    setStoredInvoices(readStoredInvoices());
+    let isMounted = true;
 
-    function handleStorageChange(event: StorageEvent) {
-      if (event.key === INVOICE_DRAFTS_STORAGE_KEY) {
-        setStoredInvoices(readStoredInvoices());
+    async function loadInvoiceDrafts() {
+      setIsLoadingInvoices(true);
+      setInvoiceLoadMessage("");
+
+      try {
+        const response = await fetch("/api/local/invoices/drafts", {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        const responseData: unknown = await response.json();
+
+        if (!response.ok) {
+          setInvoiceLoadMessage(
+            "Could not load API-owned invoice drafts. Showing demo drafts instead."
+          );
+          return;
+        }
+
+        const apiData = responseData as ApiInvoiceDraftListResponse;
+        const records = Array.isArray(apiData.records) ? apiData.records : [];
+
+        const normalizedInvoices = records
+          .map((item) => normalizeInvoiceDraft(item))
+          .filter((item): item is InvoiceListItem => item !== null);
+
+        if (isMounted) {
+          setApiInvoices(normalizedInvoices);
+        }
+      } catch {
+        if (isMounted) {
+          setInvoiceLoadMessage(
+            "The local invoice draft API is unavailable. Make sure apps/api and apps/web are both running."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingInvoices(false);
+        }
       }
     }
 
-    window.addEventListener("storage", handleStorageChange);
+    loadInvoiceDrafts();
 
     return () => {
-      window.removeEventListener("storage", handleStorageChange);
+      isMounted = false;
     };
   }, []);
 
@@ -172,11 +197,11 @@ export default function WorkspaceInvoicesPage() {
       buyerCountry: invoice.buyerCountry,
       issueDate: invoice.issueDate,
       status: invoice.status,
-      amount: formatEuroAmount(invoice.amount)
+      amount: formatAmount(invoice.amount)
     }));
 
-    return uniqueInvoices([...storedInvoices, ...mockInvoices]);
-  }, [storedInvoices]);
+    return uniqueInvoices([...apiInvoices, ...mockInvoices]);
+  }, [apiInvoices]);
 
   return (
     <div className="workspace-page">
@@ -184,9 +209,9 @@ export default function WorkspaceInvoicesPage() {
         <p className="workspace-kicker">Invoice Studio</p>
         <h2>Create structured invoice data before validation.</h2>
         <p>
-          This screen will later become the full invoice editor. For now it defines
-          the interface logic: structured invoice entry, canonical model preparation,
-          validation readiness, and XML export flow.
+          This screen now reads invoice draft summaries through the local Next.js
+          proxy from the dedicated Invoice Lantern API service. Demo drafts remain as
+          fallback records during local development.
         </p>
       </section>
 
@@ -213,32 +238,59 @@ export default function WorkspaceInvoicesPage() {
           </Link>
         </div>
 
+        {invoiceLoadMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{invoiceLoadMessage}</p>
+          </div>
+        ) : null}
+
         <div className="workspace-table">
-          {tableInvoices.map((invoice) => (
-            <Link
-              href="/workspace/invoices/new"
-              className="workspace-table-row invoice-click-row"
-              key={invoice.id}
-            >
+          {isLoadingInvoices ? (
+            <div className="workspace-table-row">
               <div>
-                <strong>{invoice.number}</strong>
-                <span>
-                  {invoice.buyer} - {invoice.buyerCountry}
-                </span>
+                <strong>Loading invoice drafts</strong>
+                <span>Reading records from the local API proxy.</span>
               </div>
 
               <div>
                 <CalendarDays size={15} />
-                <span>{invoice.issueDate}</span>
+                <span>pending</span>
               </div>
 
               <div>
-                <span className="status-pill">{invoice.status}</span>
+                <span className="status-pill">loading</span>
               </div>
 
-              <strong>{invoice.amount}</strong>
-            </Link>
-          ))}
+              <strong>API</strong>
+            </div>
+          ) : (
+            tableInvoices.map((invoice) => (
+              <Link
+                href="/workspace/invoices/new"
+                className="workspace-table-row invoice-click-row"
+                key={invoice.id}
+              >
+                <div>
+                  <strong>{invoice.number}</strong>
+                  <span>
+                    {invoice.buyer} - {invoice.buyerCountry}
+                  </span>
+                </div>
+
+                <div>
+                  <CalendarDays size={15} />
+                  <span>{invoice.issueDate}</span>
+                </div>
+
+                <div>
+                  <span className="status-pill">{invoice.status}</span>
+                </div>
+
+                <strong>{invoice.amount}</strong>
+              </Link>
+            ))
+          )}
         </div>
       </section>
     </div>

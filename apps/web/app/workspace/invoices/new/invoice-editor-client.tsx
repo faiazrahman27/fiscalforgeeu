@@ -74,16 +74,6 @@ type SavedValidationRun = {
   disclaimer: string;
 };
 
-type SavedInvoiceDraft = {
-  id: string;
-  number: string;
-  buyer: string;
-  buyerCountry: string;
-  issueDate: string;
-  status: string;
-  amount: string;
-};
-
 type ApiValidationRequestPayload = {
   document: {
     type: "invoice" | "credit_note";
@@ -138,8 +128,26 @@ type ApiValidationResponse = {
   disclaimer: string;
 };
 
+type ApiDraftSaveResponse = {
+  record?: {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+  };
+  summary?: {
+    id: string;
+    number: string;
+    buyer: string;
+    buyerCountry: string;
+    issueDate: string;
+    status: string;
+    amount: string;
+    currency: string;
+    updatedAt: string;
+  };
+};
+
 const LOCAL_DRAFT_KEY = "invoice-lantern.invoiceDraft.local";
-const INVOICE_DRAFTS_STORAGE_KEY = "Invoice Lantern:invoice-drafts:v1";
 const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
 
 export function InvoiceEditorClient({
@@ -166,6 +174,7 @@ export function InvoiceEditorClient({
   });
 
   const [saveMessage, setSaveMessage] = useState<string>("");
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isRunningValidation, setIsRunningValidation] = useState(false);
   const [validationReport, setValidationReport] =
     useState<LocalValidationReport | null>(null);
@@ -284,15 +293,49 @@ export function InvoiceEditorClient({
     });
   }
 
-  function saveDraftLocally() {
-    window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft));
-    saveInvoiceDraftToList(buildSavedInvoiceDraft(draft, recalculatedTotals));
+  async function saveDraftLocally() {
+    setIsSavingDraft(true);
 
-    setSaveMessage(`Draft saved locally at ${new Date().toLocaleTimeString()}.`);
+    try {
+      const response = await fetch("/api/local/invoices/drafts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          ...draft,
+          totals: recalculatedTotals
+        })
+      });
 
-    window.setTimeout(() => {
-      setSaveMessage("");
-    }, 3500);
+      const responseData: unknown = await response.json();
+
+      if (!response.ok) {
+        const apiError = extractApiError(responseData);
+        setSaveMessage(`Draft save failed: ${apiError.message}`);
+        return;
+      }
+
+      const savedDraft = responseData as ApiDraftSaveResponse;
+
+      window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft));
+
+      setSaveMessage(
+        savedDraft.summary?.id
+          ? `Draft saved through API as ${savedDraft.summary.id}.`
+          : `Draft saved through API at ${new Date().toLocaleTimeString()}.`
+      );
+    } catch {
+      setSaveMessage(
+        "Draft save failed. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsSavingDraft(false);
+
+      window.setTimeout(() => {
+        setSaveMessage("");
+      }, 3500);
+    }
   }
 
   async function runApiValidation() {
@@ -345,7 +388,6 @@ export function InvoiceEditorClient({
       };
 
       setValidationReport(nextReport);
-      saveInvoiceDraftToList(buildSavedInvoiceDraft(draft, nextReport.totals));
       saveValidationRunToHistory(buildSavedValidationRun(draft, nextReport));
     } catch {
       setValidationReport(
@@ -377,9 +419,10 @@ export function InvoiceEditorClient({
             type="button"
             className={styles.secondaryButton}
             onClick={saveDraftLocally}
+            disabled={isSavingDraft}
           >
             <Save size={16} />
-            Save draft
+            {isSavingDraft ? "Saving..." : "Save draft"}
           </button>
 
           <button
@@ -399,9 +442,9 @@ export function InvoiceEditorClient({
           <p className={styles.kicker}>Invoice Editor</p>
           <h2>Build a structured invoice from canonical data, not pixels.</h2>
           <p>
-            This editor sends validation requests through the local Next.js API proxy
-            into the dedicated Invoice Lantern API service. Successful API reports are
-            saved into local validation history for the Validation Runs page.
+            This editor saves drafts through the local Next.js API proxy into the
+            dedicated Invoice Lantern API service. Validation requests also run through
+            the same API boundary.
           </p>
         </div>
 
@@ -1233,21 +1276,6 @@ function buildSavedValidationRun(
   };
 }
 
-function buildSavedInvoiceDraft(
-  draft: InvoiceEditorDraft,
-  totals: InvoiceTotalsDraft
-): SavedInvoiceDraft {
-  return {
-    id: draft.document.number || `draft_${Date.now()}`,
-    number: draft.document.number || "Untitled invoice",
-    buyer: draft.buyer.name || "Unknown buyer",
-    buyerCountry: draft.buyer.country || "EU",
-    issueDate: draft.document.issueDate || new Date().toISOString().slice(0, 10),
-    status: "Draft",
-    amount: `EUR ${totals.payableAmount}`
-  };
-}
-
 function readStoredValidationRuns() {
   if (typeof window === "undefined") {
     return [] as SavedValidationRun[];
@@ -1286,47 +1314,6 @@ function saveValidationRunToHistory(run: SavedValidationRun) {
   window.localStorage.setItem(
     VALIDATION_RUN_STORAGE_KEY,
     JSON.stringify(nextRuns)
-  );
-}
-
-function readStoredInvoiceDrafts() {
-  if (typeof window === "undefined") {
-    return [] as SavedInvoiceDraft[];
-  }
-
-  const storedValue = window.localStorage.getItem(INVOICE_DRAFTS_STORAGE_KEY);
-
-  if (!storedValue) {
-    return [] as SavedInvoiceDraft[];
-  }
-
-  try {
-    const parsed = JSON.parse(storedValue);
-
-    if (!Array.isArray(parsed)) {
-      return [] as SavedInvoiceDraft[];
-    }
-
-    return parsed as SavedInvoiceDraft[];
-  } catch {
-    return [] as SavedInvoiceDraft[];
-  }
-}
-
-function saveInvoiceDraftToList(invoice: SavedInvoiceDraft) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  const currentInvoices = readStoredInvoiceDrafts();
-  const nextInvoices = [
-    invoice,
-    ...currentInvoices.filter((existingInvoice) => existingInvoice.id !== invoice.id)
-  ].slice(0, 25);
-
-  window.localStorage.setItem(
-    INVOICE_DRAFTS_STORAGE_KEY,
-    JSON.stringify(nextInvoices)
   );
 }
 
