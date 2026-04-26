@@ -17,7 +17,7 @@ export function SiteHeader() {
             <ShieldCheck size={18} />
           </span>
 
-          <strong>FiscalForge EU</strong>
+          <strong>Invoice Lantern</strong>
         </Link>
 
         <nav>

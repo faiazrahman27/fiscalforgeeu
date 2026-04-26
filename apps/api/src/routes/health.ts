@@ -5,9 +5,10 @@ export async function healthRoutes(app: FastifyInstance) {
   app.get("/", async () => {
     return {
       status: "ok",
-      service: "FiscalForge EU API",
+      service: "Invoice Lantern API",
       environment: env.APP_ENV,
       timestamp: new Date().toISOString()
     };
   });
 }
+

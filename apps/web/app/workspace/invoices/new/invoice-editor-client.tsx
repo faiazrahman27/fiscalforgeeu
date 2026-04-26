@@ -128,8 +128,8 @@ type ApiValidationResponse = {
   disclaimer: string;
 };
 
-const LOCAL_DRAFT_KEY = "fiscalforge.eu.invoiceDraft.local";
-const VALIDATION_RUN_STORAGE_KEY = "fiscalforge.eu.validationRuns.local";
+const LOCAL_DRAFT_KEY = "Invoice Lantern.eu.invoiceDraft.local";
+const VALIDATION_RUN_STORAGE_KEY = "Invoice Lantern.eu.validationRuns.local";
 
 export function InvoiceEditorClient({
   initialDraft
@@ -386,7 +386,7 @@ export function InvoiceEditorClient({
           <h2>Build a structured invoice from canonical data, not pixels.</h2>
           <p>
             This editor now sends validation requests through the local Next.js API
-            proxy into the dedicated FiscalForge EU API service. Successful API reports
+            proxy into the dedicated Invoice Lantern API service. Successful API reports
             are saved into local validation history for the Validation Runs page.
           </p>
         </div>
@@ -946,7 +946,7 @@ function TotalRow({
   return (
     <div className={strong ? styles.totalRowStrong : styles.totalRow}>
       <span>{label}</span>
-      <strong>€{value}</strong>
+      <strong>â‚¬{value}</strong>
     </div>
   );
 }
@@ -1395,3 +1395,4 @@ function escapeXml(value: string) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
 }
+

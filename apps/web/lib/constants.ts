@@ -96,7 +96,7 @@ export const legalBoundaries = [
   {
     title: "Technical",
     description:
-      "Focused on invoice structure, XML formats, calculations, rule-pack simulation, and developer testing — not legal conclusions."
+      "Focused on invoice structure, XML formats, calculations, rule-pack simulation, and developer testing â€” not legal conclusions."
   },
   {
     title: "Professional review required",

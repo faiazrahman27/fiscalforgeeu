@@ -129,3 +129,4 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
     }
   );
 }
+

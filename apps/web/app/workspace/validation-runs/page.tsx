@@ -49,14 +49,14 @@ type SavedValidationRun = {
   disclaimer: string;
 };
 
-const VALIDATION_RUN_STORAGE_KEY = "fiscalforge.eu.validationRuns.local";
+const VALIDATION_RUN_STORAGE_KEY = "Invoice Lantern.eu.validationRuns.local";
 
 const fallbackRuns: SavedValidationRun[] = [
   {
     id: "val_01HXABC",
     invoiceNumber: "FF-2026-001",
     buyer: "Muster GmbH",
-    seller: "FiscalForge Demo Kft.",
+    seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-24 14:32",
     technicalStatus: "failed",
     standardStatus: "warning",
@@ -92,7 +92,7 @@ const fallbackRuns: SavedValidationRun[] = [
     id: "val_01HXABD",
     invoiceNumber: "FF-2026-002",
     buyer: "Danube Consulting Kft.",
-    seller: "FiscalForge Demo Kft.",
+    seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-23 18:10",
     technicalStatus: "passed",
     standardStatus: "ready",
@@ -116,7 +116,7 @@ const fallbackRuns: SavedValidationRun[] = [
     id: "val_01HXABE",
     invoiceNumber: "FF-2026-003",
     buyer: "Nordic Trade AB",
-    seller: "FiscalForge Demo Kft.",
+    seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-22 09:45",
     technicalStatus: "passed",
     standardStatus: "warning",
@@ -251,7 +251,7 @@ export default function WorkspaceValidationRunsPage() {
               <div>
                 <strong>{run.id}</strong>
                 <span>
-                  {run.invoiceNumber} · {run.buyer}
+                  {run.invoiceNumber} Â· {run.buyer}
                 </span>
               </div>
 
@@ -320,3 +320,4 @@ export default function WorkspaceValidationRunsPage() {
     </div>
   );
 }
+

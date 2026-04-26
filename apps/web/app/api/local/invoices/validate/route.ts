@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const API_BASE_URL = process.env.FISCALFORGE_API_BASE_URL;
-const DEV_API_KEY = process.env.FISCALFORGE_DEV_API_KEY;
+const API_BASE_URL = process.env.INVOICE_LANTERN_API_BASE_URL;
+const DEV_API_KEY = process.env.INVOICE_LANTERN_DEV_API_KEY;
 
 export async function POST(request: NextRequest) {
   if (!API_BASE_URL || !DEV_API_KEY) {
@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
         error: {
           code: "WEB_API_PROXY_NOT_CONFIGURED",
           message:
-            "Missing FISCALFORGE_API_BASE_URL or FISCALFORGE_DEV_API_KEY in apps/web/.env.local.",
+            "Missing INVOICE_LANTERN_API_BASE_URL or INVOICE_LANTERN_DEV_API_KEY in apps/web/.env.local.",
           details: null
         }
       },
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         error: {
           code: "API_UNAVAILABLE",
           message:
-            "Could not reach the FiscalForge EU API. Make sure apps/api is running on port 4000.",
+            "Could not reach the Invoice Lantern API. Make sure apps/api is running on port 4000.",
           details: null
         }
       },

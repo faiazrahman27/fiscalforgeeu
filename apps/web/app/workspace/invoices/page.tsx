@@ -13,7 +13,7 @@ import {
 import { invoiceDrafts, invoiceStages } from "../../../lib/mock-data";
 import type { WorkspaceIconKey } from "../../../lib/types";
 
-const INVOICE_DRAFTS_STORAGE_KEY = "fiscalforge:invoice-drafts:v1";
+const INVOICE_DRAFTS_STORAGE_KEY = "Invoice Lantern:invoice-drafts:v1";
 
 type InvoiceListItem = {
   id: string;
@@ -49,7 +49,7 @@ function formatEuroAmount(value: unknown) {
     }).format(value);
   }
 
-  return "€0.00";
+  return "â‚¬0.00";
 }
 
 function normalizeStoredInvoice(value: unknown): InvoiceListItem | null {
@@ -219,7 +219,7 @@ export default function WorkspaceInvoicesPage() {
               <div>
                 <strong>{invoice.number}</strong>
                 <span>
-                  {invoice.buyer} · {invoice.buyerCountry}
+                  {invoice.buyer} Â· {invoice.buyerCountry}
                 </span>
               </div>
 
@@ -240,3 +240,4 @@ export default function WorkspaceInvoicesPage() {
     </div>
   );
 }
+

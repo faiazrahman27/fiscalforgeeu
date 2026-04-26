@@ -54,7 +54,7 @@ type ApiXmlInspectResponse = {
   disclaimer: string;
 };
 
-const XML_UPLOAD_STORAGE_KEY = "fiscalforge.eu.workspace.xmlUploads";
+const XML_UPLOAD_STORAGE_KEY = "Invoice Lantern.eu.workspace.xmlUploads";
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
 
 const defaultUploadHistory: XmlUploadRecord[] = [
@@ -293,7 +293,7 @@ export default function WorkspaceXmlUploadPage() {
         <p>
           Upload a local XML file to preview document structure, root element,
           invoice ID, issue date, currency, and parsing readiness. The browser sends
-          the XML through the Next.js proxy into the dedicated FiscalForge EU API.
+          the XML through the Next.js proxy into the dedicated Invoice Lantern API.
         </p>
       </section>
 
@@ -425,7 +425,7 @@ POST /api/local/xml/inspect`}</pre>
             <div className="workspace-table-row">
               <div>
                 <strong>Inspection source</strong>
-                <span>Next.js proxy → FiscalForge EU API</span>
+                <span>Next.js proxy â†’ Invoice Lantern API</span>
               </div>
 
               <div>
@@ -540,3 +540,4 @@ POST /api/local/xml/inspect`}</pre>
     </div>
   );
 }
+

@@ -59,7 +59,7 @@ export default function ValidationPage() {
             </h1>
 
             <p className="subpage-lead">
-              FiscalForge EU validation is not a single pass/fail badge. It is a layered
+              Invoice Lantern validation is not a single pass/fail badge. It is a layered
               result model that separates technical correctness, standard-style rules,
               country-pack simulation, and professional-review requirements.
             </p>

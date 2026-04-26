@@ -143,7 +143,7 @@ export const invoiceDrafts: InvoiceDraft[] = [
     buyerCountry: "DE",
     issueDate: "2026-04-25",
     status: "Review required",
-    amount: "€1,240.00",
+    amount: "â‚¬1,240.00",
     currency: "EUR"
   },
   {
@@ -153,7 +153,7 @@ export const invoiceDrafts: InvoiceDraft[] = [
     buyerCountry: "HU",
     issueDate: "2026-04-25",
     status: "Draft",
-    amount: "€680.00",
+    amount: "â‚¬680.00",
     currency: "EUR"
   },
   {
@@ -163,7 +163,7 @@ export const invoiceDrafts: InvoiceDraft[] = [
     buyerCountry: "IT",
     issueDate: "2026-04-25",
     status: "Validation failed",
-    amount: "€2,450.00",
+    amount: "â‚¬2,450.00",
     currency: "EUR"
   }
 ];
@@ -374,7 +374,7 @@ export const invoiceEditorDraft: InvoiceEditorDraft = {
     contractReference: "CTR-VIDA-SANDBOX"
   },
   seller: {
-    name: "FiscalForge Demo Studio",
+    name: "Invoice Lantern Demo Studio",
     country: "HU",
     vatId: "HU12345678",
     city: "Debrecen",
@@ -388,7 +388,7 @@ export const invoiceEditorDraft: InvoiceEditorDraft = {
     vatId: "DE123456789",
     city: "Berlin",
     postalCode: "10115",
-    street: "Invalidenstraße 44",
+    street: "InvalidenstraÃŸe 44",
     electronicAddress: "0088:buyer-demo"
   },
   lines: [

@@ -28,7 +28,7 @@ export async function buildApp() {
 
   app.get("/", async () => {
     return {
-      service: "FiscalForge EU API",
+      service: "Invoice Lantern API",
       status: "ok",
       version: "0.1.0"
     };
@@ -70,3 +70,4 @@ export async function buildApp() {
 
   return app;
 }
+

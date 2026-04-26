@@ -57,7 +57,7 @@ export default function WorkspaceLayout({
           <span>
             <ShieldCheck size={20} />
           </span>
-          <strong>FiscalForge EU</strong>
+          <strong>Invoice Lantern</strong>
         </Link>
 
         <div className="workspace-org">
@@ -109,3 +109,4 @@ export default function WorkspaceLayout({
     </main>
   );
 }
+

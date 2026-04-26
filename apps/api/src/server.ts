@@ -10,7 +10,7 @@ try {
   });
 
   app.log.info(
-    `FiscalForge EU API running at http://${env.API_HOST}:${env.API_PORT}`
+    `Invoice Lantern API running at http://${env.API_HOST}:${env.API_PORT}`
   );
 } catch (error) {
   app.log.error(error);
@@ -36,3 +36,4 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
 });
+

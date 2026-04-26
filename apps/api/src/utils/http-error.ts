@@ -33,3 +33,4 @@ export function sendHttpError(reply: FastifyReply, error: HttpError) {
     }
   });
 }
+

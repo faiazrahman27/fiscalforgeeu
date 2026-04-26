@@ -63,7 +63,7 @@ const pageLinks = [
     href: "/boundaries",
     label: "Legal Boundaries",
     description:
-      "Review the platform’s independent positioning, non-affiliation language, no-tax-advice notices, and professional-review requirements.",
+      "Review the platformâ€™s independent positioning, non-affiliation language, no-tax-advice notices, and professional-review requirements.",
     tag: "Trust"
   }
 ];
@@ -79,12 +79,11 @@ export default function HomePage() {
             <div className="hero-copy">
               <div className="hero-badge">
                 <span />
-                Independent EU invoice validation sandbox
+                Independent invoice validation sandbox
               </div>
 
               <h1 className="hero-title">
-                Fiscal
-                <span>Forge EU</span>
+                Invoice <span>Lantern</span>
               </h1>
 
               <p className="hero-lead">
@@ -130,7 +129,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="ticker-section" aria-label="FiscalForge EU platform highlights">
+      <section className="ticker-section" aria-label="Invoice Lantern platform highlights">
         <div className="ticker-label">
           <span />
           Platform radar
@@ -207,7 +206,7 @@ export default function HomePage() {
               <div className="cinema-panel flow-panel">
                 <div className="panel-title-row">
                   <div>
-                    <p>FiscalForge workspace</p>
+                    <p>Invoice Lantern workspace</p>
                     <h3>Invoice flow</h3>
                   </div>
 

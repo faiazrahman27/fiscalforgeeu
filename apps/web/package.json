@@ -1,5 +1,5 @@
 {
-  "name": "fiscalforge-eu-web",
+  "name": "Invoice Lantern-eu-web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -21,3 +21,4 @@
     "typescript": "latest"
   }
 }
+

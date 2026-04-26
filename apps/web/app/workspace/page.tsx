@@ -88,7 +88,7 @@ export default function WorkspacePage() {
 
           <p>
             This is the future authenticated product shell. It is not connected to the
-            API yet, but the interface is shaped around the real FiscalForge EU workflow:
+            API yet, but the interface is shaped around the real Invoice Lantern workflow:
             invoice creation, validation, XML handling, API testing, audit trails, and
             privacy controls.
           </p>
@@ -211,3 +211,4 @@ export default function WorkspacePage() {
     </div>
   );
 }
+

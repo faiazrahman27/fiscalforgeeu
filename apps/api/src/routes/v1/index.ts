@@ -16,3 +16,4 @@ export async function v1Routes(app: FastifyInstance) {
     prefix: "/xml"
   });
 }
+

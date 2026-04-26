@@ -43,8 +43,8 @@ type RequestLog = {
   createdAt: string;
 };
 
-const API_KEY_STORAGE_KEY = "fiscalforge.eu.workspace.apiKeys";
-const REQUEST_LOG_STORAGE_KEY = "fiscalforge.eu.workspace.requestLogs";
+const API_KEY_STORAGE_KEY = "Invoice Lantern.eu.workspace.apiKeys";
+const REQUEST_LOG_STORAGE_KEY = "Invoice Lantern.eu.workspace.requestLogs";
 
 const defaultApiKeys: SandboxApiKey[] = [
   {
@@ -244,7 +244,7 @@ export default function WorkspaceDeveloperPage() {
 
     try {
       await navigator.clipboard.writeText(generatedKey);
-      setCopyMessage("Copied. Store it now — it will not be shown again later.");
+      setCopyMessage("Copied. Store it now â€” it will not be shown again later.");
     } catch {
       setCopyMessage("Copy failed. Select and copy the key manually.");
     }
@@ -367,7 +367,7 @@ export default function WorkspaceDeveloperPage() {
               <div>
                 <strong>{apiKey.name}</strong>
                 <span>
-                  {apiKey.prefix}••••••••{apiKey.lastFour}
+                  {apiKey.prefix}â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢{apiKey.lastFour}
                 </span>
               </div>
 
@@ -468,3 +468,4 @@ export default function WorkspaceDeveloperPage() {
     </div>
   );
 }
+

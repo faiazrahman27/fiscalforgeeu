@@ -17,7 +17,7 @@ const notices = [
     icon: <Landmark size={22} />,
     title: "Not official software",
     description:
-      "FiscalForge EU is not affiliated with, endorsed by, sponsored by, or operated by the European Union, European Commission, national tax authorities, OpenPeppol, Peppol authorities, or standards bodies."
+      "Invoice Lantern is not affiliated with, endorsed by, sponsored by, or operated by the European Union, European Commission, national tax authorities, OpenPeppol, Peppol authorities, or standards bodies."
   },
   {
     icon: <Scale size={22} />,
@@ -59,7 +59,7 @@ export default function BoundariesPage() {
             </h1>
 
             <p className="subpage-lead">
-              FiscalForge EU can be useful only if its claims are precise. The platform
+              Invoice Lantern can be useful only if its claims are precise. The platform
               should communicate strong technical competence while never implying official
               certification, tax authority acceptance, legal advice, or guaranteed compliance.
             </p>
