@@ -1,44 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireApiKey } from "../../middleware/require-api-key.js";
-import { readJsonCollection } from "../../storage/json-store.js";
+import {
+  getValidationRunById,
+  listValidationRuns,
+  type ValidationRunRecord
+} from "../../repositories/validation-run-repository.js";
 import { formatZodError } from "../../utils/zod-error.js";
-
-type FindingSeverity = "info" | "warning" | "fatal";
-
-type Finding = {
-  code: string;
-  severity: FindingSeverity;
-  field: string;
-  message: string;
-  legalConfidence: "technical" | "educational_simulation" | "review_required";
-};
-
-type ValidationTotals = {
-  lineExtensionAmount: number;
-  taxExclusiveAmount: number;
-  taxAmount: number;
-  taxInclusiveAmount: number;
-  payableAmount: number;
-};
-
-type ValidationRunRecord = {
-  id: string;
-  invoiceNumber: string;
-  buyer: string;
-  seller: string;
-  createdAt: string;
-  technicalStatus: "passed" | "failed";
-  standardStatus: "ready" | "warning";
-  countrySimulationStatus: "not_relevant" | "review_required";
-  vidaReadinessStatus: "not_relevant" | "relevant_simulation";
-  confidence: "technical_preview" | "educational_simulation";
-  profile: "API_VALIDATION";
-  currency: string;
-  totals: ValidationTotals;
-  findings: Finding[];
-  disclaimer: string;
-};
 
 type ValidationRunSummary = {
   id: string;
@@ -56,8 +24,6 @@ type ValidationRunSummary = {
   findingsCount: number;
   payableAmount: number;
 };
-
-const VALIDATION_RUNS_FILE = "validation-runs.json";
 
 const validationRunParamsSchema = z
   .object({
@@ -86,10 +52,6 @@ function buildValidationRunSummary(
   };
 }
 
-async function readValidationRuns() {
-  return readJsonCollection<ValidationRunRecord>(VALIDATION_RUNS_FILE);
-}
-
 export async function validationRunRoutes(app: FastifyInstance) {
   app.get(
     "/",
@@ -97,7 +59,7 @@ export async function validationRunRoutes(app: FastifyInstance) {
       preHandler: requireApiKey
     },
     async () => {
-      const runs = await readValidationRuns();
+      const runs = await listValidationRuns();
 
       return {
         records: runs
@@ -125,8 +87,7 @@ export async function validationRunRoutes(app: FastifyInstance) {
         });
       }
 
-      const runs = await readValidationRuns();
-      const run = runs.find((item) => item.id === parsedParams.data.id);
+      const run = await getValidationRunById(parsedParams.data.id);
 
       if (!run) {
         return reply.status(404).send({

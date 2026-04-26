@@ -1,0 +1,94 @@
+import { randomUUID } from "node:crypto";
+import type { InvoiceEditorDraftPayload } from "../schemas/invoice.js";
+import { readJsonCollection, writeJsonCollection } from "../storage/json-store.js";
+
+export type InvoiceDraftRecord = InvoiceEditorDraftPayload & {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InvoiceDraftSummary = {
+  id: string;
+  number: string;
+  buyer: string;
+  buyerCountry: string;
+  issueDate: string;
+  status: "Draft";
+  amount: string;
+  currency: string;
+  updatedAt: string;
+};
+
+const INVOICE_DRAFTS_FILE = "invoice-drafts.json";
+const MAX_STORED_INVOICE_DRAFTS = 250;
+
+export function buildDraftSummary(
+  draft: InvoiceDraftRecord
+): InvoiceDraftSummary {
+  return {
+    id: draft.id,
+    number: draft.document.number,
+    buyer: draft.buyer.name,
+    buyerCountry: draft.buyer.country,
+    issueDate: draft.document.issueDate,
+    status: "Draft",
+    amount: `${draft.document.currency} ${draft.totals.payableAmount}`,
+    currency: draft.document.currency,
+    updatedAt: draft.updatedAt
+  };
+}
+
+export async function listInvoiceDrafts() {
+  return readJsonCollection<InvoiceDraftRecord>(INVOICE_DRAFTS_FILE);
+}
+
+export async function listInvoiceDraftSummaries() {
+  const drafts = await listInvoiceDrafts();
+
+  return drafts
+    .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt))
+    .map(buildDraftSummary);
+}
+
+export async function createInvoiceDraft(
+  payload: InvoiceEditorDraftPayload
+): Promise<InvoiceDraftRecord> {
+  const now = new Date().toISOString();
+
+  const nextDraft: InvoiceDraftRecord = {
+    ...payload,
+    id: `draft_${randomUUID()}`,
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const currentDrafts = await listInvoiceDrafts();
+  const nextDrafts = [nextDraft, ...currentDrafts].slice(
+    0,
+    MAX_STORED_INVOICE_DRAFTS
+  );
+
+  await writeJsonCollection(INVOICE_DRAFTS_FILE, nextDrafts);
+
+  return nextDraft;
+}
+
+export async function getInvoiceDraftById(id: string) {
+  const drafts = await listInvoiceDrafts();
+
+  return drafts.find((item) => item.id === id) ?? null;
+}
+
+export async function deleteInvoiceDraftById(id: string) {
+  const drafts = await listInvoiceDrafts();
+  const nextDrafts = drafts.filter((item) => item.id !== id);
+
+  if (nextDrafts.length === drafts.length) {
+    return false;
+  }
+
+  await writeJsonCollection(INVOICE_DRAFTS_FILE, nextDrafts);
+
+  return true;
+}
