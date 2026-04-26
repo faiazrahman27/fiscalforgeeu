@@ -247,5 +247,10 @@ export default function ExistingInvoiceDraftPage({
     );
   }
 
-  return <InvoiceEditorClient initialDraft={draft ?? invoiceEditorDraft} />;
+  return (
+    <InvoiceEditorClient
+      initialDraft={draft ?? invoiceEditorDraft}
+      loadStoredDraft={false}
+    />
+  );
 }

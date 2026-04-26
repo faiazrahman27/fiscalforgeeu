@@ -132,9 +132,11 @@ type ApiDraftSaveResponse = {
 const LOCAL_DRAFT_KEY = "invoice-lantern.invoiceDraft.local";
 
 export function InvoiceEditorClient({
-  initialDraft
+  initialDraft,
+  loadStoredDraft = true
 }: {
   initialDraft: InvoiceEditorDraft;
+  loadStoredDraft?: boolean;
 }) {
   const [draft, setDraft] = useState<InvoiceEditorDraft>(initialDraft);
   const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
@@ -145,9 +147,16 @@ export function InvoiceEditorClient({
     useState<LocalValidationReport | null>(null);
 
   useEffect(() => {
+    if (!loadStoredDraft) {
+      setDraft(initialDraft);
+      setHasLoadedDraft(true);
+      return;
+    }
+
     const storedDraft = readFirstLocalStorageValue([LOCAL_DRAFT_KEY]);
 
     if (!storedDraft) {
+      setDraft(initialDraft);
       setHasLoadedDraft(true);
       return;
     }
@@ -159,7 +168,7 @@ export function InvoiceEditorClient({
     } finally {
       setHasLoadedDraft(true);
     }
-  }, [initialDraft]);
+  }, [initialDraft, loadStoredDraft]);
 
   const recalculatedTotals = useMemo(
     () => calculateTotals(draft.lines),
@@ -300,7 +309,9 @@ export function InvoiceEditorClient({
 
       const savedDraft = responseData as ApiDraftSaveResponse;
 
-      window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft));
+      if (loadStoredDraft) {
+        window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft));
+      }
 
       setSaveMessage(
         savedDraft.summary?.id
