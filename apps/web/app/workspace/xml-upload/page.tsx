@@ -54,7 +54,13 @@ type ApiXmlInspectResponse = {
   disclaimer: string;
 };
 
-const XML_UPLOAD_STORAGE_KEY = "Invoice Lantern.eu.workspace.xmlUploads";
+const XML_UPLOAD_STORAGE_KEY = "invoice-lantern.workspace.xmlUploads";
+
+const LEGACY_XML_UPLOAD_STORAGE_KEYS = [
+  "Invoice Lantern.eu.workspace.xmlUploads",
+  "fiscalforge.eu.workspace.xmlUploads"
+];
+
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
 
 const defaultUploadHistory: XmlUploadRecord[] = [
@@ -65,7 +71,7 @@ const defaultUploadHistory: XmlUploadRecord[] = [
     uploadedAt: "2026-04-24 17:20",
     detectedDocument: "invoice",
     rootElement: "Invoice",
-    invoiceId: "FF-2026-001",
+    invoiceId: "IL-2026-001",
     status: "accepted",
     note: "Backend inspection structure preview."
   },
@@ -106,12 +112,65 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function readFirstLocalStorageValue(keys: string[]) {
+  for (const key of keys) {
+    const value = window.localStorage.getItem(key);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function isUploadStatus(value: unknown): value is UploadStatus {
+  return value === "accepted" || value === "rejected";
+}
+
+function readStringField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: string
+) {
+  const value = record[key];
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return fallback;
+}
+
+function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    id: readStringField(record, "id", `xml_${Date.now()}`),
+    fileName: readStringField(record, "fileName", "unknown.xml"),
+    fileSize: readStringField(record, "fileSize", "0 B"),
+    uploadedAt: readStringField(record, "uploadedAt", formatDateTime(new Date())),
+    detectedDocument: readStringField(record, "detectedDocument", "unknown"),
+    rootElement: readStringField(record, "rootElement", "unknown"),
+    invoiceId: readStringField(record, "invoiceId", "not_detected"),
+    status: isUploadStatus(record.status) ? record.status : "rejected",
+    note: readStringField(record, "note", "Stored local XML upload record.")
+  };
+}
+
 function readStoredUploads() {
   if (typeof window === "undefined") {
     return defaultUploadHistory;
   }
 
-  const storedValue = window.localStorage.getItem(XML_UPLOAD_STORAGE_KEY);
+  const storedValue = readFirstLocalStorageValue([
+    XML_UPLOAD_STORAGE_KEY,
+    ...LEGACY_XML_UPLOAD_STORAGE_KEYS
+  ]);
 
   if (!storedValue) {
     return defaultUploadHistory;
@@ -124,7 +183,11 @@ function readStoredUploads() {
       return defaultUploadHistory;
     }
 
-    return parsed as XmlUploadRecord[];
+    const normalizedUploads = parsed
+      .map((item) => normalizeUploadRecord(item))
+      .filter((item): item is XmlUploadRecord => item !== null);
+
+    return normalizedUploads.length > 0 ? normalizedUploads : defaultUploadHistory;
   } catch {
     return defaultUploadHistory;
   }
@@ -425,7 +488,7 @@ POST /api/local/xml/inspect`}</pre>
             <div className="workspace-table-row">
               <div>
                 <strong>Inspection source</strong>
-                <span>Next.js proxy â†’ Invoice Lantern API</span>
+                <span>Next.js proxy -&gt; Invoice Lantern API</span>
               </div>
 
               <div>
@@ -540,4 +603,3 @@ POST /api/local/xml/inspect`}</pre>
     </div>
   );
 }
-

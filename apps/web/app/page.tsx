@@ -63,7 +63,7 @@ const pageLinks = [
     href: "/boundaries",
     label: "Legal Boundaries",
     description:
-      "Review the platformâ€™s independent positioning, non-affiliation language, no-tax-advice notices, and professional-review requirements.",
+      "Review the platform's independent positioning, non-affiliation language, no-tax-advice notices, and professional-review requirements.",
     tag: "Trust"
   }
 ];
@@ -106,8 +106,8 @@ export default function HomePage() {
 
               <div className="hero-quote">
                 <p>
-                  Not official. Not tax advice. Not certification theatre.
-                  A professional technical environment for structured invoice validation.
+                  Clarity before compliance. Not official. Not tax advice. A
+                  professional technical environment for structured invoice validation.
                 </p>
               </div>
             </div>
@@ -129,7 +129,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="ticker-section" aria-label="Invoice Lantern platform highlights">
+      <section
+        className="ticker-section"
+        aria-label="Invoice Lantern platform highlights"
+      >
         <div className="ticker-label">
           <span />
           Platform radar
@@ -355,7 +358,7 @@ export default function HomePage() {
   "profile": "PEPPOL_BIS_3",
   "document": {
     "type": "invoice",
-    "number": "FF-2026-001",
+    "number": "IL-2026-001",
     "currency": "EUR"
   },
   "seller": {

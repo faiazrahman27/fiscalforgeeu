@@ -56,8 +56,8 @@ const commandFlow = [
     icon: <UploadCloud size={20} />,
     title: "Upload XML",
     description:
-      "Prepare the future XML upload flow for UBL parsing, XML safety checks, and validation-worker handoff.",
-    href: "/workspace/invoices"
+      "Inspect XML structure, detect basic invoice fields, and prepare future UBL validation-worker handoff.",
+    href: "/workspace/xml-upload"
   },
   {
     icon: <KeyRound size={20} />,
@@ -69,8 +69,8 @@ const commandFlow = [
 ];
 
 const alerts = [
-  "API and web are still separated conceptually. The frontend is a static product shell until the API service is added.",
-  "Validation outputs must never claim legal, tax, accounting, Peppol, or EU certification.",
+  "API and web are separated. The frontend calls local Next.js proxy routes, which forward requests to the dedicated API service.",
+  "Validation outputs must never claim legal, tax, accounting, Peppol, EN 16931, ViDA, or authority certification.",
   "Every real rule later needs a source reference, reviewed date, confidence level, and rule version.",
   "XML upload must block DTD, XXE, external entities, oversized files, and unsafe parser behavior."
 ];
@@ -87,10 +87,9 @@ export default function WorkspacePage() {
           </h2>
 
           <p>
-            This is the future authenticated product shell. It is not connected to the
-            API yet, but the interface is shaped around the real Invoice Lantern workflow:
-            invoice creation, validation, XML handling, API testing, audit trails, and
-            privacy controls.
+            This is the future authenticated product shell. The interface is shaped
+            around the real Invoice Lantern workflow: invoice creation, validation,
+            XML handling, API testing, audit trails, and privacy controls.
           </p>
         </div>
       </section>
@@ -211,4 +210,3 @@ export default function WorkspacePage() {
     </div>
   );
 }
-

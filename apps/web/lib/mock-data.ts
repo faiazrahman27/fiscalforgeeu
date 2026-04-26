@@ -143,7 +143,7 @@ export const invoiceDrafts: InvoiceDraft[] = [
     buyerCountry: "DE",
     issueDate: "2026-04-25",
     status: "Review required",
-    amount: "â‚¬1,240.00",
+    amount: "€1,240.00",
     currency: "EUR"
   },
   {
@@ -153,7 +153,7 @@ export const invoiceDrafts: InvoiceDraft[] = [
     buyerCountry: "HU",
     issueDate: "2026-04-25",
     status: "Draft",
-    amount: "â‚¬680.00",
+    amount: "€680.00",
     currency: "EUR"
   },
   {
@@ -163,7 +163,7 @@ export const invoiceDrafts: InvoiceDraft[] = [
     buyerCountry: "IT",
     issueDate: "2026-04-25",
     status: "Validation failed",
-    amount: "â‚¬2,450.00",
+    amount: "€2,450.00",
     currency: "EUR"
   }
 ];

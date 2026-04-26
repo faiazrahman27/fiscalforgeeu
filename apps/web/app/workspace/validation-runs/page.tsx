@@ -49,12 +49,17 @@ type SavedValidationRun = {
   disclaimer: string;
 };
 
-const VALIDATION_RUN_STORAGE_KEY = "Invoice Lantern.eu.validationRuns.local";
+const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
+
+const LEGACY_VALIDATION_RUN_STORAGE_KEYS = [
+  "Invoice Lantern.eu.validationRuns.local",
+  "fiscalforge.eu.validationRuns.local"
+];
 
 const fallbackRuns: SavedValidationRun[] = [
   {
     id: "val_01HXABC",
-    invoiceNumber: "FF-2026-001",
+    invoiceNumber: "IL-2026-001",
     buyer: "Muster GmbH",
     seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-24 14:32",
@@ -90,7 +95,7 @@ const fallbackRuns: SavedValidationRun[] = [
   },
   {
     id: "val_01HXABD",
-    invoiceNumber: "FF-2026-002",
+    invoiceNumber: "IL-2026-002",
     buyer: "Danube Consulting Kft.",
     seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-23 18:10",
@@ -114,7 +119,7 @@ const fallbackRuns: SavedValidationRun[] = [
   },
   {
     id: "val_01HXABE",
-    invoiceNumber: "FF-2026-003",
+    invoiceNumber: "IL-2026-003",
     buyer: "Nordic Trade AB",
     seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-22 09:45",
@@ -156,12 +161,27 @@ function getValidationIcon(iconKey: WorkspaceIconKey) {
   return icons[iconKey] ?? <FileCheck2 size={22} />;
 }
 
+function readFirstLocalStorageValue(keys: string[]) {
+  for (const key of keys) {
+    const value = window.localStorage.getItem(key);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 function readStoredValidationRuns() {
   if (typeof window === "undefined") {
     return fallbackRuns;
   }
 
-  const storedValue = window.localStorage.getItem(VALIDATION_RUN_STORAGE_KEY);
+  const storedValue = readFirstLocalStorageValue([
+    VALIDATION_RUN_STORAGE_KEY,
+    ...LEGACY_VALIDATION_RUN_STORAGE_KEYS
+  ]);
 
   if (!storedValue) {
     return fallbackRuns;
@@ -208,9 +228,9 @@ export default function WorkspaceValidationRunsPage() {
         <p className="workspace-kicker">Validation Runs</p>
         <h2>Every validation result must be explainable.</h2>
         <p>
-          This screen now reads saved validation runs from local browser storage when
-          available. New API validation reports from the invoice editor will appear here
-          before we move the history into the database.
+          This screen reads saved validation runs from local browser storage when
+          available. New API validation reports from the invoice editor appear here
+          before the history moves into the database.
         </p>
       </section>
 
@@ -251,7 +271,7 @@ export default function WorkspaceValidationRunsPage() {
               <div>
                 <strong>{run.id}</strong>
                 <span>
-                  {run.invoiceNumber} Â· {run.buyer}
+                  {run.invoiceNumber} - {run.buyer}
                 </span>
               </div>
 
@@ -320,4 +340,3 @@ export default function WorkspaceValidationRunsPage() {
     </div>
   );
 }
-

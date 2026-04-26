@@ -55,12 +55,17 @@ type EvidenceItem = {
   value: string;
 };
 
-const VALIDATION_RUN_STORAGE_KEY = "Invoice Lantern.eu.validationRuns.local";
+const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
+
+const LEGACY_VALIDATION_RUN_STORAGE_KEYS = [
+  "Invoice Lantern.eu.validationRuns.local",
+  "fiscalforge.eu.validationRuns.local"
+];
 
 const fallbackRuns: SavedValidationRun[] = [
   {
     id: "val_01HXABC",
-    invoiceNumber: "FF-2026-001",
+    invoiceNumber: "IL-2026-001",
     buyer: "Muster GmbH",
     seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-24 14:32",
@@ -96,7 +101,7 @@ const fallbackRuns: SavedValidationRun[] = [
   },
   {
     id: "val_01HXABD",
-    invoiceNumber: "FF-2026-002",
+    invoiceNumber: "IL-2026-002",
     buyer: "Danube Consulting Kft.",
     seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-23 18:10",
@@ -120,7 +125,7 @@ const fallbackRuns: SavedValidationRun[] = [
   },
   {
     id: "val_01HXABE",
-    invoiceNumber: "FF-2026-003",
+    invoiceNumber: "IL-2026-003",
     buyer: "Nordic Trade AB",
     seller: "Invoice Lantern Demo Kft.",
     createdAt: "2026-04-22 09:45",
@@ -151,12 +156,27 @@ const fallbackRuns: SavedValidationRun[] = [
   }
 ];
 
+function readFirstLocalStorageValue(keys: string[]) {
+  for (const key of keys) {
+    const value = window.localStorage.getItem(key);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 function readStoredValidationRuns() {
   if (typeof window === "undefined") {
     return fallbackRuns;
   }
 
-  const storedValue = window.localStorage.getItem(VALIDATION_RUN_STORAGE_KEY);
+  const storedValue = readFirstLocalStorageValue([
+    VALIDATION_RUN_STORAGE_KEY,
+    ...LEGACY_VALIDATION_RUN_STORAGE_KEYS
+  ]);
 
   if (!storedValue) {
     return fallbackRuns;
@@ -191,6 +211,13 @@ function getStatusTone(status: string) {
 
 function formatStatus(status: string) {
   return status.replaceAll("_", " ");
+}
+
+function formatTotalAmount(currency: string, value: string) {
+  const safeCurrency = currency || "EUR";
+  const safeValue = value || "0.00";
+
+  return `${safeCurrency} ${safeValue}`;
 }
 
 function buildEvidence(run: SavedValidationRun): EvidenceItem[] {
@@ -252,8 +279,8 @@ export default function ValidationRunDetailPage() {
         <h2>{run.id}</h2>
         <p>
           Full validation report preview for invoice {run.invoiceNumber}. This page
-          now reads saved local validation runs when available, then falls back to
-          seeded demo reports.
+          reads saved local validation runs when available, then falls back to seeded
+          demo reports.
         </p>
       </section>
 
@@ -345,7 +372,7 @@ export default function ValidationRunDetailPage() {
                 <span className="status-pill">calculated</span>
               </div>
 
-              <strong>€{value}</strong>
+              <strong>{formatTotalAmount(run.currency, value)}</strong>
 
               <Calculator size={17} />
             </div>

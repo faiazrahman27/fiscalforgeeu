@@ -43,14 +43,24 @@ type RequestLog = {
   createdAt: string;
 };
 
-const API_KEY_STORAGE_KEY = "Invoice Lantern.eu.workspace.apiKeys";
-const REQUEST_LOG_STORAGE_KEY = "Invoice Lantern.eu.workspace.requestLogs";
+const API_KEY_STORAGE_KEY = "invoice-lantern.workspace.apiKeys";
+const REQUEST_LOG_STORAGE_KEY = "invoice-lantern.workspace.requestLogs";
+
+const LEGACY_API_KEY_STORAGE_KEYS = [
+  "Invoice Lantern.eu.workspace.apiKeys",
+  "fiscalforge.eu.workspace.apiKeys"
+];
+
+const LEGACY_REQUEST_LOG_STORAGE_KEYS = [
+  "Invoice Lantern.eu.workspace.requestLogs",
+  "fiscalforge.eu.workspace.requestLogs"
+];
 
 const defaultApiKeys: SandboxApiKey[] = [
   {
     id: "key_sbx_001",
     name: "Local validation testing",
-    prefix: "ff_sbx",
+    prefix: "il_sbx",
     lastFour: "A19K",
     scopes: ["invoices:read", "validation:run", "reports:read"],
     createdAt: "2026-04-24 16:20",
@@ -60,7 +70,7 @@ const defaultApiKeys: SandboxApiKey[] = [
   {
     id: "key_sbx_002",
     name: "Webhook simulation client",
-    prefix: "ff_sbx",
+    prefix: "il_sbx",
     lastFour: "Q72M",
     scopes: ["webhooks:test", "validation:read"],
     createdAt: "2026-04-22 11:45",
@@ -134,15 +144,27 @@ function generateApiKeyValue() {
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
-  return `ff_sbx_${secret}`;
+  return `il_sbx_${secret}`;
 }
 
-function readStoredArray<T>(key: string, fallback: T[]): T[] {
+function readFirstLocalStorageValue(keys: string[]) {
+  for (const key of keys) {
+    const value = window.localStorage.getItem(key);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function readStoredArray<T>(keys: string[], fallback: T[]): T[] {
   if (typeof window === "undefined") {
     return fallback;
   }
 
-  const storedValue = window.localStorage.getItem(key);
+  const storedValue = readFirstLocalStorageValue(keys);
 
   if (!storedValue) {
     return fallback;
@@ -159,6 +181,13 @@ function readStoredArray<T>(key: string, fallback: T[]): T[] {
   } catch {
     return fallback;
   }
+}
+
+function normalizeApiKey(apiKey: SandboxApiKey): SandboxApiKey {
+  return {
+    ...apiKey,
+    prefix: apiKey.prefix.replace("ff_sbx", "il_sbx")
+  };
 }
 
 export default function WorkspaceDeveloperPage() {
@@ -178,8 +207,18 @@ export default function WorkspaceDeveloperPage() {
   }, [apiKeys]);
 
   useEffect(() => {
-    setApiKeys(readStoredArray(API_KEY_STORAGE_KEY, defaultApiKeys));
-    setRequestLogs(readStoredArray(REQUEST_LOG_STORAGE_KEY, defaultRequestLogs));
+    const storedApiKeys = readStoredArray<SandboxApiKey>(
+      [API_KEY_STORAGE_KEY, ...LEGACY_API_KEY_STORAGE_KEYS],
+      defaultApiKeys
+    );
+
+    const storedRequestLogs = readStoredArray<RequestLog>(
+      [REQUEST_LOG_STORAGE_KEY, ...LEGACY_REQUEST_LOG_STORAGE_KEYS],
+      defaultRequestLogs
+    );
+
+    setApiKeys(storedApiKeys.map(normalizeApiKey));
+    setRequestLogs(storedRequestLogs);
     setHasLoadedStorage(true);
   }, []);
 
@@ -209,7 +248,7 @@ export default function WorkspaceDeveloperPage() {
     const nextKey: SandboxApiKey = {
       id: `key_sbx_${Date.now()}`,
       name: `Sandbox key ${apiKeys.length + 1}`,
-      prefix: "ff_sbx",
+      prefix: "il_sbx",
       lastFour: fullKey.slice(-4).toUpperCase(),
       scopes: ["invoices:read", "validation:run", "reports:read"],
       createdAt: now,
@@ -244,7 +283,7 @@ export default function WorkspaceDeveloperPage() {
 
     try {
       await navigator.clipboard.writeText(generatedKey);
-      setCopyMessage("Copied. Store it now â€” it will not be shown again later.");
+      setCopyMessage("Copied. Store it now - it will not be shown again later.");
     } catch {
       setCopyMessage("Copy failed. Select and copy the key manually.");
     }
@@ -314,7 +353,7 @@ export default function WorkspaceDeveloperPage() {
         <div className="workspace-stat">
           <p>Mode</p>
           <strong>SBX</strong>
-          <span>No real API service is connected yet.</span>
+          <span>Local sandbox interface for developer testing.</span>
         </div>
       </section>
 
@@ -334,7 +373,11 @@ export default function WorkspaceDeveloperPage() {
           <pre>{generatedKey}</pre>
 
           <div className="workspace-top-actions" style={{ marginTop: "1rem" }}>
-            <button type="button" className="text-link-button" onClick={copyGeneratedKey}>
+            <button
+              type="button"
+              className="text-link-button"
+              onClick={copyGeneratedKey}
+            >
               <Copy size={16} />
               Copy key
             </button>
@@ -367,7 +410,7 @@ export default function WorkspaceDeveloperPage() {
               <div>
                 <strong>{apiKey.name}</strong>
                 <span>
-                  {apiKey.prefix}â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢{apiKey.lastFour}
+                  {apiKey.prefix}************{apiKey.lastFour}
                 </span>
               </div>
 
@@ -468,4 +511,3 @@ export default function WorkspaceDeveloperPage() {
     </div>
   );
 }
-

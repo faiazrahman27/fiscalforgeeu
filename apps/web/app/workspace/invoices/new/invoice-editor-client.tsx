@@ -74,6 +74,16 @@ type SavedValidationRun = {
   disclaimer: string;
 };
 
+type SavedInvoiceDraft = {
+  id: string;
+  number: string;
+  buyer: string;
+  buyerCountry: string;
+  issueDate: string;
+  status: string;
+  amount: string;
+};
+
 type ApiValidationRequestPayload = {
   document: {
     type: "invoice" | "credit_note";
@@ -128,8 +138,19 @@ type ApiValidationResponse = {
   disclaimer: string;
 };
 
-const LOCAL_DRAFT_KEY = "Invoice Lantern.eu.invoiceDraft.local";
-const VALIDATION_RUN_STORAGE_KEY = "Invoice Lantern.eu.validationRuns.local";
+const LOCAL_DRAFT_KEY = "invoice-lantern.invoiceDraft.local";
+const INVOICE_DRAFTS_STORAGE_KEY = "Invoice Lantern:invoice-drafts:v1";
+const VALIDATION_RUN_STORAGE_KEY = "invoice-lantern.validationRuns.local";
+
+const LEGACY_LOCAL_DRAFT_KEYS = [
+  "Invoice Lantern.eu.invoiceDraft.local",
+  "fiscalforge.eu.invoiceDraft.local"
+];
+
+const LEGACY_VALIDATION_RUN_STORAGE_KEYS = [
+  "Invoice Lantern.eu.validationRuns.local",
+  "fiscalforge.eu.validationRuns.local"
+];
 
 export function InvoiceEditorClient({
   initialDraft
@@ -141,7 +162,10 @@ export function InvoiceEditorClient({
       return initialDraft;
     }
 
-    const storedDraft = window.localStorage.getItem(LOCAL_DRAFT_KEY);
+    const storedDraft = readFirstLocalStorageValue([
+      LOCAL_DRAFT_KEY,
+      ...LEGACY_LOCAL_DRAFT_KEYS
+    ]);
 
     if (!storedDraft) {
       return initialDraft;
@@ -275,6 +299,8 @@ export function InvoiceEditorClient({
 
   function saveDraftLocally() {
     window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft));
+    saveInvoiceDraftToList(buildSavedInvoiceDraft(draft, recalculatedTotals));
+
     setSaveMessage(`Draft saved locally at ${new Date().toLocaleTimeString()}.`);
 
     window.setTimeout(() => {
@@ -332,6 +358,7 @@ export function InvoiceEditorClient({
       };
 
       setValidationReport(nextReport);
+      saveInvoiceDraftToList(buildSavedInvoiceDraft(draft, nextReport.totals));
       saveValidationRunToHistory(buildSavedValidationRun(draft, nextReport));
     } catch {
       setValidationReport(
@@ -385,9 +412,9 @@ export function InvoiceEditorClient({
           <p className={styles.kicker}>Invoice Editor</p>
           <h2>Build a structured invoice from canonical data, not pixels.</h2>
           <p>
-            This editor now sends validation requests through the local Next.js API
-            proxy into the dedicated Invoice Lantern API service. Successful API reports
-            are saved into local validation history for the Validation Runs page.
+            This editor sends validation requests through the local Next.js API proxy
+            into the dedicated Invoice Lantern API service. Successful API reports are
+            saved into local validation history for the Validation Runs page.
           </p>
         </div>
 
@@ -946,7 +973,7 @@ function TotalRow({
   return (
     <div className={strong ? styles.totalRowStrong : styles.totalRow}>
       <span>{label}</span>
-      <strong>â‚¬{value}</strong>
+      <strong>EUR {value}</strong>
     </div>
   );
 }
@@ -1219,12 +1246,30 @@ function buildSavedValidationRun(
   };
 }
 
+function buildSavedInvoiceDraft(
+  draft: InvoiceEditorDraft,
+  totals: InvoiceTotalsDraft
+): SavedInvoiceDraft {
+  return {
+    id: draft.document.number || `draft_${Date.now()}`,
+    number: draft.document.number || "Untitled invoice",
+    buyer: draft.buyer.name || "Unknown buyer",
+    buyerCountry: draft.buyer.country || "EU",
+    issueDate: draft.document.issueDate || new Date().toISOString().slice(0, 10),
+    status: "Draft",
+    amount: `EUR ${totals.payableAmount}`
+  };
+}
+
 function readStoredValidationRuns() {
   if (typeof window === "undefined") {
     return [] as SavedValidationRun[];
   }
 
-  const storedValue = window.localStorage.getItem(VALIDATION_RUN_STORAGE_KEY);
+  const storedValue = readFirstLocalStorageValue([
+    VALIDATION_RUN_STORAGE_KEY,
+    ...LEGACY_VALIDATION_RUN_STORAGE_KEYS
+  ]);
 
   if (!storedValue) {
     return [] as SavedValidationRun[];
@@ -1258,6 +1303,59 @@ function saveValidationRunToHistory(run: SavedValidationRun) {
     VALIDATION_RUN_STORAGE_KEY,
     JSON.stringify(nextRuns)
   );
+}
+
+function readStoredInvoiceDrafts() {
+  if (typeof window === "undefined") {
+    return [] as SavedInvoiceDraft[];
+  }
+
+  const storedValue = window.localStorage.getItem(INVOICE_DRAFTS_STORAGE_KEY);
+
+  if (!storedValue) {
+    return [] as SavedInvoiceDraft[];
+  }
+
+  try {
+    const parsed = JSON.parse(storedValue);
+
+    if (!Array.isArray(parsed)) {
+      return [] as SavedInvoiceDraft[];
+    }
+
+    return parsed as SavedInvoiceDraft[];
+  } catch {
+    return [] as SavedInvoiceDraft[];
+  }
+}
+
+function saveInvoiceDraftToList(invoice: SavedInvoiceDraft) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const currentInvoices = readStoredInvoiceDrafts();
+  const nextInvoices = [
+    invoice,
+    ...currentInvoices.filter((existingInvoice) => existingInvoice.id !== invoice.id)
+  ].slice(0, 25);
+
+  window.localStorage.setItem(
+    INVOICE_DRAFTS_STORAGE_KEY,
+    JSON.stringify(nextInvoices)
+  );
+}
+
+function readFirstLocalStorageValue(keys: string[]) {
+  for (const key of keys) {
+    const value = window.localStorage.getItem(key);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
 }
 
 function formatDateTime(date: Date) {
@@ -1395,4 +1493,3 @@ function escapeXml(value: string) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&apos;");
 }
-

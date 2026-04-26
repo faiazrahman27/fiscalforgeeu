@@ -36,20 +36,39 @@ function getInvoiceIcon(iconKey: WorkspaceIconKey) {
   return icons[iconKey] ?? <FileInput size={22} />;
 }
 
+function formatCurrencyAmount(value: number) {
+  const formatted = new Intl.NumberFormat("en-IE", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
+
+  return `EUR ${formatted}`;
+}
+
 function formatEuroAmount(value: unknown) {
   if (typeof value === "string" && value.trim().length > 0) {
-    return value;
+    return value.trim().replaceAll(String.fromCharCode(8364), "EUR ");
   }
 
   if (typeof value === "number" && Number.isFinite(value)) {
-    return new Intl.NumberFormat("en-IE", {
-      style: "currency",
-      currency: "EUR",
-      maximumFractionDigits: 2
-    }).format(value);
+    return formatCurrencyAmount(value);
   }
 
-  return "â‚¬0.00";
+  return "EUR 0.00";
+}
+
+function readStringField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: string
+) {
+  const value = record[key];
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return fallback;
 }
 
 function normalizeStoredInvoice(value: unknown): InvoiceListItem | null {
@@ -59,40 +78,25 @@ function normalizeStoredInvoice(value: unknown): InvoiceListItem | null {
 
   const record = value as Record<string, unknown>;
 
-  const id =
-    typeof record.id === "string" && record.id.trim().length > 0
-      ? record.id
-      : crypto.randomUUID();
+  const id = readStringField(record, "id", crypto.randomUUID());
 
   const number =
-    typeof record.number === "string" && record.number.trim().length > 0
-      ? record.number
-      : typeof record.invoiceNumber === "string" && record.invoiceNumber.trim().length > 0
-        ? record.invoiceNumber
-        : "Draft invoice";
+    readStringField(record, "number", "") ||
+    readStringField(record, "invoiceNumber", "") ||
+    "Draft invoice";
 
   const buyer =
-    typeof record.buyer === "string" && record.buyer.trim().length > 0
-      ? record.buyer
-      : typeof record.buyerName === "string" && record.buyerName.trim().length > 0
-        ? record.buyerName
-        : "Unknown buyer";
+    readStringField(record, "buyer", "") ||
+    readStringField(record, "buyerName", "") ||
+    "Unknown buyer";
 
-  const buyerCountry =
-    typeof record.buyerCountry === "string" && record.buyerCountry.trim().length > 0
-      ? record.buyerCountry
-      : "EU";
-
-  const issueDate =
-    typeof record.issueDate === "string" && record.issueDate.trim().length > 0
-      ? record.issueDate
-      : new Date().toISOString().slice(0, 10);
-
-  const status =
-    typeof record.status === "string" && record.status.trim().length > 0
-      ? record.status
-      : "Draft";
-
+  const buyerCountry = readStringField(record, "buyerCountry", "EU");
+  const issueDate = readStringField(
+    record,
+    "issueDate",
+    new Date().toISOString().slice(0, 10)
+  );
+  const status = readStringField(record, "status", "Draft");
   const amount = formatEuroAmount(record.amount ?? record.payableAmount);
 
   return {
@@ -168,7 +172,7 @@ export default function WorkspaceInvoicesPage() {
       buyerCountry: invoice.buyerCountry,
       issueDate: invoice.issueDate,
       status: invoice.status,
-      amount: invoice.amount
+      amount: formatEuroAmount(invoice.amount)
     }));
 
     return uniqueInvoices([...storedInvoices, ...mockInvoices]);
@@ -219,7 +223,7 @@ export default function WorkspaceInvoicesPage() {
               <div>
                 <strong>{invoice.number}</strong>
                 <span>
-                  {invoice.buyer} Â· {invoice.buyerCountry}
+                  {invoice.buyer} - {invoice.buyerCountry}
                 </span>
               </div>
 
@@ -240,4 +244,3 @@ export default function WorkspaceInvoicesPage() {
     </div>
   );
 }
-
