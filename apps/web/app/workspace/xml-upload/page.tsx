@@ -55,33 +55,9 @@ type ApiXmlInspectResponse = {
 };
 
 const XML_UPLOAD_STORAGE_KEY = "invoice-lantern.workspace.xmlUploads";
-
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
 
-const defaultUploadHistory: XmlUploadRecord[] = [
-  {
-    id: "xml_001",
-    fileName: "sample-peppol-invoice.xml",
-    fileSize: "42.6 KB",
-    uploadedAt: "2026-04-24 17:20",
-    detectedDocument: "invoice",
-    rootElement: "Invoice",
-    invoiceId: "IL-2026-001",
-    status: "accepted",
-    note: "Backend inspection structure preview."
-  },
-  {
-    id: "xml_002",
-    fileName: "supplier-credit-note.xml",
-    fileSize: "31.2 KB",
-    uploadedAt: "2026-04-23 13:08",
-    detectedDocument: "credit_note",
-    rootElement: "CreditNote",
-    invoiceId: "CN-2026-002",
-    status: "accepted",
-    note: "Detected XML structure. Official validation not performed."
-  }
-];
+const defaultUploadHistory: XmlUploadRecord[] = [];
 
 function formatDateTime(date: Date) {
   return date
@@ -137,6 +113,13 @@ function readStringField(
   return fallback;
 }
 
+function buildFallbackUploadId(record: Record<string, unknown>) {
+  const fileName = readStringField(record, "fileName", "unknown.xml");
+  const uploadedAt = readStringField(record, "uploadedAt", "unknown-time");
+
+  return `${fileName}-${uploadedAt}`.replaceAll(/\s+/g, "-").toLowerCase();
+}
+
 function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -145,7 +128,7 @@ function normalizeUploadRecord(value: unknown): XmlUploadRecord | null {
   const record = value as Record<string, unknown>;
 
   return {
-    id: readStringField(record, "id", `xml_${Date.now()}`),
+    id: readStringField(record, "id", buildFallbackUploadId(record)),
     fileName: readStringField(record, "fileName", "unknown.xml"),
     fileSize: readStringField(record, "fileSize", "0 B"),
     uploadedAt: readStringField(record, "uploadedAt", formatDateTime(new Date())),
@@ -175,11 +158,9 @@ function readStoredUploads() {
       return defaultUploadHistory;
     }
 
-    const normalizedUploads = parsed
+    return parsed
       .map((item) => normalizeUploadRecord(item))
       .filter((item): item is XmlUploadRecord => item !== null);
-
-    return normalizedUploads.length > 0 ? normalizedUploads : defaultUploadHistory;
   } catch {
     return defaultUploadHistory;
   }
@@ -526,31 +507,52 @@ POST /api/local/xml/inspect`}</pre>
 
           <div className="confidence-label">
             <FileInput size={17} />
-            local records
+            local session
           </div>
         </div>
 
         <div className="workspace-table">
-          {uploadHistory.map((upload) => (
-            <div className="workspace-table-row" key={upload.id}>
+          {uploadHistory.length === 0 ? (
+            <div className="workspace-table-row">
               <div>
-                <strong>{upload.fileName}</strong>
-                <span>{upload.note}</span>
+                <strong>No XML uploads yet</strong>
+                <span>Upload an XML file to create a local inspection record.</span>
               </div>
 
               <div>
-                <span className="status-pill">{upload.status}</span>
+                <span className="status-pill">empty</span>
               </div>
 
               <div>
-                <span>{upload.detectedDocument}</span>
+                <span>waiting</span>
               </div>
 
-              <strong>{upload.fileSize}</strong>
+              <strong>0 B</strong>
 
               <FileCode2 size={17} />
             </div>
-          ))}
+          ) : (
+            uploadHistory.map((upload) => (
+              <div className="workspace-table-row" key={upload.id}>
+                <div>
+                  <strong>{upload.fileName}</strong>
+                  <span>{upload.note}</span>
+                </div>
+
+                <div>
+                  <span className="status-pill">{upload.status}</span>
+                </div>
+
+                <div>
+                  <span>{upload.detectedDocument}</span>
+                </div>
+
+                <strong>{upload.fileSize}</strong>
+
+                <FileCode2 size={17} />
+              </div>
+            ))
+          )}
         </div>
       </section>
 
