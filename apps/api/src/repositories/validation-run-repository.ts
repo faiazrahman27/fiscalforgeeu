@@ -109,7 +109,9 @@ export function buildValidationFindings(
 }
 
 export async function listValidationRuns() {
-  return storageProvider.readCollection<ValidationRunRecord>(VALIDATION_RUNS_FILE);
+  return storageProvider.readCollection<ValidationRunRecord>(
+    VALIDATION_RUNS_FILE
+  );
 }
 
 export async function getValidationRunById(id: string) {
@@ -129,4 +131,17 @@ export async function saveValidationRun(record: ValidationRunRecord) {
   await storageProvider.writeCollection(VALIDATION_RUNS_FILE, nextRuns);
 
   return record;
+}
+
+export async function deleteValidationRunById(id: string) {
+  const runs = await listValidationRuns();
+  const nextRuns = runs.filter((run) => run.id !== id);
+
+  if (nextRuns.length === runs.length) {
+    return false;
+  }
+
+  await storageProvider.writeCollection(VALIDATION_RUNS_FILE, nextRuns);
+
+  return true;
 }
