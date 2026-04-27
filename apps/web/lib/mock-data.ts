@@ -16,28 +16,7 @@ import type {
   WorkspaceStat
 } from "./types";
 
-export const commandStats: WorkspaceStat[] = [
-  {
-    label: "Draft invoices",
-    value: "0",
-    detail: "API-owned invoice drafts created in this workspace"
-  },
-  {
-    label: "Validation runs",
-    value: "0",
-    detail: "API-owned validation and readiness reports"
-  },
-  {
-    label: "Open findings",
-    value: "0",
-    detail: "Findings returned by real validation or XML readiness runs"
-  },
-  {
-    label: "API requests",
-    value: "0",
-    detail: "Request logging is not connected to this dashboard yet"
-  }
-];
+export const commandStats: WorkspaceStat[] = [];
 
 export const commandFlow: WorkspaceAction[] = [
   {

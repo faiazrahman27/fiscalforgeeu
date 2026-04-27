@@ -11,8 +11,8 @@ const envSchema = z.object({
 
   DEV_API_KEY: z
     .string()
-    .min(16, "DEV_API_KEY must be at least 16 characters long")
-    .default("il_dev_local_key_change_me"),
+    .trim()
+    .min(16, "DEV_API_KEY must be at least 16 characters long"),
 
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(10000).default(100),
   RATE_LIMIT_WINDOW: z.string().min(1).default("1 minute"),
@@ -34,4 +34,3 @@ if (!parsedEnv.success) {
 }
 
 export const env = parsedEnv.data;
-

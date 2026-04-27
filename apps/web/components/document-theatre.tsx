@@ -51,7 +51,7 @@ export function DocumentTheatre() {
           <div className="code-block">
             &lt;Invoice&gt;
             <br />
-            &nbsp;&lt;ID&gt;IL-001&lt;/ID&gt;
+            &nbsp;&lt;ID&gt;document-id&lt;/ID&gt;
             <br />
             &nbsp;&lt;TaxTotal&gt;...&lt;/TaxTotal&gt;
             <br />
@@ -66,8 +66,8 @@ export function DocumentTheatre() {
         >
           <div className="report-card-head">
             <div>
-              <p>Validation report</p>
-              <h3>Review required</h3>
+              <p>Readiness report</p>
+              <h3>Technical preview</h3>
             </div>
 
             <div>
@@ -76,9 +76,9 @@ export function DocumentTheatre() {
           </div>
 
           <div className="report-metrics">
-            <Metric label="Technical" value="Failed" />
-            <Metric label="Standard" value="Warning" />
-            <Metric label="Legal" value="Simulation" />
+            <Metric label="XML" value="Parsed" />
+            <Metric label="Rules" value="Signals" />
+            <Metric label="Boundary" value="Not official" />
           </div>
         </motion.div>
       </motion.div>

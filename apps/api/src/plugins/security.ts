@@ -10,12 +10,14 @@ export async function registerSecurityPlugins(app: FastifyInstance) {
   });
 
   await app.register(cors, {
-    origin:
-      env.APP_ENV === "production"
-        ? [env.WEB_APP_URL]
-        : true,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["content-type", "x-api-key"],
+    origin: env.APP_ENV === "production" ? [env.WEB_APP_URL] : true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "content-type",
+      "x-api-key",
+      "x-file-name",
+      "x-file-size"
+    ],
     credentials: false
   });
 
@@ -34,4 +36,3 @@ export async function registerSecurityPlugins(app: FastifyInstance) {
     })
   });
 }
-

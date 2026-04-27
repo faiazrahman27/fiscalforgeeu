@@ -61,9 +61,9 @@ export default function WorkspaceLayout({
         </Link>
 
         <div className="workspace-org">
-          <p>Current workspace</p>
-          <h2>Sandbox Organization</h2>
-          <span>Educational simulation mode</span>
+          <p>Workspace status</p>
+          <h2>Local workspace</h2>
+          <span>No organization account connected</span>
         </div>
 
         <nav className="workspace-nav">
@@ -78,8 +78,8 @@ export default function WorkspaceLayout({
         <div className="workspace-side-note">
           <FileCode2 size={18} />
           <p>
-            API and web are separated. This interface will later consume secure
-            endpoints from the dedicated API service.
+            Web routes use local Next.js proxy handlers, which forward requests to
+            the dedicated API service.
           </p>
         </div>
       </aside>
@@ -87,7 +87,7 @@ export default function WorkspaceLayout({
       <section className="workspace-main">
         <header className="workspace-topbar">
           <div>
-            <p>Independent validation sandbox</p>
+            <p>Independent readiness sandbox</p>
             <h1>Workspace Console</h1>
           </div>
 
