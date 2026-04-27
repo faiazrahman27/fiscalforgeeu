@@ -1,14 +1,46 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import { invoiceValidationRequestSchema } from "../../schemas/invoice.js";
 import {
   buildValidationFindings,
   calculateValidationTotals,
+  hasAuthenticatedValidationRunContext,
+  saveAuthenticatedValidationRun,
   saveValidationRun,
+  type AuthenticatedValidationRunContext,
   type ValidationRunRecord
 } from "../../repositories/validation-run-repository.js";
 import { formatZodError } from "../../utils/zod-error.js";
+
+function getAuthenticatedValidationRunContext(
+  request: FastifyRequest
+): AuthenticatedValidationRunContext | null {
+  const user = request.authenticatedUser;
+  const accessToken = request.authenticatedAccessToken;
+
+  const context =
+    user && accessToken
+      ? {
+          userId: user.id,
+          accessToken
+        }
+      : null;
+
+  return hasAuthenticatedValidationRunContext(context) ? context : null;
+}
+
+function sendStorageError(reply: FastifyReply, error: unknown) {
+  console.error("Validation run storage error:", error);
+
+  return reply.status(500).send({
+    error: {
+      code: "VALIDATION_RUN_STORAGE_ERROR",
+      message: "Could not save the validation run.",
+      details: error instanceof Error ? error.message : null
+    }
+  });
+}
 
 export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
@@ -39,7 +71,11 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
       );
       const isCrossBorder = payload.seller.country !== payload.buyer.country;
 
-      const validationRunId = `val_${randomUUID()}`;
+      /*
+       * Local JSON fallback still uses a readable development ID.
+       * Supabase-backed validation runs use the database UUID returned after insert.
+       */
+      const localValidationRunId = `val_${randomUUID()}`;
 
       const technicalStatus: ValidationRunRecord["technicalStatus"] = hasFatal
         ? "failed"
@@ -63,7 +99,7 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
         "This API response is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation.";
 
       const record: ValidationRunRecord = {
-        id: validationRunId,
+        id: localValidationRunId,
         invoiceNumber: payload.document.number,
         buyer: payload.buyer.name,
         seller: payload.seller.name,
@@ -80,19 +116,31 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
         disclaimer
       };
 
-      await saveValidationRun(record);
+      try {
+        const authenticatedContext = getAuthenticatedValidationRunContext(request);
 
-      return reply.status(200).send({
-        validationRunId,
-        invoiceNumber: payload.document.number,
-        technicalStatus,
-        standardStatus,
-        countrySimulationStatus,
-        vidaReadinessStatus,
-        totals,
-        findings,
-        disclaimer
-      });
+        const savedRecord = authenticatedContext
+          ? await saveAuthenticatedValidationRun(
+              authenticatedContext,
+              record,
+              payload
+            )
+          : await saveValidationRun(record);
+
+        return reply.status(200).send({
+          validationRunId: savedRecord.id,
+          invoiceNumber: payload.document.number,
+          technicalStatus,
+          standardStatus,
+          countrySimulationStatus,
+          vidaReadinessStatus,
+          totals,
+          findings,
+          disclaimer
+        });
+      } catch (error) {
+        return sendStorageError(reply, error);
+      }
     }
   );
 }

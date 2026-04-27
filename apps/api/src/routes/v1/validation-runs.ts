@@ -1,10 +1,15 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
+  deleteAuthenticatedValidationRunById,
   deleteValidationRunById,
+  getAuthenticatedValidationRunById,
   getValidationRunById,
+  hasAuthenticatedValidationRunContext,
+  listAuthenticatedValidationRuns,
   listValidationRuns,
+  type AuthenticatedValidationRunContext,
   type ValidationRunRecord
 } from "../../repositories/validation-run-repository.js";
 import { formatZodError } from "../../utils/zod-error.js";
@@ -31,6 +36,35 @@ const validationRunParamsSchema = z
     id: z.string().trim().min(1).max(120)
   })
   .strict();
+
+function getAuthenticatedValidationRunContext(
+  request: FastifyRequest
+): AuthenticatedValidationRunContext | null {
+  const user = request.authenticatedUser;
+  const accessToken = request.authenticatedAccessToken;
+
+  const context =
+    user && accessToken
+      ? {
+          userId: user.id,
+          accessToken
+        }
+      : null;
+
+  return hasAuthenticatedValidationRunContext(context) ? context : null;
+}
+
+function sendStorageError(reply: FastifyReply, error: unknown) {
+  console.error("Validation run storage error:", error);
+
+  return reply.status(500).send({
+    error: {
+      code: "VALIDATION_RUN_STORAGE_ERROR",
+      message: "Could not complete the validation run storage operation.",
+      details: error instanceof Error ? error.message : null
+    }
+  });
+}
 
 function buildValidationRunSummary(
   run: ValidationRunRecord
@@ -59,12 +93,20 @@ export async function validationRunRoutes(app: FastifyInstance) {
     {
       preHandler: requireApiKey
     },
-    async () => {
-      const runs = await listValidationRuns();
+    async (request, reply) => {
+      try {
+        const authenticatedContext = getAuthenticatedValidationRunContext(request);
 
-      return {
-        records: runs.map(buildValidationRunSummary)
-      };
+        const runs = authenticatedContext
+          ? await listAuthenticatedValidationRuns(authenticatedContext)
+          : await listValidationRuns();
+
+        return {
+          records: runs.map(buildValidationRunSummary)
+        };
+      } catch (error) {
+        return sendStorageError(reply, error);
+      }
     }
   );
 
@@ -86,21 +128,32 @@ export async function validationRunRoutes(app: FastifyInstance) {
         });
       }
 
-      const run = await getValidationRunById(parsedParams.data.id);
+      try {
+        const authenticatedContext = getAuthenticatedValidationRunContext(request);
 
-      if (!run) {
-        return reply.status(404).send({
-          error: {
-            code: "VALIDATION_RUN_NOT_FOUND",
-            message: "Validation run was not found.",
-            details: null
-          }
-        });
+        const run = authenticatedContext
+          ? await getAuthenticatedValidationRunById(
+              authenticatedContext,
+              parsedParams.data.id
+            )
+          : await getValidationRunById(parsedParams.data.id);
+
+        if (!run) {
+          return reply.status(404).send({
+            error: {
+              code: "VALIDATION_RUN_NOT_FOUND",
+              message: "Validation run was not found.",
+              details: null
+            }
+          });
+        }
+
+        return {
+          record: run
+        };
+      } catch (error) {
+        return sendStorageError(reply, error);
       }
-
-      return {
-        record: run
-      };
     }
   );
 
@@ -122,22 +175,33 @@ export async function validationRunRoutes(app: FastifyInstance) {
         });
       }
 
-      const wasDeleted = await deleteValidationRunById(parsedParams.data.id);
+      try {
+        const authenticatedContext = getAuthenticatedValidationRunContext(request);
 
-      if (!wasDeleted) {
-        return reply.status(404).send({
-          error: {
-            code: "VALIDATION_RUN_NOT_FOUND",
-            message: "Validation run was not found.",
-            details: null
-          }
+        const wasDeleted = authenticatedContext
+          ? await deleteAuthenticatedValidationRunById(
+              authenticatedContext,
+              parsedParams.data.id
+            )
+          : await deleteValidationRunById(parsedParams.data.id);
+
+        if (!wasDeleted) {
+          return reply.status(404).send({
+            error: {
+              code: "VALIDATION_RUN_NOT_FOUND",
+              message: "Validation run was not found.",
+              details: null
+            }
+          });
+        }
+
+        return reply.status(200).send({
+          deleted: true,
+          id: parsedParams.data.id
         });
+      } catch (error) {
+        return sendStorageError(reply, error);
       }
-
-      return reply.status(200).send({
-        deleted: true,
-        id: parsedParams.data.id
-      });
     }
   );
 }
