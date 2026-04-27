@@ -1,12 +1,18 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { env } from "../../config/env.js";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
+  createAuthenticatedXmlUploadRecord,
   createXmlUploadRecord,
+  deleteAuthenticatedXmlUploadRecordById,
   deleteXmlUploadRecordById,
+  getAuthenticatedXmlUploadRecordById,
   getXmlUploadRecordById,
+  hasAuthenticatedXmlUploadContext,
+  listAuthenticatedXmlUploadRecords,
   listXmlUploadRecords,
+  type AuthenticatedXmlUploadContext,
   type XmlApiInspectionStatus
 } from "../../repositories/xml-upload-repository.js";
 import {
@@ -21,6 +27,35 @@ const xmlUploadParamsSchema = z
     id: z.string().trim().min(1).max(120)
   })
   .strict();
+
+function getAuthenticatedXmlUploadContext(
+  request: FastifyRequest
+): AuthenticatedXmlUploadContext | null {
+  const user = request.authenticatedUser;
+  const accessToken = request.authenticatedAccessToken;
+
+  const context =
+    user && accessToken
+      ? {
+          userId: user.id,
+          accessToken
+        }
+      : null;
+
+  return hasAuthenticatedXmlUploadContext(context) ? context : null;
+}
+
+function sendStorageError(reply: FastifyReply, error: unknown) {
+  console.error("XML upload storage error:", error);
+
+  return reply.status(500).send({
+    error: {
+      code: "XML_UPLOAD_STORAGE_ERROR",
+      message: "Could not complete the XML upload storage operation.",
+      details: error instanceof Error ? error.message : null
+    }
+  });
+}
 
 function formatZodIssues(error: z.ZodError) {
   return error.issues.map((issue) => ({
@@ -99,12 +134,20 @@ export async function xmlRoutes(app: FastifyInstance) {
     {
       preHandler: requireApiKey
     },
-    async () => {
-      const records = await listXmlUploadRecords();
+    async (request, reply) => {
+      try {
+        const authenticatedContext = getAuthenticatedXmlUploadContext(request);
 
-      return {
-        records
-      };
+        const records = authenticatedContext
+          ? await listAuthenticatedXmlUploadRecords(authenticatedContext)
+          : await listXmlUploadRecords();
+
+        return {
+          records
+        };
+      } catch (error) {
+        return sendStorageError(reply, error);
+      }
     }
   );
 
@@ -125,21 +168,32 @@ export async function xmlRoutes(app: FastifyInstance) {
         );
       }
 
-      const record = await getXmlUploadRecordById(parsedParams.data.id);
+      try {
+        const authenticatedContext = getAuthenticatedXmlUploadContext(request);
 
-      if (!record) {
-        return reply.status(404).send({
-          error: {
-            code: "XML_UPLOAD_NOT_FOUND",
-            message: "XML upload record was not found.",
-            details: null
-          }
-        });
+        const record = authenticatedContext
+          ? await getAuthenticatedXmlUploadRecordById(
+              authenticatedContext,
+              parsedParams.data.id
+            )
+          : await getXmlUploadRecordById(parsedParams.data.id);
+
+        if (!record) {
+          return reply.status(404).send({
+            error: {
+              code: "XML_UPLOAD_NOT_FOUND",
+              message: "XML upload record was not found.",
+              details: null
+            }
+          });
+        }
+
+        return {
+          record
+        };
+      } catch (error) {
+        return sendStorageError(reply, error);
       }
-
-      return {
-        record
-      };
     }
   );
 
@@ -160,22 +214,33 @@ export async function xmlRoutes(app: FastifyInstance) {
         );
       }
 
-      const wasDeleted = await deleteXmlUploadRecordById(parsedParams.data.id);
+      try {
+        const authenticatedContext = getAuthenticatedXmlUploadContext(request);
 
-      if (!wasDeleted) {
-        return reply.status(404).send({
-          error: {
-            code: "XML_UPLOAD_NOT_FOUND",
-            message: "XML upload record was not found.",
-            details: null
-          }
+        const wasDeleted = authenticatedContext
+          ? await deleteAuthenticatedXmlUploadRecordById(
+              authenticatedContext,
+              parsedParams.data.id
+            )
+          : await deleteXmlUploadRecordById(parsedParams.data.id);
+
+        if (!wasDeleted) {
+          return reply.status(404).send({
+            error: {
+              code: "XML_UPLOAD_NOT_FOUND",
+              message: "XML upload record was not found.",
+              details: null
+            }
+          });
+        }
+
+        return reply.status(200).send({
+          deleted: true,
+          id: parsedParams.data.id
         });
+      } catch (error) {
+        return sendStorageError(reply, error);
       }
-
-      return reply.status(200).send({
-        deleted: true,
-        id: parsedParams.data.id
-      });
     }
   );
 
@@ -191,7 +256,8 @@ export async function xmlRoutes(app: FastifyInstance) {
         return reply.status(415).send({
           error: {
             code: "UNSUPPORTED_MEDIA_TYPE",
-            message: "Use content-type text/xml, application/xml, or another XML media type.",
+            message:
+              "Use content-type text/xml, application/xml, or another XML media type.",
             details: null
           }
         });
@@ -235,40 +301,53 @@ export async function xmlRoutes(app: FastifyInstance) {
       const disclaimer =
         "Invoice Lantern performs a technical readiness simulation only. This result is not official XML, Peppol, EN 16931, ViDA, tax, legal, accounting, government, or authority validation.";
 
-      const record = await createXmlUploadRecord({
-        fileName: safeFileName(readHeaderString(request.headers["x-file-name"])),
-        fileSize: formatBytesFromHeader(
-          readHeaderString(request.headers["x-file-size"])
-        ),
-        detectedDocument: inspection.detectedDocument,
-        rootElement: inspection.rootElement,
-        invoiceId: inspection.invoiceId,
-        issueDate: inspection.issueDate,
-        currency: inspection.currency,
-        apiStatus,
-        disclaimer,
-        readinessReport,
-        summary: buildXmlUploadSummary(readinessReport)
-      });
+      try {
+        const authenticatedContext = getAuthenticatedXmlUploadContext(request);
 
-      return reply.status(200).send({
-        uploadInspectionId: record.id,
-        detectedDocument: record.detectedDocument,
-        rootElement: record.rootElement,
-        invoiceId: record.invoiceId,
-        issueDate: record.issueDate,
-        currency: record.currency,
-        status: record.apiStatus,
-        technicalStatus: record.technicalStatus,
-        readinessStatus: record.readinessStatus,
-        documentStatus: record.documentStatus,
-        calculationStatus: record.calculationStatus,
-        profileStatus: record.profileStatus,
-        extractedData: record.extractedData,
-        findings: record.findings,
-        disclaimer: record.disclaimer,
-        record
-      });
+        const recordInput = {
+          fileName: safeFileName(readHeaderString(request.headers["x-file-name"])),
+          fileSize: formatBytesFromHeader(
+            readHeaderString(request.headers["x-file-size"])
+          ),
+          detectedDocument: inspection.detectedDocument,
+          rootElement: inspection.rootElement,
+          invoiceId: inspection.invoiceId,
+          issueDate: inspection.issueDate,
+          currency: inspection.currency,
+          apiStatus,
+          disclaimer,
+          readinessReport,
+          summary: buildXmlUploadSummary(readinessReport)
+        };
+
+        const record = authenticatedContext
+          ? await createAuthenticatedXmlUploadRecord(
+              authenticatedContext,
+              recordInput
+            )
+          : await createXmlUploadRecord(recordInput);
+
+        return reply.status(200).send({
+          uploadInspectionId: record.id,
+          detectedDocument: record.detectedDocument,
+          rootElement: record.rootElement,
+          invoiceId: record.invoiceId,
+          issueDate: record.issueDate,
+          currency: record.currency,
+          status: record.apiStatus,
+          technicalStatus: record.technicalStatus,
+          readinessStatus: record.readinessStatus,
+          documentStatus: record.documentStatus,
+          calculationStatus: record.calculationStatus,
+          profileStatus: record.profileStatus,
+          extractedData: record.extractedData,
+          findings: record.findings,
+          disclaimer: record.disclaimer,
+          record
+        });
+      } catch (error) {
+        return sendStorageError(reply, error);
+      }
     }
   );
 }
