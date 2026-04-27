@@ -13,6 +13,7 @@ export async function registerSecurityPlugins(app: FastifyInstance) {
     origin: env.APP_ENV === "production" ? [env.WEB_APP_URL] : true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: [
+      "authorization",
       "content-type",
       "x-api-key",
       "x-file-name",
