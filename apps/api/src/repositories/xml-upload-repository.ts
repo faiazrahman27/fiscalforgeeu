@@ -159,6 +159,18 @@ type XmlReadinessFindingRow = {
   confidence: XmlReadinessFinding["confidence"];
 };
 
+type WorkspaceActivityEventInput = {
+  organizationId: string;
+  actorUserId: string;
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  severity?: "info" | "warning" | "error";
+  source?: "api";
+  metadata?: Record<string, unknown>;
+};
+
 const XML_UPLOADS_FILE = "xml-uploads.json";
 const MAX_STORED_XML_UPLOADS = 250;
 const XML_REPORT_SELECT_FIELDS =
@@ -443,6 +455,43 @@ function buildSupabaseXmlReadinessReportValues(
   };
 }
 
+function buildXmlReportActivityMetadata(input: CreateXmlUploadRecordInput) {
+  const extractedData = input.readinessReport.extractedData;
+  const profileSignal = extractedData.profileSignal;
+  const taxSignal = extractedData.taxSignal;
+
+  return {
+    fileName: input.fileName,
+    fileSize: input.fileSize,
+    detectedDocument: input.detectedDocument,
+    rootElement: input.rootElement,
+    invoiceId: input.invoiceId,
+    issueDate: input.issueDate,
+    currency: input.currency,
+    apiStatus: input.apiStatus,
+    status: mapApiStatusToUploadStatus(input.apiStatus),
+    technicalStatus: input.readinessReport.technicalStatus,
+    readinessStatus: input.readinessReport.readinessStatus,
+    documentStatus: input.readinessReport.documentStatus,
+    calculationStatus: input.readinessReport.calculationStatus,
+    profileStatus: input.readinessReport.profileStatus,
+    sellerName: input.summary.sellerName,
+    buyerName: input.summary.buyerName,
+    lineCount: input.summary.lineCount,
+    findingsCount: input.summary.findingsCount,
+    payableAmount: input.summary.payableAmount,
+    taxAmount: input.summary.taxAmount,
+    sellerCountry: profileSignal.sellerCountry,
+    buyerCountry: profileSignal.buyerCountry,
+    crossBorderSignal: profileSignal.crossBorderSignal,
+    peppolSignalDetected: profileSignal.peppolSignalDetected,
+    en16931SignalDetected: profileSignal.en16931SignalDetected,
+    taxTotalDetected: taxSignal.taxTotalDetected,
+    taxCategoryDetected: taxSignal.taxCategoryDetected,
+    taxRateCount: taxSignal.taxRateCount
+  };
+}
+
 function buildXmlReadinessMonetaryTotalsRow(
   input: CreateXmlUploadRecordInput,
   organizationId: string,
@@ -530,6 +579,31 @@ function buildXmlReadinessFindingRows(
     message: finding.message,
     confidence: finding.confidence
   }));
+}
+
+async function recordWorkspaceActivityEvent(
+  supabase: SupabaseClient,
+  input: WorkspaceActivityEventInput
+) {
+  const { error } = await supabase.from("workspace_activity_events").insert({
+    organization_id: input.organizationId,
+    actor_user_id: input.actorUserId,
+    event_type: input.eventType,
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    entity_label: input.entityLabel,
+    severity: input.severity ?? "info",
+    source: input.source ?? "api",
+    metadata: input.metadata ?? {}
+  });
+
+  if (error) {
+    /*
+     * Activity logging must not break the main XML operation.
+     * The XML report and relational rows remain the authoritative data.
+     */
+    console.warn(`Workspace activity event was not recorded: ${error.message}`);
+  }
 }
 
 async function replaceXmlReadinessRelationalRows(
@@ -824,6 +898,17 @@ export async function createAuthenticatedXmlUploadRecord(
     throw relationalError;
   }
 
+  await recordWorkspaceActivityEvent(supabase, {
+    organizationId: workspace.organizationId,
+    actorUserId: context.userId,
+    eventType: "xml_report.created",
+    entityType: "xml_report",
+    entityId: record.id,
+    entityLabel: input.invoiceId !== "not_detected" ? input.invoiceId : input.fileName,
+    severity: record.technicalStatus === "failed" ? "warning" : "info",
+    metadata: buildXmlReportActivityMetadata(input)
+  });
+
   return record;
 }
 
@@ -843,12 +928,75 @@ export async function deleteAuthenticatedXmlUploadRecordById(
     .delete()
     .eq("id", id)
     .eq("organization_id", workspace.organizationId)
-    .select("id")
+    .select(
+      "id, file_name, detected_document, root_element, invoice_id, issue_date, currency, api_status, status, technical_status, readiness_status, document_status, calculation_status, profile_status, findings_count, seller_name, buyer_name, line_count, payable_amount, tax_amount"
+    )
     .maybeSingle();
 
   if (error) {
     throw new Error(`Could not delete Supabase XML report: ${error.message}`);
   }
 
-  return Boolean(data);
+  if (!data) {
+    return false;
+  }
+
+  const deletedReport = data as {
+    id: string;
+    file_name: string;
+    detected_document: string;
+    root_element: string;
+    invoice_id: string;
+    issue_date: string;
+    currency: string;
+    api_status: string;
+    status: string;
+    technical_status: string;
+    readiness_status: string;
+    document_status: string;
+    calculation_status: string;
+    profile_status: string;
+    findings_count: number;
+    seller_name: string;
+    buyer_name: string;
+    line_count: number;
+    payable_amount: string;
+    tax_amount: string;
+  };
+
+  await recordWorkspaceActivityEvent(supabase, {
+    organizationId: workspace.organizationId,
+    actorUserId: context.userId,
+    eventType: "xml_report.deleted",
+    entityType: "xml_report",
+    entityId: deletedReport.id,
+    entityLabel:
+      deletedReport.invoice_id && deletedReport.invoice_id !== "not_detected"
+        ? deletedReport.invoice_id
+        : deletedReport.file_name || deletedReport.id,
+    severity: deletedReport.technical_status === "failed" ? "warning" : "info",
+    metadata: {
+      fileName: deletedReport.file_name,
+      detectedDocument: deletedReport.detected_document,
+      rootElement: deletedReport.root_element,
+      invoiceId: deletedReport.invoice_id,
+      issueDate: deletedReport.issue_date,
+      currency: deletedReport.currency,
+      apiStatus: deletedReport.api_status,
+      status: deletedReport.status,
+      technicalStatus: deletedReport.technical_status,
+      readinessStatus: deletedReport.readiness_status,
+      documentStatus: deletedReport.document_status,
+      calculationStatus: deletedReport.calculation_status,
+      profileStatus: deletedReport.profile_status,
+      findingsCount: deletedReport.findings_count,
+      sellerName: deletedReport.seller_name,
+      buyerName: deletedReport.buyer_name,
+      lineCount: deletedReport.line_count,
+      payableAmount: deletedReport.payable_amount,
+      taxAmount: deletedReport.tax_amount
+    }
+  });
+
+  return true;
 }

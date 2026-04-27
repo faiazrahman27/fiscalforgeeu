@@ -101,6 +101,18 @@ type ValidationRunFindingRow = {
   legal_confidence: Finding["legalConfidence"];
 };
 
+type WorkspaceActivityEventInput = {
+  organizationId: string;
+  actorUserId: string;
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  severity?: "info" | "warning" | "error";
+  source?: "api";
+  metadata?: Record<string, unknown>;
+};
+
 const VALIDATION_RUNS_FILE = "validation-runs.json";
 const MAX_STORED_VALIDATION_RUNS = 250;
 const VALIDATION_RUN_SELECT_FIELDS =
@@ -356,6 +368,28 @@ function buildSupabaseValidationRunValues(
   };
 }
 
+function buildValidationRunActivityMetadata(
+  record: ValidationRunRecord,
+  requestPayload?: InvoiceValidationRequest
+) {
+  return {
+    invoiceNumber: record.invoiceNumber,
+    sellerName: record.seller,
+    buyerName: record.buyer,
+    sellerCountry: requestPayload?.seller.country ?? "",
+    buyerCountry: requestPayload?.buyer.country ?? "",
+    issueDate: requestPayload?.document.issueDate ?? "",
+    currency: record.currency,
+    technicalStatus: record.technicalStatus,
+    standardStatus: record.standardStatus,
+    countrySimulationStatus: record.countrySimulationStatus,
+    vidaReadinessStatus: record.vidaReadinessStatus,
+    confidence: record.confidence,
+    findingsCount: record.findings.length,
+    payableAmount: record.totals.payableAmount
+  };
+}
+
 function buildValidationRunTotalsRow(
   record: ValidationRunRecord,
   organizationId: string,
@@ -388,6 +422,31 @@ function buildValidationRunFindingRows(
     message: finding.message,
     legal_confidence: finding.legalConfidence
   }));
+}
+
+async function recordWorkspaceActivityEvent(
+  supabase: SupabaseClient,
+  input: WorkspaceActivityEventInput
+) {
+  const { error } = await supabase.from("workspace_activity_events").insert({
+    organization_id: input.organizationId,
+    actor_user_id: input.actorUserId,
+    event_type: input.eventType,
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    entity_label: input.entityLabel,
+    severity: input.severity ?? "info",
+    source: input.source ?? "api",
+    metadata: input.metadata ?? {}
+  });
+
+  if (error) {
+    /*
+     * Activity logging must not break the main validation operation.
+     * The validation run and relational rows remain the authoritative data.
+     */
+    console.warn(`Workspace activity event was not recorded: ${error.message}`);
+  }
 }
 
 async function replaceValidationRunRelationalRows(
@@ -688,6 +747,17 @@ export async function saveAuthenticatedValidationRun(
     throw relationalError;
   }
 
+  await recordWorkspaceActivityEvent(supabase, {
+    organizationId: workspace.organizationId,
+    actorUserId: context.userId,
+    eventType: "validation_run.created",
+    entityType: "validation_run",
+    entityId: savedRecord.id,
+    entityLabel: savedRecord.invoiceNumber || savedRecord.id,
+    severity: savedRecord.technicalStatus === "failed" ? "warning" : "info",
+    metadata: buildValidationRunActivityMetadata(savedRecord, requestPayload)
+  });
+
   return savedRecord;
 }
 
@@ -707,12 +777,45 @@ export async function deleteAuthenticatedValidationRunById(
     .delete()
     .eq("id", id)
     .eq("organization_id", workspace.organizationId)
-    .select("id")
+    .select(
+      "id, invoice_number, technical_status, standard_status, findings_count, payable_amount, currency"
+    )
     .maybeSingle();
 
   if (error) {
     throw new Error(`Could not delete Supabase validation run: ${error.message}`);
   }
 
-  return Boolean(data);
+  if (!data) {
+    return false;
+  }
+
+  const deletedRun = data as {
+    id: string;
+    invoice_number: string;
+    technical_status: string;
+    standard_status: string;
+    findings_count: number;
+    payable_amount: string | number;
+    currency: string;
+  };
+
+  await recordWorkspaceActivityEvent(supabase, {
+    organizationId: workspace.organizationId,
+    actorUserId: context.userId,
+    eventType: "validation_run.deleted",
+    entityType: "validation_run",
+    entityId: deletedRun.id,
+    entityLabel: deletedRun.invoice_number || deletedRun.id,
+    metadata: {
+      invoiceNumber: deletedRun.invoice_number,
+      technicalStatus: deletedRun.technical_status,
+      standardStatus: deletedRun.standard_status,
+      findingsCount: deletedRun.findings_count,
+      payableAmount: deletedRun.payable_amount,
+      currency: deletedRun.currency
+    }
+  });
+
+  return true;
 }

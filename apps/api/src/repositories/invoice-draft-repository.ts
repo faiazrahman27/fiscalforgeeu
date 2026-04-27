@@ -101,6 +101,18 @@ type InvoiceDraftTaxSummaryRow = {
   currency: string;
 };
 
+type WorkspaceActivityEventInput = {
+  organizationId: string;
+  actorUserId: string;
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  severity?: "info" | "warning" | "error";
+  source?: "api";
+  metadata?: Record<string, unknown>;
+};
+
 const INVOICE_DRAFTS_FILE = "invoice-drafts.json";
 const MAX_STORED_INVOICE_DRAFTS = 250;
 const INVOICE_DRAFT_SELECT_FIELDS =
@@ -286,6 +298,23 @@ function buildSupabaseInvoiceDraftValues(
   };
 }
 
+function buildInvoiceDraftActivityMetadata(payload: InvoiceEditorDraftPayload) {
+  return {
+    invoiceNumber: payload.document.number,
+    invoiceType: payload.document.invoiceType,
+    profile: payload.document.profile,
+    issueDate: payload.document.issueDate,
+    dueDate: payload.document.dueDate,
+    currency: payload.document.currency,
+    sellerName: payload.seller.name,
+    sellerCountry: payload.seller.country,
+    buyerName: payload.buyer.name,
+    buyerCountry: payload.buyer.country,
+    lineCount: payload.lines.length,
+    payableAmount: payload.totals.payableAmount
+  };
+}
+
 function buildInvoiceDraftPartyRows(
   payload: InvoiceEditorDraftPayload,
   organizationId: string,
@@ -403,6 +432,31 @@ function buildInvoiceDraftTaxSummaryRows(
     tax_amount: summary.taxAmount,
     currency: payload.document.currency
   }));
+}
+
+async function recordWorkspaceActivityEvent(
+  supabase: SupabaseClient,
+  input: WorkspaceActivityEventInput
+) {
+  const { error } = await supabase.from("workspace_activity_events").insert({
+    organization_id: input.organizationId,
+    actor_user_id: input.actorUserId,
+    event_type: input.eventType,
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    entity_label: input.entityLabel,
+    severity: input.severity ?? "info",
+    source: input.source ?? "api",
+    metadata: input.metadata ?? {}
+  });
+
+  if (error) {
+    /*
+     * Activity logging must not break the main invoice operation.
+     * The source record and relational rows remain the authoritative data.
+     */
+    console.warn(`Workspace activity event was not recorded: ${error.message}`);
+  }
 }
 
 async function replaceInvoiceDraftRelationalRows(
@@ -743,6 +797,16 @@ export async function createAuthenticatedInvoiceDraft(
       payload
     );
 
+    await recordWorkspaceActivityEvent(supabase, {
+      organizationId: workspace.organizationId,
+      actorUserId: context.userId,
+      eventType: "invoice_draft.updated",
+      entityType: "invoice_draft",
+      entityId: existingDraft.id,
+      entityLabel: payload.document.number || existingDraft.document.number,
+      metadata: buildInvoiceDraftActivityMetadata(payload)
+    });
+
     return updatedDraft;
   }
 
@@ -776,6 +840,16 @@ export async function createAuthenticatedInvoiceDraft(
     createdDraft.id,
     payload
   );
+
+  await recordWorkspaceActivityEvent(supabase, {
+    organizationId: workspace.organizationId,
+    actorUserId: context.userId,
+    eventType: "invoice_draft.created",
+    entityType: "invoice_draft",
+    entityId: createdDraft.id,
+    entityLabel: payload.document.number || createdDraft.id,
+    metadata: buildInvoiceDraftActivityMetadata(payload)
+  });
 
   return createdDraft;
 }
@@ -825,6 +899,16 @@ export async function updateAuthenticatedInvoiceDraftById(
     payload
   );
 
+  await recordWorkspaceActivityEvent(supabase, {
+    organizationId: workspace.organizationId,
+    actorUserId: context.userId,
+    eventType: "invoice_draft.updated",
+    entityType: "invoice_draft",
+    entityId: updatedDraft.id,
+    entityLabel: payload.document.number || updatedDraft.id,
+    metadata: buildInvoiceDraftActivityMetadata(payload)
+  });
+
   return updatedDraft;
 }
 
@@ -869,12 +953,30 @@ export async function deleteAuthenticatedInvoiceDraftById(
     .delete()
     .eq("id", id)
     .eq("organization_id", workspace.organizationId)
-    .select("id")
+    .select("id, invoice_number")
     .maybeSingle();
 
   if (error) {
     throw new Error(`Could not delete Supabase invoice draft: ${error.message}`);
   }
 
-  return Boolean(data);
+  if (!data) {
+    return false;
+  }
+
+  const deletedDraft = data as Pick<SupabaseInvoiceDraftRow, "id" | "invoice_number">;
+
+  await recordWorkspaceActivityEvent(supabase, {
+    organizationId: workspace.organizationId,
+    actorUserId: context.userId,
+    eventType: "invoice_draft.deleted",
+    entityType: "invoice_draft",
+    entityId: deletedDraft.id,
+    entityLabel: deletedDraft.invoice_number || deletedDraft.id,
+    metadata: {
+      invoiceNumber: deletedDraft.invoice_number
+    }
+  });
+
+  return true;
 }
