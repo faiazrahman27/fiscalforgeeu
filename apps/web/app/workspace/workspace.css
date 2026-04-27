@@ -71,11 +71,14 @@
 }
 
 .workspace-org {
+  display: grid;
+  justify-items: center;
   margin-top: 2rem;
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 1.4rem;
   background: rgba(255,255,255,0.035);
   padding: 1rem;
+  text-align: center;
 }
 
 .workspace-org p {
@@ -84,26 +87,38 @@
   font-size: 0.68rem;
   font-weight: 850;
   letter-spacing: 0.18em;
+  line-height: 1.35;
+  text-align: center;
   text-transform: uppercase;
 }
 
 .workspace-org h2 {
-  margin: 0.7rem 0 0;
-  font-size: 1.1rem;
-  line-height: 1.1;
+  max-width: 100%;
+  margin: 0.8rem 0 0;
+  font-size: 1.08rem;
+  line-height: 1.16;
   letter-spacing: -0.04em;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .workspace-org span {
   display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
   margin-top: 0.9rem;
   border: 1px solid rgba(48,209,88,0.2);
   border-radius: 999px;
   background: rgba(48,209,88,0.08);
-  padding: 0.45rem 0.65rem;
+  padding: 0.45rem 0.7rem;
   color: #c8ffdc;
   font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
+
 
 .workspace-nav {
   display: grid;
