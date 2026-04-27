@@ -20,4 +20,4 @@ out/
 .DS_Store
 Thumbs.db
 
-apps/api/.data/
+**/.data/
