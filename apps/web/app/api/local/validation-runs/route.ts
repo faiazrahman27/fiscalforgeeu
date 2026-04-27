@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
+import { createSupabaseServerClient } from "../../../../lib/supabase/server";
 
 const API_BASE_URL = process.env.INVOICE_LANTERN_API_BASE_URL;
 const DEV_API_KEY = process.env.INVOICE_LANTERN_DEV_API_KEY;
+
+type ApiHeaders = {
+  "x-api-key": string;
+  authorization?: string;
+};
 
 function buildProxyError(message: string, status = 502) {
   return NextResponse.json(
@@ -34,10 +40,35 @@ function buildNotConfiguredError() {
   );
 }
 
-function buildApiHeaders() {
-  return {
+async function readSupabaseAccessToken() {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+    return session?.access_token ?? "";
+  } catch {
+    /*
+     * Keep the local API proxy usable when Supabase is not configured yet.
+     * The dedicated API still receives the development API key below.
+     */
+    return "";
+  }
+}
+
+async function buildApiHeaders(): Promise<ApiHeaders> {
+  const accessToken = await readSupabaseAccessToken();
+
+  const headers: ApiHeaders = {
     "x-api-key": DEV_API_KEY ?? ""
   };
+
+  if (accessToken) {
+    headers.authorization = `Bearer ${accessToken}`;
+  }
+
+  return headers;
 }
 
 async function readResponseData(response: Response) {
@@ -68,7 +99,7 @@ export async function GET() {
   try {
     const apiResponse = await fetch(`${API_BASE_URL}/api/v1/validation-runs`, {
       method: "GET",
-      headers: buildApiHeaders(),
+      headers: await buildApiHeaders(),
       cache: "no-store"
     });
 

@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseServerClient } from "../../../../../lib/supabase/server";
 
 const API_BASE_URL = process.env.INVOICE_LANTERN_API_BASE_URL;
 const DEV_API_KEY = process.env.INVOICE_LANTERN_DEV_API_KEY;
 const MAX_XML_BODY_BYTES = 1024 * 1024 * 2;
+
+type ApiHeaders = {
+  "content-type": string;
+  "x-api-key": string;
+  "x-file-name": string;
+  "x-file-size": string;
+  authorization?: string;
+};
 
 function buildProxyError(message: string, status = 502) {
   return NextResponse.json(
@@ -31,6 +40,44 @@ function buildNotConfiguredError() {
     },
     { status: 500 }
   );
+}
+
+async function readSupabaseAccessToken() {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+    return session?.access_token ?? "";
+  } catch {
+    /*
+     * Keep the local API proxy usable when Supabase is not configured yet.
+     * The dedicated API still receives the development API key below.
+     */
+    return "";
+  }
+}
+
+async function buildApiHeaders(request: NextRequest): Promise<ApiHeaders> {
+  const accessToken = await readSupabaseAccessToken();
+
+  const headers: ApiHeaders = {
+    "content-type": "application/xml",
+    "x-api-key": DEV_API_KEY ?? "",
+    "x-file-name": sanitizeForwardedHeaderValue(
+      readHeaderValue(request, "x-file-name")
+    ),
+    "x-file-size": sanitizeForwardedHeaderValue(
+      readHeaderValue(request, "x-file-size")
+    )
+  };
+
+  if (accessToken) {
+    headers.authorization = `Bearer ${accessToken}`;
+  }
+
+  return headers;
 }
 
 async function readResponseData(response: Response) {
@@ -126,16 +173,7 @@ export async function POST(request: NextRequest) {
   try {
     const apiResponse = await fetch(`${API_BASE_URL}/api/v1/xml/inspect`, {
       method: "POST",
-      headers: {
-        "content-type": "application/xml",
-        "x-api-key": DEV_API_KEY,
-        "x-file-name": sanitizeForwardedHeaderValue(
-          readHeaderValue(request, "x-file-name")
-        ),
-        "x-file-size": sanitizeForwardedHeaderValue(
-          readHeaderValue(request, "x-file-size")
-        )
-      },
+      headers: await buildApiHeaders(request),
       body: xmlBody,
       cache: "no-store"
     });

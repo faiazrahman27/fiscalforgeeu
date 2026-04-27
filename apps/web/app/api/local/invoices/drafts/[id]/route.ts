@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createSupabaseServerClient } from "../../../../../../lib/supabase/server";
 
 const API_BASE_URL = process.env.INVOICE_LANTERN_API_BASE_URL;
 const DEV_API_KEY = process.env.INVOICE_LANTERN_DEV_API_KEY;
@@ -7,6 +8,12 @@ type RouteContext = {
   params: Promise<{
     id: string;
   }>;
+};
+
+type ApiHeaders = {
+  "x-api-key": string;
+  "content-type"?: string;
+  authorization?: string;
 };
 
 function buildProxyError(message: string, status = 502) {
@@ -40,17 +47,39 @@ function buildNotConfiguredError() {
   );
 }
 
-function buildApiKeyHeaders() {
-  return {
-    "x-api-key": DEV_API_KEY ?? ""
-  };
+async function readSupabaseAccessToken() {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+
+    return session?.access_token ?? "";
+  } catch {
+    /*
+     * Keep the local API proxy usable when Supabase is not configured yet.
+     * The dedicated API still receives the development API key below.
+     */
+    return "";
+  }
 }
 
-function buildJsonApiHeaders() {
-  return {
-    "content-type": "application/json",
+async function buildApiHeaders(options?: { json?: boolean }): Promise<ApiHeaders> {
+  const accessToken = await readSupabaseAccessToken();
+
+  const headers: ApiHeaders = {
     "x-api-key": DEV_API_KEY ?? ""
   };
+
+  if (options?.json) {
+    headers["content-type"] = "application/json";
+  }
+
+  if (accessToken) {
+    headers.authorization = `Bearer ${accessToken}`;
+  }
+
+  return headers;
 }
 
 async function readResponseData(response: Response) {
@@ -85,7 +114,7 @@ export async function GET(_request: Request, context: RouteContext) {
       `${API_BASE_URL}/api/v1/invoices/drafts/${encodeURIComponent(id)}`,
       {
         method: "GET",
-        headers: buildApiKeyHeaders(),
+        headers: await buildApiHeaders(),
         cache: "no-store"
       }
     );
@@ -133,7 +162,7 @@ export async function PUT(request: Request, context: RouteContext) {
       `${API_BASE_URL}/api/v1/invoices/drafts/${encodeURIComponent(id)}`,
       {
         method: "PUT",
-        headers: buildJsonApiHeaders(),
+        headers: await buildApiHeaders({ json: true }),
         body: JSON.stringify(payload),
         cache: "no-store"
       }
@@ -164,7 +193,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
       `${API_BASE_URL}/api/v1/invoices/drafts/${encodeURIComponent(id)}`,
       {
         method: "DELETE",
-        headers: buildApiKeyHeaders(),
+        headers: await buildApiHeaders(),
         cache: "no-store"
       }
     );
