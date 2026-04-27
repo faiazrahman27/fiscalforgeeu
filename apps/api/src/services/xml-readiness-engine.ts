@@ -100,6 +100,13 @@ type XmlParserContext = {
   rootElement: string;
   isWellFormed: boolean;
   parserErrorMessage: string;
+  securityPolicyPassed: boolean;
+  securityPolicyMessage: string;
+};
+
+type XmlSecurityPolicyResult = {
+  passed: boolean;
+  message: string;
 };
 
 const parser = new XMLParser({
@@ -127,6 +134,45 @@ function asArray(value: unknown): unknown[] {
   }
 
   return [value];
+}
+
+function checkXmlSecurityPolicy(xml: string): XmlSecurityPolicyResult {
+  if (/<!DOCTYPE/i.test(xml)) {
+    return {
+      passed: false,
+      message:
+        "XML contains a DOCTYPE declaration. DOCTYPE is blocked to reduce DTD and XXE risk."
+    };
+  }
+
+  if (/<!ENTITY/i.test(xml)) {
+    return {
+      passed: false,
+      message:
+        "XML contains an ENTITY declaration. XML entities are blocked to reduce XXE and expansion risk."
+    };
+  }
+
+  if (/\bSYSTEM\b/i.test(xml) || /\bPUBLIC\b/i.test(xml)) {
+    return {
+      passed: false,
+      message:
+        "XML contains SYSTEM or PUBLIC external identifier text. External identifiers are blocked for upload safety."
+    };
+  }
+
+  if (/<\?xml-stylesheet/i.test(xml)) {
+    return {
+      passed: false,
+      message:
+        "XML stylesheet processing instructions are blocked for upload safety."
+    };
+  }
+
+  return {
+    passed: true,
+    message: ""
+  };
 }
 
 function detectRootElement(xml: string) {
@@ -167,9 +213,24 @@ function getValidationErrorMessage(result: unknown) {
 }
 
 function buildXmlParserContext(xml: string): XmlParserContext {
+  const rootElement = detectRootElement(xml);
+  const securityPolicy = checkXmlSecurityPolicy(xml);
+
+  if (!securityPolicy.passed) {
+    return {
+      xml,
+      parsedXml: {},
+      rootElement,
+      isWellFormed: false,
+      parserErrorMessage:
+        "XML was not parsed because it contains blocked XML constructs.",
+      securityPolicyPassed: false,
+      securityPolicyMessage: securityPolicy.message
+    };
+  }
+
   const validationResult = XMLValidator.validate(xml);
   const isWellFormed = validationResult === true;
-  const rootElement = detectRootElement(xml);
 
   if (!isWellFormed) {
     return {
@@ -177,7 +238,9 @@ function buildXmlParserContext(xml: string): XmlParserContext {
       parsedXml: {},
       rootElement,
       isWellFormed: false,
-      parserErrorMessage: getValidationErrorMessage(validationResult)
+      parserErrorMessage: getValidationErrorMessage(validationResult),
+      securityPolicyPassed: true,
+      securityPolicyMessage: ""
     };
   }
 
@@ -187,7 +250,9 @@ function buildXmlParserContext(xml: string): XmlParserContext {
       parsedXml: parser.parse(xml) as unknown,
       rootElement,
       isWellFormed: true,
-      parserErrorMessage: ""
+      parserErrorMessage: "",
+      securityPolicyPassed: true,
+      securityPolicyMessage: ""
     };
   } catch (error) {
     return {
@@ -198,7 +263,9 @@ function buildXmlParserContext(xml: string): XmlParserContext {
       parserErrorMessage:
         error instanceof Error
           ? error.message.slice(0, 240)
-          : "XML parser failed to parse the uploaded XML."
+          : "XML parser failed to parse the uploaded XML.",
+      securityPolicyPassed: true,
+      securityPolicyMessage: ""
     };
   }
 }
@@ -251,6 +318,14 @@ function getFirstChildText(parent: unknown, tagName: string, maxLength = 240) {
   const text = nodeToText(getFirstChildNode(parent, tagName));
 
   return text ? text.slice(0, maxLength) : "not_detected";
+}
+
+function hasDirectChildTag(parent: unknown, tagName: string) {
+  if (!isPlainObject(parent)) {
+    return false;
+  }
+
+  return asArray(parent[tagName]).length > 0;
 }
 
 function collectDescendantNodes(
@@ -569,6 +644,34 @@ function pushMissingTagFinding(
   severity: XmlFindingSeverity = "warning"
 ) {
   if (hasTag(context, tagName)) {
+    return;
+  }
+
+  findings.push({
+    code: `${tagName.toUpperCase()}_MISSING`,
+    severity,
+    field,
+    message: `${label} was not detected in the uploaded XML.`,
+    confidence: "readiness_simulation"
+  });
+}
+
+function pushMissingChildTagFinding({
+  findings,
+  parentNode,
+  tagName,
+  field,
+  label,
+  severity = "warning"
+}: {
+  findings: XmlReadinessFinding[];
+  parentNode: unknown;
+  tagName: string;
+  field: string;
+  label: string;
+  severity?: XmlFindingSeverity;
+}) {
+  if (hasDirectChildTag(parentNode, tagName)) {
     return;
   }
 
@@ -1062,7 +1165,15 @@ function buildReadinessReport({
   const findings: XmlReadinessFinding[] = [];
   const extractedData = buildExtractedData(context, currency, detectedDocument);
 
-  if (!context.isWellFormed) {
+  if (!context.securityPolicyPassed) {
+    findings.push({
+      code: "XML_SECURITY_POLICY_FAILED",
+      severity: "fatal",
+      field: "xml",
+      message: context.securityPolicyMessage,
+      confidence: "technical"
+    });
+  } else if (!context.isWellFormed) {
     findings.push({
       code: "XML_WELL_FORMEDNESS_FAILED",
       severity: "fatal",
@@ -1183,42 +1294,48 @@ function buildReadinessReport({
     });
   }
 
-  if (hasTag(context, "LegalMonetaryTotal")) {
-    pushMissingTagFinding(
-      findings,
-      context,
-      "LineExtensionAmount",
-      "LegalMonetaryTotal.LineExtensionAmount",
-      "Line extension amount",
-      "warning"
-    );
+  const legalTotalBlock = collectDescendantNodes(
+    context.parsedXml,
+    "LegalMonetaryTotal",
+    1
+  )[0];
 
-    pushMissingTagFinding(
+  if (legalTotalBlock) {
+    pushMissingChildTagFinding({
       findings,
-      context,
-      "TaxExclusiveAmount",
-      "LegalMonetaryTotal.TaxExclusiveAmount",
-      "Tax exclusive amount",
-      "warning"
-    );
+      parentNode: legalTotalBlock,
+      tagName: "LineExtensionAmount",
+      field: "LegalMonetaryTotal.LineExtensionAmount",
+      label: "Line extension amount",
+      severity: "warning"
+    });
 
-    pushMissingTagFinding(
+    pushMissingChildTagFinding({
       findings,
-      context,
-      "TaxInclusiveAmount",
-      "LegalMonetaryTotal.TaxInclusiveAmount",
-      "Tax inclusive amount",
-      "warning"
-    );
+      parentNode: legalTotalBlock,
+      tagName: "TaxExclusiveAmount",
+      field: "LegalMonetaryTotal.TaxExclusiveAmount",
+      label: "Tax exclusive amount",
+      severity: "warning"
+    });
 
-    pushMissingTagFinding(
+    pushMissingChildTagFinding({
       findings,
-      context,
-      "PayableAmount",
-      "LegalMonetaryTotal.PayableAmount",
-      "Payable amount",
-      "warning"
-    );
+      parentNode: legalTotalBlock,
+      tagName: "TaxInclusiveAmount",
+      field: "LegalMonetaryTotal.TaxInclusiveAmount",
+      label: "Tax inclusive amount",
+      severity: "warning"
+    });
+
+    pushMissingChildTagFinding({
+      findings,
+      parentNode: legalTotalBlock,
+      tagName: "PayableAmount",
+      field: "LegalMonetaryTotal.PayableAmount",
+      label: "Payable amount",
+      severity: "warning"
+    });
   }
 
   if (!extractedData.taxSignal.taxTotalDetected) {

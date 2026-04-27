@@ -1,22 +1,13 @@
 import { NextResponse } from "next/server";
 
-const API_BASE_URL =
-  process.env.INVOICE_LANTERN_API_BASE_URL ?? "http://127.0.0.1:4000";
-
-const DEV_API_KEY = process.env.INVOICE_LANTERN_DEV_API_KEY ?? "";
-
-function buildApiHeaders() {
-  return {
-    "content-type": "application/json",
-    "x-api-key": DEV_API_KEY
-  };
-}
+const API_BASE_URL = process.env.INVOICE_LANTERN_API_BASE_URL;
+const DEV_API_KEY = process.env.INVOICE_LANTERN_DEV_API_KEY;
 
 function buildProxyError(message: string, status = 502) {
   return NextResponse.json(
     {
       error: {
-        code: "LOCAL_PROXY_ERROR",
+        code: "LOCAL_VALIDATION_RUNS_PROXY_ERROR",
         message,
         details: null
       }
@@ -27,26 +18,69 @@ function buildProxyError(message: string, status = 502) {
   );
 }
 
-export async function GET() {
-  if (!DEV_API_KEY) {
-    return buildProxyError("Missing INVOICE_LANTERN_DEV_API_KEY.", 500);
+function buildNotConfiguredError() {
+  return NextResponse.json(
+    {
+      error: {
+        code: "WEB_API_PROXY_NOT_CONFIGURED",
+        message:
+          "Missing INVOICE_LANTERN_API_BASE_URL or INVOICE_LANTERN_DEV_API_KEY in apps/web/.env.local.",
+        details: null
+      }
+    },
+    {
+      status: 500
+    }
+  );
+}
+
+function buildApiHeaders() {
+  return {
+    "x-api-key": DEV_API_KEY ?? ""
+  };
+}
+
+async function readResponseData(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return null;
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/v1/validation-runs`, {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return {
+      error: {
+        code: "UPSTREAM_NON_JSON_RESPONSE",
+        message: responseText.slice(0, 500),
+        details: null
+      }
+    };
+  }
+}
+
+export async function GET() {
+  if (!API_BASE_URL || !DEV_API_KEY) {
+    return buildNotConfiguredError();
+  }
+
+  try {
+    const apiResponse = await fetch(`${API_BASE_URL}/api/v1/validation-runs`, {
       method: "GET",
       headers: buildApiHeaders(),
       cache: "no-store"
     });
 
-    const responseData: unknown = await response.json();
+    const data = await readResponseData(apiResponse);
 
-    return NextResponse.json(responseData, {
-      status: response.status
+    return NextResponse.json(data, {
+      status: apiResponse.status
     });
   } catch {
     return buildProxyError(
-      "Could not reach the Invoice Lantern API validation-runs endpoint."
+      "Could not reach the Invoice Lantern API. Make sure apps/api is running on port 4000.",
+      503
     );
   }
 }

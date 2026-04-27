@@ -68,113 +68,6 @@ type EvidenceItem = {
   value: string;
 };
 
-const fallbackRuns: SavedValidationRun[] = [
-  {
-    id: "val_01HXABC",
-    invoiceNumber: "IL-2026-001",
-    buyer: "Muster GmbH",
-    seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-24T14:32:00.000Z",
-    technicalStatus: "failed",
-    standardStatus: "warning",
-    countrySimulationStatus: "review_required",
-    vidaReadinessStatus: "relevant_simulation",
-    confidence: "educational_simulation",
-    profile: "PEPPOL_BIS_3",
-    currency: "EUR",
-    totals: {
-      lineExtensionAmount: 1250,
-      taxExclusiveAmount: 1250,
-      taxAmount: 337.5,
-      taxInclusiveAmount: 1587.5,
-      payableAmount: 1587.5
-    },
-    findings: [
-      {
-        code: "BUYER_VAT_ID_REQUIRED",
-        severity: "fatal",
-        field: "buyer.vatId",
-        message: "Buyer VAT ID is required for this cross-border B2B simulation.",
-        legalConfidence: "educational_simulation"
-      },
-      {
-        code: "CROSS_BORDER_REVIEW_REQUIRED",
-        severity: "warning",
-        field: "buyer.country",
-        message:
-          "Seller and buyer countries differ. Country and VAT treatment require professional review.",
-        legalConfidence: "review_required"
-      }
-    ],
-    disclaimer:
-      "This validation report is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation.",
-    sourceType: "invoice_validation"
-  },
-  {
-    id: "val_01HXABD",
-    invoiceNumber: "IL-2026-002",
-    buyer: "Danube Consulting Kft.",
-    seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-23T18:10:00.000Z",
-    technicalStatus: "passed",
-    standardStatus: "ready",
-    countrySimulationStatus: "not_relevant",
-    vidaReadinessStatus: "not_relevant",
-    confidence: "technical_preview",
-    profile: "EN16931",
-    currency: "EUR",
-    totals: {
-      lineExtensionAmount: 800,
-      taxExclusiveAmount: 800,
-      taxAmount: 216,
-      taxInclusiveAmount: 1016,
-      payableAmount: 1016
-    },
-    findings: [],
-    disclaimer:
-      "This validation report is a technical preview. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation.",
-    sourceType: "invoice_validation"
-  },
-  {
-    id: "val_01HXABE",
-    invoiceNumber: "IL-2026-003",
-    buyer: "Nordic Trade AB",
-    seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-22T09:45:00.000Z",
-    technicalStatus: "passed",
-    standardStatus: "warning",
-    countrySimulationStatus: "review_required",
-    vidaReadinessStatus: "relevant_simulation",
-    confidence: "educational_simulation",
-    profile: "PEPPOL_BIS_3",
-    currency: "EUR",
-    totals: {
-      lineExtensionAmount: 2400,
-      taxExclusiveAmount: 2400,
-      taxAmount: 0,
-      taxInclusiveAmount: 2400,
-      payableAmount: 2400
-    },
-    findings: [
-      {
-        code: "CROSS_BORDER_REVIEW_REQUIRED",
-        severity: "warning",
-        field: "buyer.country",
-        message:
-          "Seller and buyer countries differ. Country and VAT treatment require professional review.",
-        legalConfidence: "review_required"
-      }
-    ],
-    disclaimer:
-      "This validation report is an educational simulation. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation.",
-    sourceType: "invoice_validation"
-  }
-];
-
-function getFallbackRunById(id: string) {
-  return fallbackRuns.find((run) => run.id === id) ?? fallbackRuns[0];
-}
-
 function getStatusTone(status: string) {
   if (
     status === "passed" ||
@@ -265,6 +158,43 @@ function readAmountField(record: Record<string, unknown>, key: string) {
   }
 
   return 0;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readResponseBody(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return responseText;
+  }
+}
+
+function getApiErrorMessage(
+  data: unknown,
+  fallback = "The validation run request failed."
+) {
+  if (typeof data === "string" && data.trim().length > 0) {
+    return data.slice(0, 240);
+  }
+
+  if (!isPlainObject(data) || !isPlainObject(data.error)) {
+    return fallback;
+  }
+
+  const message = data.error.message;
+
+  return typeof message === "string" && message.trim().length > 0
+    ? message
+    : fallback;
 }
 
 function normalizeSourceType(value: unknown): ValidationRunSourceType {
@@ -491,7 +421,7 @@ function normalizeValidationRun(value: unknown): SavedValidationRun | null {
     disclaimer: readStringField(
       record,
       "disclaimer",
-      "This validation report is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
+      "This validation report is a technical readiness simulation only. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
     ),
     sourceType: normalizeSourceType(record.sourceType),
     sourceFileName: readStringField(record, "sourceFileName", ""),
@@ -579,9 +509,8 @@ function downloadValidationReport(run: SavedValidationRun, evidence: EvidenceIte
 
 export default function ValidationRunDetailPage() {
   const params = useParams<{ id: string }>();
-  const fallbackRun = useMemo(() => getFallbackRunById(params.id), [params.id]);
 
-  const [run, setRun] = useState<SavedValidationRun>(fallbackRun);
+  const [run, setRun] = useState<SavedValidationRun | null>(null);
   const [isLoadingRun, setIsLoadingRun] = useState(true);
   const [runLoadMessage, setRunLoadMessage] = useState("");
 
@@ -601,13 +530,16 @@ export default function ValidationRunDetailPage() {
           }
         );
 
-        const responseData: unknown = await response.json();
+        const responseData = await readResponseBody(response);
 
         if (!response.ok) {
           if (isMounted) {
-            setRun(getFallbackRunById(params.id));
+            setRun(null);
             setRunLoadMessage(
-              "Could not load this API-owned validation run. Showing the closest demo report instead."
+              getApiErrorMessage(
+                responseData,
+                "Could not load this API-owned validation run."
+              )
             );
           }
 
@@ -622,9 +554,9 @@ export default function ValidationRunDetailPage() {
         }
 
         if (!normalizedRun) {
-          setRun(getFallbackRunById(params.id));
+          setRun(null);
           setRunLoadMessage(
-            "The API returned an unreadable validation run. Showing the closest demo report instead."
+            "The API returned an unreadable validation run record."
           );
           return;
         }
@@ -632,7 +564,7 @@ export default function ValidationRunDetailPage() {
         setRun(normalizedRun);
       } catch {
         if (isMounted) {
-          setRun(getFallbackRunById(params.id));
+          setRun(null);
           setRunLoadMessage(
             "The local validation run API is unavailable. Make sure apps/api and apps/web are both running."
           );
@@ -651,8 +583,8 @@ export default function ValidationRunDetailPage() {
     };
   }, [params.id]);
 
-  const evidence = useMemo(() => buildEvidence(run), [run]);
-  const sourceContext = useMemo(() => buildSourceContext(run), [run]);
+  const evidence = useMemo(() => (run ? buildEvidence(run) : []), [run]);
+  const sourceContext = useMemo(() => (run ? buildSourceContext(run) : []), [run]);
 
   return (
     <div className="workspace-page">
@@ -663,23 +595,33 @@ export default function ValidationRunDetailPage() {
         </Link>
 
         <p className="workspace-kicker">Validation report</p>
-        <h2>{isLoadingRun ? "Loading validation run" : run.id}</h2>
+        <h2>
+          {isLoadingRun
+            ? "Loading validation run"
+            : run
+              ? run.id
+              : "Validation run unavailable"}
+        </h2>
         <p>
-          Full report preview for {run.invoiceNumber}. This page reads the report
-          through the local Next.js proxy from the dedicated Invoice Lantern API
-          service. Source: {formatSourceType(run.sourceType)}.
+          {run
+            ? `Full report preview for ${run.invoiceNumber}. This page reads the report through the local Next.js proxy from the dedicated Invoice Lantern API service. Source: ${formatSourceType(
+                run.sourceType
+              )}.`
+            : "No demo report is shown here. This page only displays API-owned validation run records."}
         </p>
 
-        <div className="workspace-row-actions">
-          <button
-            type="button"
-            className="text-link-button"
-            onClick={() => downloadValidationReport(run, evidence)}
-          >
-            <Download size={16} />
-            Download report JSON
-          </button>
-        </div>
+        {run ? (
+          <div className="workspace-row-actions">
+            <button
+              type="button"
+              className="text-link-button"
+              onClick={() => downloadValidationReport(run, evidence)}
+            >
+              <Download size={16} />
+              Download report JSON
+            </button>
+          </div>
+        ) : null}
 
         {runLoadMessage ? (
           <div className="alert-item">
@@ -689,254 +631,292 @@ export default function ValidationRunDetailPage() {
         ) : null}
       </section>
 
-      <section className="validation-run-grid">
-        <div className="validation-run-layer">
-          <div className="validation-layer-icon">
-            <Layers3 size={22} />
-          </div>
-          <span>{getStatusTone(run.technicalStatus)}</span>
-          <h3>Technical status</h3>
-          <p>{formatStatus(run.technicalStatus)}</p>
-        </div>
-
-        <div className="validation-run-layer">
-          <div className="validation-layer-icon">
-            <FileCheck2 size={22} />
-          </div>
-          <span>{getStatusTone(run.standardStatus)}</span>
-          <h3>Standard status</h3>
-          <p>{formatStatus(run.standardStatus)}</p>
-        </div>
-
-        <div className="validation-run-layer">
-          <div className="validation-layer-icon">
-            <Globe2 size={22} />
-          </div>
-          <span>{getStatusTone(run.countrySimulationStatus)}</span>
-          <h3>Country simulation</h3>
-          <p>{formatStatus(run.countrySimulationStatus)}</p>
-        </div>
-
-        <div className="validation-run-layer">
-          <div className="validation-layer-icon">
+      {!run && !isLoadingRun ? (
+        <section className="workspace-alerts">
+          <div className="alerts-head">
             <ShieldAlert size={22} />
-          </div>
-          <span>{getStatusTone(run.vidaReadinessStatus)}</span>
-          <h3>ViDA readiness</h3>
-          <p>{formatStatus(run.vidaReadinessStatus)}</p>
-        </div>
-      </section>
 
-      <section className="workspace-table-shell">
-        <div className="workspace-table-head">
-          <div>
-            <p>Source context</p>
-            <h3>
-              {run.sourceType === "xml_readiness"
-                ? "XML readiness report source"
-                : "Invoice validation source"}
-            </h3>
-          </div>
-
-          <div className="confidence-label">
-            <Database size={17} />
-            {formatSourceType(run.sourceType)}
-          </div>
-        </div>
-
-        <div className="workspace-data-grid">
-          {sourceContext.map((item) => (
-            <div className="workspace-data-card" key={item.label}>
-              <p>{item.label}</p>
-              <strong>{item.value}</strong>
-              <span>Report metadata</span>
+            <div>
+              <p>Real data required</p>
+              <h3>No API-owned validation run was found.</h3>
             </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="workspace-map">
-        <div>
-          <FileText size={24} />
-          <h3>Invoice context</h3>
-          <p>
-            Invoice {run.invoiceNumber} from {run.seller} to {run.buyer}.
-            Profile: {run.profile}. Currency: {run.currency}. Created:{" "}
-            {formatDateTime(run.createdAt)}.
-          </p>
-        </div>
-
-        <div>
-          <BadgeCheck size={24} />
-          <h3>Confidence label</h3>
-          <p>
-            {formatStatus(run.confidence)}. This report is a technical readiness
-            simulation and must not be interpreted as legal, tax, accounting,
-            Peppol, ViDA, EN 16931, government, or authority approval.
-          </p>
-        </div>
-      </section>
-
-      <section className="workspace-table-shell">
-        <div className="workspace-table-head">
-          <div>
-            <p>Monetary totals</p>
-            <h3>Calculated report summary</h3>
           </div>
 
-          <div className="confidence-label">
-            <Calculator size={17} />
-            API result
-          </div>
-        </div>
-
-        <div className="workspace-table">
-          {Object.entries(run.totals).map(([label, value]) => (
-            <div className="workspace-table-row" key={label}>
-              <div>
-                <strong>{label.replaceAll(/([A-Z])/g, " $1").trim()}</strong>
-                <span>Amount from validation report</span>
-              </div>
-
-              <div>
-                <span>{run.currency}</span>
-              </div>
-
-              <div>
-                <span className="status-pill">calculated</span>
-              </div>
-
-              <strong>{formatTotalAmount(run.currency, value)}</strong>
-
-              <Calculator size={17} />
+          <div className="alert-list">
+            <div className="alert-item">
+              <span />
+              <p>
+                This report may have been deleted, the API may be unavailable, or
+                the route may have been opened with an invalid validation run ID.
+              </p>
             </div>
-          ))}
-        </div>
-      </section>
 
-      <section className="findings-console">
-        <div className="findings-console-head">
-          <div>
-            <p>Findings</p>
-            <h3>Rule findings and review messages</h3>
+            <div className="alert-item">
+              <span />
+              <p>
+                Go back to the validation queue and open an existing API-owned
+                validation run, or create a new validation run from real invoice
+                data.
+              </p>
+            </div>
           </div>
+        </section>
+      ) : null}
 
-          <div className="confidence-label">
-            <ShieldAlert size={17} />
-            {run.findings.length > 0 ? "review required" : "no findings"}
-          </div>
-        </div>
+      {run ? (
+        <>
+          <section className="validation-run-grid">
+            <div className="validation-run-layer">
+              <div className="validation-layer-icon">
+                <Layers3 size={22} />
+              </div>
+              <span>{getStatusTone(run.technicalStatus)}</span>
+              <h3>Technical status</h3>
+              <p>{formatStatus(run.technicalStatus)}</p>
+            </div>
 
-        <div className="finding-console-list">
-          {run.findings.length === 0 ? (
-            <div className="finding-console-row">
-              <BadgeCheck size={18} />
+            <div className="validation-run-layer">
+              <div className="validation-layer-icon">
+                <FileCheck2 size={22} />
+              </div>
+              <span>{getStatusTone(run.standardStatus)}</span>
+              <h3>Standard status</h3>
+              <p>{formatStatus(run.standardStatus)}</p>
+            </div>
 
+            <div className="validation-run-layer">
+              <div className="validation-layer-icon">
+                <Globe2 size={22} />
+              </div>
+              <span>{getStatusTone(run.countrySimulationStatus)}</span>
+              <h3>Country simulation</h3>
+              <p>{formatStatus(run.countrySimulationStatus)}</p>
+            </div>
+
+            <div className="validation-run-layer">
+              <div className="validation-layer-icon">
+                <ShieldAlert size={22} />
+              </div>
+              <span>{getStatusTone(run.vidaReadinessStatus)}</span>
+              <h3>ViDA readiness</h3>
+              <p>{formatStatus(run.vidaReadinessStatus)}</p>
+            </div>
+          </section>
+
+          <section className="workspace-table-shell">
+            <div className="workspace-table-head">
               <div>
-                <strong>NO_FINDINGS_RETURNED</strong>
-                <p>The API did not return any findings for this validation run.</p>
+                <p>Source context</p>
+                <h3>
+                  {run.sourceType === "xml_readiness"
+                    ? "XML readiness report source"
+                    : "Invoice validation source"}
+                </h3>
               </div>
 
-              <span>info</span>
+              <div className="confidence-label">
+                <Database size={17} />
+                {formatSourceType(run.sourceType)}
+              </div>
             </div>
-          ) : (
-            run.findings.map((item, index) => (
-              <div className="finding-console-row" key={`${item.code}-${index}`}>
-                <AlertTriangle size={18} />
 
-                <div>
-                  <strong>{item.code}</strong>
-                  <p>{item.message}</p>
-                  <p>
-                    Field: {item.field ?? "report"}. Confidence:{" "}
-                    {item.legalConfidence
-                      ? formatStatus(item.legalConfidence)
-                      : "not labelled"}
-                    .
-                  </p>
+            <div className="workspace-data-grid">
+              {sourceContext.map((item) => (
+                <div className="workspace-data-card" key={item.label}>
+                  <p>{item.label}</p>
+                  <strong>{item.value}</strong>
+                  <span>Report metadata</span>
                 </div>
-
-                <span>{item.severity}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
-      <section className="workspace-table-shell">
-        <div className="workspace-table-head">
-          <div>
-            <p>Evidence</p>
-            <h3>Source and audit context</h3>
-          </div>
-
-          <div className="confidence-label">
-            <Database size={17} />
-            report metadata
-          </div>
-        </div>
-
-        <div className="workspace-table">
-          {evidence.map((item) => (
-            <div className="workspace-table-row" key={item.label}>
-              <div>
-                <strong>{item.label}</strong>
-                <span>{item.value}</span>
-              </div>
-
-              <div>
-                <span>source</span>
-              </div>
-
-              <div>
-                <span className="status-pill">
-                  {run.sourceType === "xml_readiness" ? "xml readiness" : "invoice"}
-                </span>
-              </div>
-
-              <strong>recorded</strong>
-
-              <Database size={17} />
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
 
-      <section className="workspace-alerts">
-        <div className="alerts-head">
-          <ShieldAlert size={22} />
+          <section className="workspace-map">
+            <div>
+              <FileText size={24} />
+              <h3>Invoice context</h3>
+              <p>
+                Invoice {run.invoiceNumber} from {run.seller} to {run.buyer}.
+                Profile: {run.profile}. Currency: {run.currency}. Created:{" "}
+                {formatDateTime(run.createdAt)}.
+              </p>
+            </div>
 
-          <div>
-            <p>Boundary notice</p>
-            <h3>Not official validation.</h3>
-          </div>
-        </div>
+            <div>
+              <BadgeCheck size={24} />
+              <h3>Confidence label</h3>
+              <p>
+                {formatStatus(run.confidence)}. This report is a technical readiness
+                simulation and must not be interpreted as legal, tax, accounting,
+                Peppol, ViDA, EN 16931, government, or authority approval.
+              </p>
+            </div>
+          </section>
 
-        <div className="alert-list">
-          <div className="alert-item">
-            <span />
-            <p>{run.disclaimer}</p>
-          </div>
+          <section className="workspace-table-shell">
+            <div className="workspace-table-head">
+              <div>
+                <p>Monetary totals</p>
+                <h3>Calculated report summary</h3>
+              </div>
 
-          <div className="alert-item">
-            <span />
-            <p>
-              A future production report must include rule version, source
-              reference, reviewed date, execution timestamp, organization ID, and
-              audit log ID.
-            </p>
-          </div>
+              <div className="confidence-label">
+                <Calculator size={17} />
+                API result
+              </div>
+            </div>
 
-          <div className="alert-item">
-            <span />
-            <p>
-              Country, Peppol, EN 16931, and ViDA logic should remain clearly
-              marked as simulation unless reviewed and maintained by qualified
-              professionals.
-            </p>
-          </div>
-        </div>
-      </section>
+            <div className="workspace-table">
+              {Object.entries(run.totals).map(([label, value]) => (
+                <div className="workspace-table-row" key={label}>
+                  <div>
+                    <strong>{label.replaceAll(/([A-Z])/g, " $1").trim()}</strong>
+                    <span>Amount from validation report</span>
+                  </div>
+
+                  <div>
+                    <span>{run.currency}</span>
+                  </div>
+
+                  <div>
+                    <span className="status-pill">calculated</span>
+                  </div>
+
+                  <strong>{formatTotalAmount(run.currency, value)}</strong>
+
+                  <Calculator size={17} />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="findings-console">
+            <div className="findings-console-head">
+              <div>
+                <p>Findings</p>
+                <h3>Rule findings and review messages</h3>
+              </div>
+
+              <div className="confidence-label">
+                <ShieldAlert size={17} />
+                {run.findings.length > 0 ? "review required" : "no findings"}
+              </div>
+            </div>
+
+            <div className="finding-console-list">
+              {run.findings.length === 0 ? (
+                <div className="finding-console-row">
+                  <BadgeCheck size={18} />
+
+                  <div>
+                    <strong>NO_FINDINGS_RETURNED</strong>
+                    <p>The API did not return any findings for this validation run.</p>
+                  </div>
+
+                  <span>info</span>
+                </div>
+              ) : (
+                run.findings.map((item, index) => (
+                  <div className="finding-console-row" key={`${item.code}-${index}`}>
+                    <AlertTriangle size={18} />
+
+                    <div>
+                      <strong>{item.code}</strong>
+                      <p>{item.message}</p>
+                      <p>
+                        Field: {item.field ?? "report"}. Confidence:{" "}
+                        {item.legalConfidence
+                          ? formatStatus(item.legalConfidence)
+                          : "not labelled"}
+                        .
+                      </p>
+                    </div>
+
+                    <span>{item.severity}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="workspace-table-shell">
+            <div className="workspace-table-head">
+              <div>
+                <p>Evidence</p>
+                <h3>Source and audit context</h3>
+              </div>
+
+              <div className="confidence-label">
+                <Database size={17} />
+                report metadata
+              </div>
+            </div>
+
+            <div className="workspace-table">
+              {evidence.map((item) => (
+                <div className="workspace-table-row" key={item.label}>
+                  <div>
+                    <strong>{item.label}</strong>
+                    <span>{item.value}</span>
+                  </div>
+
+                  <div>
+                    <span>source</span>
+                  </div>
+
+                  <div>
+                    <span className="status-pill">
+                      {run.sourceType === "xml_readiness"
+                        ? "xml readiness"
+                        : "invoice"}
+                    </span>
+                  </div>
+
+                  <strong>recorded</strong>
+
+                  <Database size={17} />
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="workspace-alerts">
+            <div className="alerts-head">
+              <ShieldAlert size={22} />
+
+              <div>
+                <p>Boundary notice</p>
+                <h3>Not official validation.</h3>
+              </div>
+            </div>
+
+            <div className="alert-list">
+              <div className="alert-item">
+                <span />
+                <p>{run.disclaimer}</p>
+              </div>
+
+              <div className="alert-item">
+                <span />
+                <p>
+                  A future production report must include rule version, source
+                  reference, reviewed date, execution timestamp, organization ID, and
+                  audit log ID.
+                </p>
+              </div>
+
+              <div className="alert-item">
+                <span />
+                <p>
+                  Country, Peppol, EN 16931, and ViDA logic should remain clearly
+                  marked as simulation unless reviewed and maintained by qualified
+                  professionals.
+                </p>
+              </div>
+            </div>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

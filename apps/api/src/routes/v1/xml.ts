@@ -14,16 +14,21 @@ import {
   inspectXmlReadiness
 } from "../../services/xml-readiness-engine.js";
 
-const xmlBodySchema = z
-  .string()
-  .min(1, "XML body cannot be empty")
-  .max(env.API_BODY_LIMIT_BYTES, "XML body is too large");
+const xmlBodySchema = z.string().min(1, "XML body cannot be empty");
 
 const xmlUploadParamsSchema = z
   .object({
     id: z.string().trim().min(1).max(120)
   })
   .strict();
+
+function formatZodIssues(error: z.ZodError) {
+  return error.issues.map((issue) => ({
+    path: issue.path.join("."),
+    message: issue.message,
+    code: issue.code
+  }));
+}
 
 function readHeaderString(value: string | string[] | undefined) {
   if (Array.isArray(value)) {
@@ -33,12 +38,28 @@ function readHeaderString(value: string | string[] | undefined) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isXmlContentType(value: string) {
+  const normalizedContentType = value.toLowerCase();
+
+  return (
+    normalizedContentType.includes("text/xml") ||
+    normalizedContentType.includes("application/xml") ||
+    normalizedContentType.includes("+xml")
+  );
+}
+
+function getUtf8ByteLength(value: string) {
+  return new TextEncoder().encode(value).byteLength;
+}
+
 function safeFileName(value: string) {
   const cleaned = value
+    .replace(/[^\x20-\x7E]/g, "_")
     .replaceAll("\\", "/")
     .split("/")
     .pop()
     ?.trim()
+    .replace(/^[-.]+|[-.]+$/g, "")
     .slice(0, 180);
 
   return cleaned || "uploaded-invoice.xml";
@@ -60,6 +81,16 @@ function formatBytesFromHeader(value: string) {
   }
 
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function buildValidationError(message: string, details: unknown) {
+  return {
+    error: {
+      code: "VALIDATION_ERROR",
+      message,
+      details
+    }
+  };
 }
 
 export async function xmlRoutes(app: FastifyInstance) {
@@ -86,17 +117,12 @@ export async function xmlRoutes(app: FastifyInstance) {
       const parsedParams = xmlUploadParamsSchema.safeParse(request.params);
 
       if (!parsedParams.success) {
-        return reply.status(400).send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "XML upload ID failed schema validation.",
-            details: parsedParams.error.issues.map((issue) => ({
-              path: issue.path.join("."),
-              message: issue.message,
-              code: issue.code
-            }))
-          }
-        });
+        return reply.status(400).send(
+          buildValidationError(
+            "XML upload ID failed schema validation.",
+            formatZodIssues(parsedParams.error)
+          )
+        );
       }
 
       const record = await getXmlUploadRecordById(parsedParams.data.id);
@@ -126,17 +152,12 @@ export async function xmlRoutes(app: FastifyInstance) {
       const parsedParams = xmlUploadParamsSchema.safeParse(request.params);
 
       if (!parsedParams.success) {
-        return reply.status(400).send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "XML upload ID failed schema validation.",
-            details: parsedParams.error.issues.map((issue) => ({
-              path: issue.path.join("."),
-              message: issue.message,
-              code: issue.code
-            }))
-          }
-        });
+        return reply.status(400).send(
+          buildValidationError(
+            "XML upload ID failed schema validation.",
+            formatZodIssues(parsedParams.error)
+          )
+        );
       }
 
       const wasDeleted = await deleteXmlUploadRecordById(parsedParams.data.id);
@@ -164,17 +185,13 @@ export async function xmlRoutes(app: FastifyInstance) {
       preHandler: requireApiKey
     },
     async (request, reply) => {
-      const contentType = request.headers["content-type"] ?? "";
+      const contentType = readHeaderString(request.headers["content-type"]);
 
-      if (
-        typeof contentType !== "string" ||
-        (!contentType.includes("text/xml") &&
-          !contentType.includes("application/xml"))
-      ) {
+      if (!isXmlContentType(contentType)) {
         return reply.status(415).send({
           error: {
             code: "UNSUPPORTED_MEDIA_TYPE",
-            message: "Use content-type text/xml or application/xml.",
+            message: "Use content-type text/xml, application/xml, or another XML media type.",
             details: null
           }
         });
@@ -188,16 +205,25 @@ export async function xmlRoutes(app: FastifyInstance) {
           error: {
             code: "XML_BODY_INVALID",
             message: "XML body failed validation.",
-            details: parsedBody.error.issues.map((issue) => ({
-              path: issue.path.join("."),
-              message: issue.message,
-              code: issue.code
-            }))
+            details: formatZodIssues(parsedBody.error)
           }
         });
       }
 
       const xml = parsedBody.data;
+
+      if (getUtf8ByteLength(xml) > env.API_BODY_LIMIT_BYTES) {
+        return reply.status(413).send({
+          error: {
+            code: "XML_BODY_TOO_LARGE",
+            message: "XML body is too large.",
+            details: {
+              maxBytes: env.API_BODY_LIMIT_BYTES
+            }
+          }
+        });
+      }
+
       const inspection = inspectXmlReadiness(xml);
       const readinessReport = inspection.report;
 

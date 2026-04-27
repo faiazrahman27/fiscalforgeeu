@@ -25,15 +25,15 @@ import {
 } from "../lib/constants";
 
 const tickerItems = [
-  "UBL XML generation",
-  "EN 16931-style checks",
-  "Peppol-style validation",
+  "UBL XML generation planning",
+  "EN 16931-style readiness checks",
+  "Peppol-style profile signals",
   "VAT-number format logic",
-  "VIES evidence tracking",
+  "VIES evidence planning",
   "ViDA-readiness simulation",
   "Country rule-pack sandbox",
   "Developer API testing",
-  "Audit-ready validation reports",
+  "Audit-ready report structure",
   "Technical validation, not tax advice"
 ];
 
@@ -56,7 +56,7 @@ const pageLinks = [
     href: "/developer-api",
     label: "Developer API",
     description:
-      "Explore sandbox endpoints, API keys, scoped access, request logging, validation run IDs, UBL export, VAT checks, and webhook simulation.",
+      "Explore sandbox endpoints, API key boundaries, scoped access, request logging plans, validation run IDs, UBL export planning, VAT checks, and webhook simulation.",
     tag: "API"
   },
   {
@@ -79,7 +79,7 @@ export default function HomePage() {
             <div className="hero-copy">
               <div className="hero-badge">
                 <span />
-                Independent invoice validation sandbox
+                Independent invoice readiness sandbox
               </div>
 
               <h1 className="hero-title">
@@ -88,8 +88,9 @@ export default function HomePage() {
 
               <p className="hero-lead">
                 Build, inspect, validate, export, and explain structured European
-                invoice data with a serious technical sandbox for UBL, EN 16931,
-                Peppol-style checks, VAT-number logic, and ViDA-readiness simulation.
+                invoice data with a technical sandbox for UBL, EN 16931-style
+                checks, Peppol-style profile signals, VAT-number logic, and
+                ViDA-readiness simulation.
               </p>
 
               <div className="hero-actions">
@@ -107,7 +108,7 @@ export default function HomePage() {
               <div className="hero-quote">
                 <p>
                   Clarity before compliance. Not official. Not tax advice. A
-                  professional technical environment for structured invoice validation.
+                  technical environment for structured invoice readiness review.
                 </p>
               </div>
             </div>
@@ -156,9 +157,9 @@ export default function HomePage() {
               <p className="section-kicker">Platform map</p>
               <h2>Everything starts here. Each area opens into its own working page.</h2>
               <p>
-                The homepage gives users the complete product story. The deeper pages
-                carry the full workflows, technical details, rule explanations, API
-                behavior, and legal boundaries connected to each module.
+                The homepage gives users the product story. The deeper pages carry
+                the workflows, technical details, rule explanations, API behavior,
+                and legal boundaries connected to each module.
               </p>
             </div>
           </Reveal>
@@ -190,9 +191,9 @@ export default function HomePage() {
                 A workspace that feels like a command center, not an accounting form.
               </h2>
               <p>
-                The Studio page expands this into the full invoice-building flow:
-                business profiles, contacts, line items, VAT breakdowns, payment data,
-                canonical model preview, and UBL export preparation.
+                The Studio page expands this into the invoice-building flow:
+                business profiles, contacts, line items, VAT breakdowns, payment
+                data, canonical model preview, and UBL export preparation.
               </p>
 
               <div className="section-action-row">
@@ -238,33 +239,33 @@ export default function HomePage() {
                 <div className="panel-orb" />
 
                 <div className="findings-heading">
-                  <p>Live validation surface</p>
+                  <p>Validation surface</p>
                   <h3>Errors should feel fixable, traceable, and human.</h3>
                 </div>
 
                 <div className="findings-list">
                   <ValidationFinding
                     icon={<FileCheck2 size={18} />}
-                    code="BR-CO-10"
-                    title="Invoice total mismatch"
-                    message="Payable amount does not match the sum of line totals, taxes, allowances, and charges."
-                    severity="Fatal"
+                    code="TOTAL_CONSISTENCY_REVIEW"
+                    title="Invoice total review"
+                    message="Payable amount should be explainable from line totals, tax totals, allowances, charges, prepaid amounts, and rounding."
+                    severity="Review"
                   />
 
                   <ValidationFinding
                     icon={<Globe2 size={18} />}
-                    code="INTRA_EU_B2B_REVERSE_CHARGE_WARNING"
-                    title="Possible reverse-charge scenario"
-                    message="The transaction appears to involve two EU Member States and a business buyer. Professional review required."
+                    code="CROSS_BORDER_REVIEW_REQUIRED"
+                    title="Cross-border context"
+                    message="Different seller and buyer country signals require VAT, routing, and reporting review."
                     severity="Warning"
                   />
 
                   <ValidationFinding
                     icon={<Fingerprint size={18} />}
-                    code="BUYER_VAT_ID_REQUIRED"
-                    title="Buyer VAT ID missing"
-                    message="Buyer VAT ID is required for this intra-EU B2B simulation."
-                    severity="Fatal"
+                    code="BUYER_TAX_IDENTIFIER_REVIEW"
+                    title="Buyer tax identifier"
+                    message="Some business flows may require a buyer tax identifier or electronic address before submission."
+                    severity="Review"
                   />
                 </div>
               </div>
@@ -284,8 +285,9 @@ export default function HomePage() {
 
               <div>
                 <p>
-                  The Validation page expands each layer with rule examples, severity
-                  mapping, legal-confidence labels, source references, and report logic.
+                  The Validation page expands each layer with rule examples,
+                  severity mapping, confidence labels, source references, and
+                  report logic.
                 </p>
 
                 <Link href="/validation" className="text-link-button compact">
@@ -324,9 +326,9 @@ export default function HomePage() {
               <p className="section-kicker">Developer platform</p>
               <h2>API-first, sandbox-safe, rate-limited from day one.</h2>
               <p className="api-copy">
-                The Developer API page expands this into endpoint documentation, API key
-                rules, scopes, request logs, rate limits, validation responses, and
-                webhook testing.
+                The Developer API page expands this into endpoint documentation,
+                API key rules, scopes, request logs, rate limits, validation
+                responses, and webhook testing.
               </p>
 
               <div className="security-pills">
@@ -355,24 +357,23 @@ export default function HomePage() {
               </div>
 
               <pre>{`{
-  "profile": "PEPPOL_BIS_3",
   "document": {
     "type": "invoice",
-    "number": "IL-2026-001",
+    "number": "<invoice-number>",
     "currency": "EUR"
   },
   "seller": {
-    "country": "HU",
-    "vatId": "HU12345678"
+    "country": "<seller-country-code>",
+    "vatId": "<seller-tax-id>"
   },
   "buyer": {
-    "country": "DE",
-    "vatId": "DE123456789"
+    "country": "<buyer-country-code>",
+    "vatId": "<buyer-tax-id>"
   },
   "result": {
-    "technicalStatus": "failed",
-    "standardStatus": "warning",
-    "legalConfidence": "educational_simulation"
+    "technicalStatus": "passed_or_failed",
+    "standardStatus": "ready_or_warning",
+    "confidence": "technical_or_simulation"
   }
 }`}</pre>
             </div>
@@ -387,9 +388,9 @@ export default function HomePage() {
               <p className="section-kicker">Legal positioning</p>
               <h2>Serious software needs honest boundaries.</h2>
               <p>
-                The Boundaries page expands the independent positioning, non-affiliation
-                language, validation-result disclaimers, country-pack disclaimers, and
-                developer API notices.
+                The Boundaries page expands the independent positioning,
+                non-affiliation language, validation-result disclaimers,
+                country-pack disclaimers, and developer API notices.
               </p>
 
               <div className="section-action-row">
@@ -421,17 +422,17 @@ export default function HomePage() {
             <div>
               <div className="final-badge">
                 <Sparkles size={14} />
-                Homepage hub ready
+                Workspace hub
               </div>
 
-              <h2>Next: build the real workspace shell.</h2>
+              <h2>Continue in the working product shell.</h2>
             </div>
 
             <div>
               <p>
-                The Sandbox page will become the authenticated product area: organization
-                switcher, invoice studio, validation runs, XML uploads, API key area,
-                audit logs, and privacy dashboard.
+                The workspace is the product area for invoice creation,
+                validation runs, XML uploads, API key previews, audit planning,
+                and privacy controls.
               </p>
 
               <MagneticButton href="/workspace">
@@ -477,13 +478,7 @@ function ValidationFinding({
   );
 }
 
-function SecurityPill({
-  icon,
-  label
-}: {
-  icon: ReactNode;
-  label: string;
-}) {
+function SecurityPill({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <span className="security-pill">
       {icon}

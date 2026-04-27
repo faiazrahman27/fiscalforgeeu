@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, FileText, ShieldAlert } from "lucide-react";
-import { invoiceEditorDraft } from "../../../../lib/mock-data";
 import type { InvoiceEditorDraft } from "../../../../lib/types";
 import { InvoiceEditorClient } from "../new/invoice-editor-client";
 
@@ -28,7 +27,25 @@ function isInvoiceEditorDraft(value: unknown): value is InvoiceEditorDraft {
   );
 }
 
+async function readResponseBody(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return responseText;
+  }
+}
+
 function getApiErrorMessage(data: unknown) {
+  if (typeof data === "string" && data.trim().length > 0) {
+    return data.slice(0, 240);
+  }
+
   if (!isPlainObject(data) || !isPlainObject(data.error)) {
     return "Could not load this invoice draft.";
   }
@@ -81,7 +98,7 @@ export default function ExistingInvoiceDraftPage({
           }
         );
 
-        const responseData: unknown = await response.json();
+        const responseData = await readResponseBody(response);
 
         if (!response.ok) {
           if (isMounted) {
@@ -181,8 +198,8 @@ export default function ExistingInvoiceDraftPage({
           <p className="workspace-kicker">Invoice Editor</p>
           <h2>Could not open this invoice draft.</h2>
           <p>
-            The requested draft could not be loaded from the local Invoice Lantern
-            API service.
+            The requested API-owned draft could not be loaded from the local
+            Invoice Lantern API service. No demo draft is shown here.
           </p>
         </section>
 
@@ -205,7 +222,8 @@ export default function ExistingInvoiceDraftPage({
             <div className="alert-item">
               <span />
               <p>
-                You can go back to the invoice queue or create a new invoice draft.
+                You can go back to the invoice queue or create a new API-owned
+                invoice draft.
               </p>
             </div>
           </div>
@@ -226,7 +244,7 @@ export default function ExistingInvoiceDraftPage({
             >
               <div>
                 <strong>Create a new invoice</strong>
-                <span>Open the editor with the default draft template.</span>
+                <span>Open the editor and save a new API-owned draft.</span>
               </div>
 
               <div>
@@ -249,7 +267,7 @@ export default function ExistingInvoiceDraftPage({
 
   return (
     <InvoiceEditorClient
-      initialDraft={draft ?? invoiceEditorDraft}
+      initialDraft={draft}
       loadStoredDraft={false}
       draftId={draftId}
     />

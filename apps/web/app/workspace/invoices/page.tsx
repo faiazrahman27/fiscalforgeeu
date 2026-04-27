@@ -19,10 +19,8 @@ import {
   Trash2,
   UserRoundCheck
 } from "lucide-react";
-import { invoiceDrafts, invoiceStages } from "../../../lib/mock-data";
+import { invoiceStages } from "../../../lib/mock-data";
 import type { WorkspaceIconKey } from "../../../lib/types";
-
-type InvoiceListSource = "api" | "demo";
 
 type InvoiceListItem = {
   id: string;
@@ -32,7 +30,6 @@ type InvoiceListItem = {
   issueDate: string;
   status: string;
   amount: string;
-  source: InvoiceListSource;
 };
 
 type ApiInvoiceDraftSummary = {
@@ -88,29 +85,17 @@ function formatAmount(value: unknown) {
     return formatCurrencyAmount(value);
   }
 
-  return "EUR 0.00";
+  return "Not calculated";
 }
 
-function readStringField(
-  record: Record<string, unknown>,
-  key: string,
-  fallback: string
-) {
+function readStringField(record: Record<string, unknown>, key: string) {
   const value = record[key];
 
   if (typeof value === "string" && value.trim().length > 0) {
     return value.trim();
   }
 
-  return fallback;
-}
-
-function buildFallbackInvoiceId(record: Record<string, unknown>) {
-  const number = readStringField(record, "number", "draft");
-  const buyer = readStringField(record, "buyer", "buyer");
-  const issueDate = readStringField(record, "issueDate", "date");
-
-  return `${number}-${buyer}-${issueDate}`.replaceAll(/\s+/g, "-").toLowerCase();
+  return "";
 }
 
 function normalizeInvoiceDraft(value: unknown): InvoiceListItem | null {
@@ -120,68 +105,42 @@ function normalizeInvoiceDraft(value: unknown): InvoiceListItem | null {
 
   const record = value as Record<string, unknown>;
 
+  const id = readStringField(record, "id");
   const number =
-    readStringField(record, "number", "") ||
-    readStringField(record, "invoiceNumber", "") ||
-    "Draft invoice";
+    readStringField(record, "number") || readStringField(record, "invoiceNumber");
+  const buyer = readStringField(record, "buyer") || readStringField(record, "buyerName");
+  const issueDate = readStringField(record, "issueDate");
 
-  const buyer =
-    readStringField(record, "buyer", "") ||
-    readStringField(record, "buyerName", "") ||
-    "Unknown buyer";
-
-  const issueDate = readStringField(
-    record,
-    "issueDate",
-    new Date().toISOString().slice(0, 10)
-  );
+  if (!id || !number || !buyer || !issueDate) {
+    return null;
+  }
 
   return {
-    id: readStringField(record, "id", buildFallbackInvoiceId(record)),
+    id,
     number,
     buyer,
-    buyerCountry: readStringField(record, "buyerCountry", "EU"),
+    buyerCountry: readStringField(record, "buyerCountry") || "Not provided",
     issueDate,
-    status: readStringField(record, "status", "Draft"),
-    amount: formatAmount(record.amount ?? record.payableAmount),
-    source: "api"
+    status: readStringField(record, "status") || "Draft",
+    amount: formatAmount(record.amount ?? record.payableAmount)
   };
-}
-
-function getDemoInvoices(): InvoiceListItem[] {
-  return invoiceDrafts.map((invoice) => ({
-    id: invoice.id,
-    number: invoice.number,
-    buyer: invoice.buyer,
-    buyerCountry: invoice.buyerCountry,
-    issueDate: invoice.issueDate,
-    status: invoice.status,
-    amount: formatAmount(invoice.amount),
-    source: "demo"
-  }));
 }
 
 function uniqueInvoices(invoices: InvoiceListItem[]) {
   const seen = new Set<string>();
 
   return invoices.filter((invoice) => {
-    const key = `${invoice.source}:${invoice.id}`;
-
-    if (seen.has(key)) {
+    if (seen.has(invoice.id)) {
       return false;
     }
 
-    seen.add(key);
+    seen.add(invoice.id);
     return true;
   });
 }
 
 function getInvoiceHref(invoice: InvoiceListItem) {
-  if (invoice.source === "api") {
-    return `/workspace/invoices/${encodeURIComponent(invoice.id)}`;
-  }
-
-  return "/workspace/invoices/new";
+  return `/workspace/invoices/${encodeURIComponent(invoice.id)}`;
 }
 
 async function readResponseBody(response: Response) {
@@ -198,13 +157,17 @@ async function readResponseBody(response: Response) {
   }
 }
 
-function getApiErrorMessage(data: unknown, status: number) {
+function getApiErrorMessage(
+  data: unknown,
+  status: number,
+  fallbackAction = "complete invoice draft request"
+) {
   if (typeof data === "string" && data.trim().length > 0) {
-    return `Could not delete invoice draft. Status ${status}: ${data.slice(0, 220)}`;
+    return `Could not ${fallbackAction}. Status ${status}: ${data.slice(0, 220)}`;
   }
 
   if (!data || typeof data !== "object" || Array.isArray(data)) {
-    return `Could not delete invoice draft. Status ${status}.`;
+    return `Could not ${fallbackAction}. Status ${status}.`;
   }
 
   const payload = data as ApiErrorShape;
@@ -215,7 +178,7 @@ function getApiErrorMessage(data: unknown, status: number) {
     return code ? `${message} (${code})` : message;
   }
 
-  return `Could not delete invoice draft. Status ${status}.`;
+  return `Could not ${fallbackAction}. Status ${status}.`;
 }
 
 export default function WorkspaceInvoicesPage() {
@@ -224,7 +187,6 @@ export default function WorkspaceInvoicesPage() {
   const [apiInvoices, setApiInvoices] = useState<InvoiceListItem[]>([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
   const [invoiceLoadMessage, setInvoiceLoadMessage] = useState("");
-  const [useDemoFallback, setUseDemoFallback] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState("");
 
   useEffect(() => {
@@ -233,7 +195,6 @@ export default function WorkspaceInvoicesPage() {
     async function loadInvoiceDrafts() {
       setIsLoadingInvoices(true);
       setInvoiceLoadMessage("");
-      setUseDemoFallback(false);
 
       try {
         const response = await fetch("/api/local/invoices/drafts", {
@@ -246,10 +207,10 @@ export default function WorkspaceInvoicesPage() {
         if (!response.ok) {
           if (isMounted) {
             setApiInvoices([]);
-            setUseDemoFallback(true);
             setInvoiceLoadMessage(
-              getApiErrorMessage(responseData, response.status).replace(
-                "delete invoice draft",
+              getApiErrorMessage(
+                responseData,
+                response.status,
                 "load invoice drafts"
               )
             );
@@ -267,18 +228,10 @@ export default function WorkspaceInvoicesPage() {
 
         if (isMounted) {
           setApiInvoices(normalizedInvoices);
-          setUseDemoFallback(normalizedInvoices.length === 0);
-
-          if (normalizedInvoices.length === 0) {
-            setInvoiceLoadMessage(
-              "No API-owned invoice drafts are saved yet. Showing demo drafts for local development."
-            );
-          }
         }
       } catch {
         if (isMounted) {
           setApiInvoices([]);
-          setUseDemoFallback(true);
           setInvoiceLoadMessage(
             "The local invoice draft API is unavailable. Make sure apps/api and apps/web are both running."
           );
@@ -298,8 +251,8 @@ export default function WorkspaceInvoicesPage() {
   }, []);
 
   const tableInvoices = useMemo(() => {
-    return uniqueInvoices(useDemoFallback ? getDemoInvoices() : apiInvoices);
-  }, [apiInvoices, useDemoFallback]);
+    return uniqueInvoices(apiInvoices);
+  }, [apiInvoices]);
 
   async function deleteInvoiceDraft(
     event: MouseEvent<HTMLButtonElement>,
@@ -307,10 +260,6 @@ export default function WorkspaceInvoicesPage() {
   ) {
     event.preventDefault();
     event.stopPropagation();
-
-    if (invoice.source !== "api") {
-      return;
-    }
 
     setDeletingDraftId(invoice.id);
     setInvoiceLoadMessage("");
@@ -327,22 +276,17 @@ export default function WorkspaceInvoicesPage() {
       const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        setInvoiceLoadMessage(getApiErrorMessage(responseData, response.status));
+        setInvoiceLoadMessage(
+          getApiErrorMessage(responseData, response.status, "delete invoice draft")
+        );
         return;
       }
 
       setApiInvoices((currentInvoices) => {
-        const nextInvoices = currentInvoices.filter((item) => item.id !== invoice.id);
-
-        if (nextInvoices.length === 0) {
-          setUseDemoFallback(true);
-          setInvoiceLoadMessage(
-            "No API-owned invoice drafts are saved now. Showing demo drafts for local development."
-          );
-        }
-
-        return nextInvoices;
+        return currentInvoices.filter((item) => item.id !== invoice.id);
       });
+
+      setInvoiceLoadMessage("Invoice draft deleted.");
     } catch {
       setInvoiceLoadMessage(
         "Could not delete invoice draft. Make sure apps/api and apps/web are both running."
@@ -372,9 +316,9 @@ export default function WorkspaceInvoicesPage() {
         <p className="workspace-kicker">Invoice Studio</p>
         <h2>Create structured invoice data before validation.</h2>
         <p>
-          This screen reads invoice draft summaries through the local Next.js
-          proxy from the dedicated Invoice Lantern API service. Demo drafts only
-          appear when the API is unavailable or no saved API drafts exist.
+          This screen reads API-owned invoice draft summaries through the local
+          Next.js proxy from the dedicated Invoice Lantern API service. No demo
+          invoice drafts are shown.
         </p>
       </section>
 
@@ -427,11 +371,31 @@ export default function WorkspaceInvoicesPage() {
 
               <strong>API</strong>
             </div>
+          ) : tableInvoices.length === 0 ? (
+            <div className="workspace-table-row">
+              <div>
+                <strong>No invoice drafts yet</strong>
+                <span>
+                  Create a new invoice draft to populate this API-owned queue.
+                </span>
+              </div>
+
+              <div>
+                <CalendarDays size={15} />
+                <span>waiting</span>
+              </div>
+
+              <div>
+                <span className="status-pill">empty</span>
+              </div>
+
+              <strong>0</strong>
+            </div>
           ) : (
             tableInvoices.map((invoice) => (
               <div
                 className="workspace-table-row invoice-click-row"
-                key={`${invoice.source}-${invoice.id}`}
+                key={invoice.id}
                 role="button"
                 tabIndex={0}
                 onClick={() => openInvoice(invoice)}
@@ -444,28 +408,22 @@ export default function WorkspaceInvoicesPage() {
                     {invoice.buyer} - {invoice.buyerCountry}
                   </span>
 
-                  {invoice.source === "api" ? (
-                    <button
-                      type="button"
-                      className="text-link-button"
-                      onClick={(event) => deleteInvoiceDraft(event, invoice)}
-                      disabled={deletingDraftId === invoice.id}
-                      style={{
-                        marginTop: "10px",
-                        width: "fit-content",
-                        padding: "8px 12px",
-                        cursor:
-                          deletingDraftId === invoice.id ? "not-allowed" : "pointer"
-                      }}
-                    >
-                      <Trash2 size={16} />
-                      {deletingDraftId === invoice.id ? "Deleting..." : "Delete draft"}
-                    </button>
-                  ) : (
-                    <span style={{ marginTop: "8px" }}>
-                      Demo row opens a new draft.
-                    </span>
-                  )}
+                  <button
+                    type="button"
+                    className="text-link-button"
+                    onClick={(event) => deleteInvoiceDraft(event, invoice)}
+                    disabled={deletingDraftId === invoice.id}
+                    style={{
+                      marginTop: "10px",
+                      width: "fit-content",
+                      padding: "8px 12px",
+                      cursor:
+                        deletingDraftId === invoice.id ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    <Trash2 size={16} />
+                    {deletingDraftId === invoice.id ? "Deleting..." : "Delete draft"}
+                  </button>
                 </div>
 
                 <div>
@@ -474,9 +432,7 @@ export default function WorkspaceInvoicesPage() {
                 </div>
 
                 <div>
-                  <span className="status-pill">
-                    {invoice.source === "api" ? invoice.status : "demo"}
-                  </span>
+                  <span className="status-pill">{invoice.status}</span>
                 </div>
 
                 <strong>{invoice.amount}</strong>

@@ -90,9 +90,11 @@ export async function createInvoiceDraft(
   const currentDrafts = await listInvoiceDrafts();
   const payloadNumberKey = getPayloadNumberKey(payload);
 
-  const existingDraft = currentDrafts.find((draft) => {
-    return getDraftNumberKey(draft) === payloadNumberKey;
-  });
+  const existingDraft = payloadNumberKey
+    ? currentDrafts.find((draft) => {
+        return getDraftNumberKey(draft) === payloadNumberKey;
+      })
+    : undefined;
 
   const nextDraft: InvoiceDraftRecord = existingDraft
     ? {

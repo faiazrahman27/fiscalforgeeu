@@ -17,7 +17,7 @@ const validationFocus = [
     icon: <Layers3 size={22} />,
     title: "Layered validation",
     description:
-      "Checks should run in layers: input schema, canonical model, calculation logic, VAT format, VIES evidence, UBL mapping, standards rules, country simulation, and ViDA simulation."
+      "Checks should run in layers: input schema, canonical model, calculation logic, VAT format, VIES evidence planning, UBL mapping, standards-style rules, country simulation, and ViDA simulation."
   },
   {
     icon: <Calculator size={22} />,
@@ -29,13 +29,13 @@ const validationFocus = [
     icon: <FileWarning size={22} />,
     title: "Friendly findings",
     description:
-      "Raw rule errors should be mapped into readable findings with severity, field path, source, rule version, and fix suggestions."
+      "Raw rule errors should be mapped into readable findings with severity, field path, source context, rule version, and fix suggestions."
   },
   {
     icon: <BadgeCheck size={22} />,
     title: "Confidence labels",
     description:
-      "Every result must distinguish technical checks, standard-based checks, official-source-derived evidence, educational simulations, and professional-review requirements."
+      "Every result must distinguish technical checks, readiness simulation, planned official-source evidence, and professional-review requirements."
   }
 ];
 
@@ -59,9 +59,10 @@ export default function ValidationPage() {
             </h1>
 
             <p className="subpage-lead">
-              Invoice Lantern validation is not a single pass/fail badge. It is a layered
-              result model that separates technical correctness, standard-style rules,
-              country-pack simulation, and professional-review requirements.
+              Invoice Lantern validation is not a single pass/fail badge. It is
+              a layered result model that separates technical correctness,
+              standards-style readiness, country-pack simulation, XML readiness,
+              and professional-review requirements.
             </p>
           </Reveal>
 

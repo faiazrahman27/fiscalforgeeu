@@ -41,26 +41,52 @@ const VALIDATION_RUNS_FILE = "validation-runs.json";
 const MAX_STORED_VALIDATION_RUNS = 250;
 const storageProvider = getCollectionStorageProvider();
 
+function sortValidationRunsByCreatedAt(records: ValidationRunRecord[]) {
+  return [...records].sort((first, second) =>
+    second.createdAt.localeCompare(first.createdAt)
+  );
+}
+
+function numberToCents(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.round(value * 100);
+}
+
+function centsToMoney(value: number) {
+  return Number((value / 100).toFixed(2));
+}
+
+function calculateLineNetCents(quantity: number, unitPrice: number) {
+  const unitPriceCents = numberToCents(unitPrice);
+
+  return Math.round(quantity * unitPriceCents);
+}
+
 export function calculateValidationTotals(
   payload: InvoiceValidationRequest
 ): ValidationTotals {
-  const lineExtensionAmount = payload.lines.reduce((sum, line) => {
-    return sum + line.quantity * line.unitPrice;
+  const lineExtensionCents = payload.lines.reduce((sum, line) => {
+    return sum + calculateLineNetCents(line.quantity, line.unitPrice);
   }, 0);
 
-  const taxAmount = payload.lines.reduce((sum, line) => {
-    const lineNet = line.quantity * line.unitPrice;
-    return sum + (lineNet * line.vatRate) / 100;
+  const taxCents = payload.lines.reduce((sum, line) => {
+    const lineNetCents = calculateLineNetCents(line.quantity, line.unitPrice);
+    const lineTaxCents = Math.round((lineNetCents * line.vatRate) / 100);
+
+    return sum + lineTaxCents;
   }, 0);
 
-  const taxInclusiveAmount = lineExtensionAmount + taxAmount;
+  const taxInclusiveCents = lineExtensionCents + taxCents;
 
   return {
-    lineExtensionAmount: Number(lineExtensionAmount.toFixed(2)),
-    taxExclusiveAmount: Number(lineExtensionAmount.toFixed(2)),
-    taxAmount: Number(taxAmount.toFixed(2)),
-    taxInclusiveAmount: Number(taxInclusiveAmount.toFixed(2)),
-    payableAmount: Number(taxInclusiveAmount.toFixed(2))
+    lineExtensionAmount: centsToMoney(lineExtensionCents),
+    taxExclusiveAmount: centsToMoney(lineExtensionCents),
+    taxAmount: centsToMoney(taxCents),
+    taxInclusiveAmount: centsToMoney(taxInclusiveCents),
+    payableAmount: centsToMoney(taxInclusiveCents)
   };
 }
 
@@ -91,9 +117,9 @@ export function buildValidationFindings(
     });
   }
 
-  const hasZeroValueLine = payload.lines.some(
-    (line) => line.quantity * line.unitPrice === 0
-  );
+  const hasZeroValueLine = payload.lines.some((line) => {
+    return calculateLineNetCents(line.quantity, line.unitPrice) === 0;
+  });
 
   if (hasZeroValueLine) {
     findings.push({
@@ -109,9 +135,11 @@ export function buildValidationFindings(
 }
 
 export async function listValidationRuns() {
-  return storageProvider.readCollection<ValidationRunRecord>(
+  const records = await storageProvider.readCollection<ValidationRunRecord>(
     VALIDATION_RUNS_FILE
   );
+
+  return sortValidationRunsByCreatedAt(records);
 }
 
 export async function getValidationRunById(id: string) {
@@ -123,10 +151,10 @@ export async function getValidationRunById(id: string) {
 export async function saveValidationRun(record: ValidationRunRecord) {
   const currentRuns = await listValidationRuns();
 
-  const nextRuns = [
+  const nextRuns = sortValidationRunsByCreatedAt([
     record,
     ...currentRuns.filter((existingRun) => existingRun.id !== record.id)
-  ].slice(0, MAX_STORED_VALIDATION_RUNS);
+  ]).slice(0, MAX_STORED_VALIDATION_RUNS);
 
   await storageProvider.writeCollection(VALIDATION_RUNS_FILE, nextRuns);
 

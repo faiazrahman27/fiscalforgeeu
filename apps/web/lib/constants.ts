@@ -16,17 +16,17 @@ export const workflowSteps = [
   {
     title: "Run canonical model checks",
     description:
-      "Every input normalizes into a single CanonicalInvoice shape before export, parsing, validation, reporting, or API usage."
+      "Invoice inputs normalize into a consistent internal shape before validation, reporting, XML preparation, or API usage."
   },
   {
-    title: "Generate UBL XML",
+    title: "Prepare UBL XML",
     description:
-      "The platform prepares standards-oriented XML output that can be inspected, downloaded, parsed, and validated."
+      "The platform is being built toward standards-oriented XML output that can be inspected, downloaded, parsed, and checked through readiness workflows."
   },
   {
     title: "Explain the validation result",
     description:
-      "Findings show severity, source, legal-confidence level, field path, rule version, and a human fix suggestion."
+      "Findings should show severity, confidence level, field path, source context, and a human-readable review message."
   }
 ];
 
@@ -40,7 +40,7 @@ export const validationLayers = [
   {
     title: "Canonical invoice model",
     description:
-      "Maps form data, JSON payloads, and uploaded XML into one internal model for consistent validation and export.",
+      "Maps form data, JSON payloads, and uploaded XML toward one internal model for consistent validation and export preparation.",
     confidence: "Technical"
   },
   {
@@ -53,25 +53,25 @@ export const validationLayers = [
     title: "VAT-number format",
     description:
       "Checks country-specific VAT ID patterns locally and separates format validity from actual VAT-number validity.",
-    confidence: "Standard-based"
+    confidence: "Technical"
   },
   {
-    title: "VIES evidence",
+    title: "VIES evidence planning",
     description:
-      "Stores timestamped VAT-number check evidence when VIES is available, while clearly marking unavailable or inconclusive states.",
-    confidence: "Official-source-derived"
+      "Future versions can store timestamped VAT-number check evidence when VIES is available, while clearly marking unavailable or inconclusive states.",
+    confidence: "Planned official-source evidence"
   },
   {
     title: "UBL XML mapping",
     description:
-      "Checks whether canonical invoice data can be represented as UBL and parsed back without losing critical meaning.",
-    confidence: "Standard-based"
+      "Checks whether canonical invoice data can be represented as UBL-style XML and parsed back without losing critical meaning.",
+    confidence: "Technical readiness"
   },
   {
     title: "EN 16931 / Peppol-style rules",
     description:
-      "Runs selected semantic and business-rule checks with visible source labels and rule-set versions.",
-    confidence: "Standard-based"
+      "Runs selected semantic and business-rule style checks with visible boundaries, confidence labels, and rule-set version planning.",
+    confidence: "Readiness simulation"
   },
   {
     title: "Country-pack simulation",

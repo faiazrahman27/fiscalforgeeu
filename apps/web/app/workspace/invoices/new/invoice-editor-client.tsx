@@ -129,18 +129,72 @@ type ApiDraftSaveResponse = {
   };
 };
 
-const LOCAL_DRAFT_KEY = "invoice-lantern.invoiceDraft.local";
+function createBlankParty(): InvoicePartyDraft {
+  return {
+    name: "",
+    country: "",
+    vatId: "",
+    city: "",
+    postalCode: "",
+    street: "",
+    electronicAddress: ""
+  };
+}
+
+function createEmptyTotals(): InvoiceTotalsDraft {
+  return {
+    lineExtensionAmount: "0.00",
+    taxExclusiveAmount: "0.00",
+    taxAmount: "0.00",
+    taxInclusiveAmount: "0.00",
+    payableAmount: "0.00"
+  };
+}
+
+function createEmptyInvoiceDraft(): InvoiceEditorDraft {
+  const today = new Date().toISOString().slice(0, 10);
+
+  return {
+    document: {
+      number: "",
+      issueDate: today,
+      dueDate: "",
+      currency: "EUR",
+      profile: "EN16931",
+      invoiceType: "invoice",
+      buyerReference: "",
+      contractReference: ""
+    },
+    seller: createBlankParty(),
+    buyer: createBlankParty(),
+    lines: [
+      {
+        id: "1",
+        description: "",
+        quantity: "1",
+        unitCode: "EA",
+        unitPrice: "0.00",
+        vatCategory: "S",
+        vatRate: "0",
+        netAmount: "0.00"
+      }
+    ],
+    totals: createEmptyTotals()
+  };
+}
 
 export function InvoiceEditorClient({
   initialDraft,
-  loadStoredDraft = true,
+  loadStoredDraft = false,
   draftId
 }: {
-  initialDraft: InvoiceEditorDraft;
+  initialDraft?: InvoiceEditorDraft;
   loadStoredDraft?: boolean;
   draftId?: string;
 }) {
-  const [draft, setDraft] = useState<InvoiceEditorDraft>(initialDraft);
+  const [draft, setDraft] = useState<InvoiceEditorDraft>(
+    initialDraft ?? createEmptyInvoiceDraft()
+  );
   const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -149,27 +203,8 @@ export function InvoiceEditorClient({
     useState<LocalValidationReport | null>(null);
 
   useEffect(() => {
-    if (!loadStoredDraft) {
-      setDraft(initialDraft);
-      setHasLoadedDraft(true);
-      return;
-    }
-
-    const storedDraft = readFirstLocalStorageValue([LOCAL_DRAFT_KEY]);
-
-    if (!storedDraft) {
-      setDraft(initialDraft);
-      setHasLoadedDraft(true);
-      return;
-    }
-
-    try {
-      setDraft(JSON.parse(storedDraft) as InvoiceEditorDraft);
-    } catch {
-      setDraft(initialDraft);
-    } finally {
-      setHasLoadedDraft(true);
-    }
+    setDraft(initialDraft ?? createEmptyInvoiceDraft());
+    setHasLoadedDraft(true);
   }, [initialDraft, loadStoredDraft]);
 
   const recalculatedTotals = useMemo(
@@ -252,20 +287,18 @@ export function InvoiceEditorClient({
 
   function addLine() {
     setDraft((current) => {
-      const nextIndex = current.lines.length + 1;
-
       return {
         ...current,
         lines: [
           ...current.lines,
           {
-            id: String(nextIndex),
-            description: "New invoice line",
+            id: `line_${Date.now()}`,
+            description: "",
             quantity: "1",
             unitCode: "EA",
             unitPrice: "0.00",
             vatCategory: "S",
-            vatRate: "27",
+            vatRate: "0",
             netAmount: "0.00"
           }
         ]
@@ -313,10 +346,6 @@ export function InvoiceEditorClient({
       }
 
       const savedDraft = responseData as ApiDraftSaveResponse;
-
-      if (loadStoredDraft) {
-        window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify(draft));
-      }
 
       setSaveMessage(
         savedDraft.summary?.id
@@ -454,7 +483,7 @@ export function InvoiceEditorClient({
           </div>
 
           <strong>
-            {hasLoadedDraft ? draft.document.number : initialDraft.document.number}
+            {hasLoadedDraft ? draft.document.number || "Unsaved invoice" : "Loading"}
           </strong>
           <p>Profile: {draft.document.profile}</p>
         </div>
@@ -772,19 +801,27 @@ export function InvoiceEditorClient({
             </div>
 
             <TotalRow
+              currency={draft.document.currency}
               label="Line extension"
               value={recalculatedTotals.lineExtensionAmount}
             />
             <TotalRow
+              currency={draft.document.currency}
               label="Tax exclusive"
               value={recalculatedTotals.taxExclusiveAmount}
             />
-            <TotalRow label="VAT amount" value={recalculatedTotals.taxAmount} />
             <TotalRow
+              currency={draft.document.currency}
+              label="VAT amount"
+              value={recalculatedTotals.taxAmount}
+            />
+            <TotalRow
+              currency={draft.document.currency}
               label="Tax inclusive"
               value={recalculatedTotals.taxInclusiveAmount}
             />
             <TotalRow
+              currency={draft.document.currency}
               label="Payable amount"
               value={recalculatedTotals.payableAmount}
               strong
@@ -833,9 +870,9 @@ export function InvoiceEditorClient({
               {buildUblPreview(draft, recalculatedTotals)}
             </pre>
 
-            <button type="button" className={styles.fullWidthButton}>
+            <button type="button" className={styles.fullWidthButton} disabled>
               <Code2 size={16} />
-              Prepare UBL export
+              UBL export engine planned
             </button>
           </div>
         </aside>
@@ -890,7 +927,7 @@ function SelectField({
         }
       >
         {options.map((option) => (
-          <option value={option.value} key={option.value}>
+          <option value={option.value} key={`${label}-${option.value}`}>
             {option.label}
           </option>
         ))}
@@ -995,16 +1032,20 @@ function StatusItem({
 function TotalRow({
   label,
   value,
+  currency,
   strong = false
 }: {
   label: string;
   value: string;
+  currency: string;
   strong?: boolean;
 }) {
   return (
     <div className={strong ? styles.totalRowStrong : styles.totalRow}>
       <span>{label}</span>
-      <strong>EUR {value}</strong>
+      <strong>
+        {currency || "EUR"} {value}
+      </strong>
     </div>
   );
 }
@@ -1022,7 +1063,10 @@ function buildValidationPreview(
   draft: InvoiceEditorDraft,
   findings: FindingPreview[]
 ): ValidationPreviewItem[] {
-  const hasCrossBorderContext = draft.seller.country !== draft.buyer.country;
+  const hasSellerCountry = Boolean(draft.seller.country);
+  const hasBuyerCountry = Boolean(draft.buyer.country);
+  const hasCrossBorderContext =
+    hasSellerCountry && hasBuyerCountry && draft.seller.country !== draft.buyer.country;
 
   return [
     {
@@ -1034,8 +1078,13 @@ function buildValidationPreview(
     {
       icon: <Globe2 size={18} />,
       title: "Cross-border context",
-      value: hasCrossBorderContext ? "Review" : "Local",
-      tone: hasCrossBorderContext ? "warn" : "good"
+      value:
+        !hasSellerCountry || !hasBuyerCountry
+          ? "Not set"
+          : hasCrossBorderContext
+            ? "Review"
+            : "Local",
+      tone: !hasSellerCountry || !hasBuyerCountry || hasCrossBorderContext ? "warn" : "good"
     },
     {
       icon: <ShieldAlert size={18} />,
@@ -1051,6 +1100,12 @@ function buildFindings(
   totals: InvoiceTotalsDraft
 ): FindingPreview[] {
   const findings: FindingPreview[] = [];
+  const hasSellerCountry = Boolean(draft.seller.country);
+  const hasBuyerCountry = Boolean(draft.buyer.country);
+  const isCrossBorder =
+    hasSellerCountry &&
+    hasBuyerCountry &&
+    draft.seller.country !== draft.buyer.country;
 
   if (!draft.document.number.trim()) {
     findings.push({
@@ -1068,6 +1123,14 @@ function buildFindings(
     });
   }
 
+  if (!draft.seller.country.trim()) {
+    findings.push({
+      code: "SELLER_COUNTRY_REQUIRED",
+      severity: "fatal",
+      message: "Seller country is required in the canonical invoice model."
+    });
+  }
+
   if (!draft.buyer.name.trim()) {
     findings.push({
       code: "BUYER_NAME_REQUIRED",
@@ -1076,7 +1139,15 @@ function buildFindings(
     });
   }
 
-  if (draft.seller.country !== draft.buyer.country && !draft.buyer.vatId.trim()) {
+  if (!draft.buyer.country.trim()) {
+    findings.push({
+      code: "BUYER_COUNTRY_REQUIRED",
+      severity: "fatal",
+      message: "Buyer country is required in the canonical invoice model."
+    });
+  }
+
+  if (isCrossBorder && !draft.buyer.vatId.trim()) {
     findings.push({
       code: "BUYER_VAT_ID_REQUIRED",
       severity: "fatal",
@@ -1118,7 +1189,7 @@ function buildFindings(
     });
   }
 
-  if (draft.seller.country !== draft.buyer.country) {
+  if (isCrossBorder) {
     findings.push({
       code: "CROSS_BORDER_REVIEW_REQUIRED",
       severity: "warning",
@@ -1271,18 +1342,6 @@ function cleanDecimalInput(value: string) {
   return rest.length === 0 ? first : `${first}.${rest.join("")}`;
 }
 
-function readFirstLocalStorageValue(keys: string[]) {
-  for (const key of keys) {
-    const value = window.localStorage.getItem(key);
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
-}
-
 function buildApiErrorReport({
   draft,
   totals,
@@ -1294,7 +1353,10 @@ function buildApiErrorReport({
   code: string;
   message: string;
 }): LocalValidationReport {
-  const isCrossBorder = draft.seller.country !== draft.buyer.country;
+  const isCrossBorder =
+    Boolean(draft.seller.country) &&
+    Boolean(draft.buyer.country) &&
+    draft.seller.country !== draft.buyer.country;
 
   return {
     id: `api_error_${Date.now()}`,

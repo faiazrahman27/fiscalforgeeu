@@ -119,7 +119,7 @@ type XmlUploadListResponse = {
 
 type ReportQueueItem = {
   id: string;
-  sourceType: "validation_run" | "xml_readiness" | "demo_validation";
+  sourceType: "validation_run" | "xml_readiness";
   title: string;
   subtitle: string;
   createdAt: string;
@@ -131,106 +131,6 @@ type ReportQueueItem = {
   canDelete: boolean;
 };
 
-const fallbackRuns: SavedValidationRun[] = [
-  {
-    id: "val_01HXABC",
-    invoiceNumber: "IL-2026-001",
-    buyer: "Muster GmbH",
-    seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-24T14:32:00.000Z",
-    technicalStatus: "failed",
-    standardStatus: "warning",
-    countrySimulationStatus: "review_required",
-    vidaReadinessStatus: "relevant_simulation",
-    confidence: "educational_simulation",
-    profile: "PEPPOL_BIS_3",
-    currency: "EUR",
-    totals: {
-      lineExtensionAmount: 1250,
-      taxExclusiveAmount: 1250,
-      taxAmount: 337.5,
-      taxInclusiveAmount: 1587.5,
-      payableAmount: 1587.5
-    },
-    findings: [
-      {
-        code: "BUYER_VAT_ID_REQUIRED",
-        severity: "fatal",
-        field: "buyer.vatId",
-        message: "Buyer VAT ID is required for this cross-border B2B simulation.",
-        legalConfidence: "educational_simulation"
-      },
-      {
-        code: "CROSS_BORDER_REVIEW_REQUIRED",
-        severity: "warning",
-        field: "buyer.country",
-        message:
-          "Seller and buyer countries differ. Country and VAT treatment require professional review.",
-        legalConfidence: "review_required"
-      }
-    ],
-    disclaimer:
-      "This validation report is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
-  },
-  {
-    id: "val_01HXABD",
-    invoiceNumber: "IL-2026-002",
-    buyer: "Danube Consulting Kft.",
-    seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-23T18:10:00.000Z",
-    technicalStatus: "passed",
-    standardStatus: "ready",
-    countrySimulationStatus: "not_relevant",
-    vidaReadinessStatus: "not_relevant",
-    confidence: "technical_preview",
-    profile: "EN16931",
-    currency: "EUR",
-    totals: {
-      lineExtensionAmount: 800,
-      taxExclusiveAmount: 800,
-      taxAmount: 216,
-      taxInclusiveAmount: 1016,
-      payableAmount: 1016
-    },
-    findings: [],
-    disclaimer:
-      "This validation report is a technical preview. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
-  },
-  {
-    id: "val_01HXABE",
-    invoiceNumber: "IL-2026-003",
-    buyer: "Nordic Trade AB",
-    seller: "Invoice Lantern Demo Kft.",
-    createdAt: "2026-04-22T09:45:00.000Z",
-    technicalStatus: "passed",
-    standardStatus: "warning",
-    countrySimulationStatus: "review_required",
-    vidaReadinessStatus: "relevant_simulation",
-    confidence: "educational_simulation",
-    profile: "PEPPOL_BIS_3",
-    currency: "EUR",
-    totals: {
-      lineExtensionAmount: 2400,
-      taxExclusiveAmount: 2400,
-      taxAmount: 0,
-      taxInclusiveAmount: 2400,
-      payableAmount: 2400
-    },
-    findings: [
-      {
-        code: "CROSS_BORDER_REVIEW_REQUIRED",
-        severity: "warning",
-        field: "buyer.country",
-        message:
-          "Seller and buyer countries differ. Country and VAT treatment require professional review.",
-        legalConfidence: "review_required"
-      }
-    ],
-    disclaimer:
-      "This validation report is an educational simulation. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
-  }
-];
-
 function getValidationIcon(iconKey: WorkspaceIconKey) {
   const icons: Record<string, ReactNode> = {
     schema: <Layers3 size={22} />,
@@ -240,29 +140,6 @@ function getValidationIcon(iconKey: WorkspaceIconKey) {
   };
 
   return icons[iconKey] ?? <FileCheck2 size={22} />;
-}
-
-function buildValidationRunSummary(run: SavedValidationRun): ValidationRunSummary {
-  return {
-    id: run.id,
-    invoiceNumber: run.invoiceNumber,
-    buyer: run.buyer,
-    seller: run.seller,
-    createdAt: run.createdAt,
-    technicalStatus: run.technicalStatus,
-    standardStatus: run.standardStatus,
-    countrySimulationStatus: run.countrySimulationStatus,
-    vidaReadinessStatus: run.vidaReadinessStatus,
-    confidence: run.confidence,
-    profile: run.profile,
-    currency: run.currency,
-    findingsCount: run.findings.length,
-    payableAmount: run.totals.payableAmount
-  };
-}
-
-function getDemoValidationRunSummaries() {
-  return fallbackRuns.map(buildValidationRunSummary);
 }
 
 function formatStatus(status: string) {
@@ -564,7 +441,9 @@ function normalizeXmlUploadRecord(value: unknown): XmlUploadRecord | null {
     technicalStatus: readStringField(
       record,
       "technicalStatus",
-      typeof summary?.technicalStatus === "string" ? summary.technicalStatus : "failed"
+      typeof summary?.technicalStatus === "string"
+        ? summary.technicalStatus
+        : "failed"
     ),
     readinessStatus: readStringField(
       record,
@@ -577,7 +456,8 @@ function normalizeXmlUploadRecord(value: unknown): XmlUploadRecord | null {
     calculationStatus: readStringField(record, "calculationStatus", "not_checked"),
     profileStatus: readStringField(record, "profileStatus", "unknown_profile"),
     findingsCount:
-      typeof summary?.findingsCount === "number" && Number.isFinite(summary.findingsCount)
+      typeof summary?.findingsCount === "number" &&
+      Number.isFinite(summary.findingsCount)
         ? summary.findingsCount
         : findings,
     summary
@@ -623,22 +503,6 @@ function buildXmlQueueItem(upload: XmlUploadRecord): ReportQueueItem {
     findingsCount: upload.findingsCount,
     href: "/workspace/xml-upload",
     canDelete: true
-  };
-}
-
-function buildDemoQueueItem(run: ValidationRunSummary): ReportQueueItem {
-  return {
-    id: run.id,
-    sourceType: "demo_validation",
-    title: run.id,
-    subtitle: `${run.invoiceNumber} - ${run.buyer}`,
-    createdAt: run.createdAt,
-    status: run.technicalStatus,
-    secondaryStatus: run.standardStatus,
-    amountLabel: formatMoneyValue(run.currency, run.payableAmount),
-    findingsCount: run.findingsCount,
-    href: `/workspace/validation-runs/${run.id}`,
-    canDelete: false
   };
 }
 
@@ -770,20 +634,10 @@ export default function WorkspaceValidationRunsPage() {
     const apiItems = validationRuns.map(buildValidationQueueItem);
     const xmlItems = xmlUploads.map(buildXmlQueueItem);
 
-    const combinedItems = [...apiItems, ...xmlItems].sort((first, second) =>
+    return [...apiItems, ...xmlItems].sort((first, second) =>
       second.createdAt.localeCompare(first.createdAt)
     );
-
-    if (combinedItems.length > 0) {
-      return combinedItems;
-    }
-
-    if (isLoadingRuns) {
-      return [];
-    }
-
-    return getDemoValidationRunSummaries().map(buildDemoQueueItem);
-  }, [isLoadingRuns, validationRuns, xmlUploads]);
+  }, [validationRuns, xmlUploads]);
 
   async function deleteReportItem(
     event: MouseEvent<HTMLButtonElement>,
@@ -791,11 +645,6 @@ export default function WorkspaceValidationRunsPage() {
   ) {
     event.preventDefault();
     event.stopPropagation();
-
-    if (!item.canDelete || item.sourceType === "demo_validation") {
-      setRunLoadMessage("Demo reports are not API-owned records, so they cannot be deleted.");
-      return;
-    }
 
     const endpoint =
       item.sourceType === "xml_readiness"
@@ -821,7 +670,9 @@ export default function WorkspaceValidationRunsPage() {
       }
 
       if (item.sourceType === "xml_readiness") {
-        setXmlUploads((current) => current.filter((upload) => upload.id !== item.id));
+        setXmlUploads((current) =>
+          current.filter((upload) => upload.id !== item.id)
+        );
         setRunLoadMessage("XML readiness report deleted.");
         return;
       }
@@ -853,9 +704,9 @@ export default function WorkspaceValidationRunsPage() {
         <p className="workspace-kicker">Validation Runs</p>
         <h2>Every validation result must be explainable.</h2>
         <p>
-          This screen now works as a unified report queue. It can show structured
-          validation runs and XML readiness reports together, while still keeping
-          each engine technically separate behind the API.
+          This screen works as a unified report queue. It shows structured
+          validation runs and XML readiness reports from the API, while keeping
+          each inspection engine technically separate.
         </p>
       </section>
 
@@ -898,7 +749,9 @@ export default function WorkspaceValidationRunsPage() {
             <div className="workspace-table-row">
               <div>
                 <strong>Loading report history</strong>
-                <span>Reading validation runs and XML reports from the local API proxy.</span>
+                <span>
+                  Reading validation runs and XML reports from the local API proxy.
+                </span>
               </div>
 
               <div>
@@ -918,7 +771,8 @@ export default function WorkspaceValidationRunsPage() {
               <div>
                 <strong>No reports yet</strong>
                 <span>
-                  Create a validation run or upload XML to populate this report queue.
+                  Create a validation run or upload XML to populate this API-owned
+                  report queue.
                 </span>
               </div>
 
@@ -944,10 +798,8 @@ export default function WorkspaceValidationRunsPage() {
                     Source:{" "}
                     {item.sourceType === "xml_readiness"
                       ? "XML readiness report"
-                      : item.sourceType === "validation_run"
-                        ? "Structured validation run"
-                        : "Demo validation report"}
-                    . Findings: {item.findingsCount}.
+                      : "Structured validation run"}
+                    . Findings: {item.findingsCount}. Amount: {item.amountLabel}.
                   </span>
 
                   <div className="workspace-row-actions">
@@ -1041,6 +893,20 @@ export default function WorkspaceValidationRunsPage() {
               </div>
 
               <span>info</span>
+            </div>
+          ) : !latestRunDetail ? (
+            <div className="finding-console-row">
+              <AlertTriangle size={18} />
+
+              <div>
+                <strong>VALIDATION_DETAIL_NOT_LOADED</strong>
+                <p>
+                  The latest validation run summary is available, but its detailed
+                  findings could not be loaded for this preview.
+                </p>
+              </div>
+
+              <span>warning</span>
             </div>
           ) : latestFindings.length === 0 ? (
             <div className="finding-console-row">

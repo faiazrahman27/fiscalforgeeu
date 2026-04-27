@@ -23,7 +23,7 @@ const notices = [
     icon: <Scale size={22} />,
     title: "Not legal or tax advice",
     description:
-      "The platform can provide technical validation and educational simulations, but it must never present its output as legal, tax, accounting, financial, or professional advice."
+      "The platform can provide technical validation and readiness simulations, but it must never present its output as legal, tax, accounting, financial, or professional advice."
   },
   {
     icon: <Ban size={22} />,
@@ -35,7 +35,7 @@ const notices = [
     icon: <FileText size={22} />,
     title: "Source-linked rule packs",
     description:
-      "Country and legal-context rules must be source-linked, versioned, reviewed, and clearly marked as educational simulations when professional interpretation is required."
+      "Country-context and standards-style rules must be source-linked, versioned, reviewed, and clearly marked as simulations when professional interpretation is required."
   }
 ];
 
@@ -59,9 +59,10 @@ export default function BoundariesPage() {
             </h1>
 
             <p className="subpage-lead">
-              Invoice Lantern can be useful only if its claims are precise. The platform
-              should communicate strong technical competence while never implying official
-              certification, tax authority acceptance, legal advice, or guaranteed compliance.
+              Invoice Lantern can be useful only if its claims are precise. The
+              platform should communicate strong technical competence while never
+              implying official certification, tax authority acceptance, legal
+              advice, or guaranteed compliance.
             </p>
           </Reveal>
 
@@ -97,7 +98,7 @@ export default function BoundariesPage() {
 
           <div className="next-page-row">
             <Link href="/workspace" className="text-link-button">
-              Continue to Sandbox
+              Continue to Workspace
               <ArrowRight size={18} />
             </Link>
           </div>

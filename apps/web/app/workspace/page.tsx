@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -14,56 +17,51 @@ import {
   UploadCloud
 } from "lucide-react";
 
-const stats = [
-  {
-    label: "Draft invoices",
-    value: "12",
-    note: "Structured invoice drafts prepared for validation."
-  },
-  {
-    label: "Validation runs",
-    value: "28",
-    note: "Technical checks, warnings, and simulation results."
-  },
-  {
-    label: "Open findings",
-    value: "7",
-    note: "Issues requiring user review before export."
-  },
-  {
-    label: "API requests",
-    value: "184",
-    note: "Sandbox calls recorded for future API testing."
-  }
-];
+type DashboardCounts = {
+  invoiceDrafts: number | null;
+  validationRuns: number | null;
+  xmlReadinessReports: number | null;
+  openFindings: number | null;
+};
+
+type ApiRecordListResponse = {
+  records?: unknown[];
+};
+
+const emptyCounts: DashboardCounts = {
+  invoiceDrafts: null,
+  validationRuns: null,
+  xmlReadinessReports: null,
+  openFindings: null
+};
 
 const commandFlow = [
   {
     icon: <ReceiptText size={20} />,
     title: "Create invoice data",
     description:
-      "Build canonical invoice data from seller, buyer, document, payment, VAT, and line-item inputs.",
+      "Build structured invoice data from seller, buyer, document, payment, VAT, and line-item inputs.",
     href: "/workspace/invoices/new"
   },
   {
     icon: <Activity size={20} />,
     title: "Run validation",
     description:
-      "Inspect schema readiness, calculation logic, VAT-number format, legal-confidence labels, and simulation warnings.",
+      "Inspect schema readiness, calculation logic, VAT-number format, confidence labels, and simulation warnings.",
     href: "/workspace/validation-runs"
   },
   {
     icon: <UploadCloud size={20} />,
     title: "Upload XML",
     description:
-      "Inspect XML structure, detect basic invoice fields, and prepare future UBL validation-worker handoff.",
+      "Inspect XML structure, detect invoice fields, review profile signals, and create API-owned XML readiness reports.",
     href: "/workspace/xml-upload"
   },
   {
     icon: <KeyRound size={20} />,
     title: "Prepare API testing",
     description:
-      "Model sandbox API keys, request logs, webhook tests, scoped access, and rate-limited endpoint behavior.",
+      "Model API keys, request logs, webhook tests, scoped access, and rate-limited endpoint behavior.",
     href: "/workspace/developer"
   }
 ];
@@ -75,7 +73,221 @@ const alerts = [
   "XML upload must block DTD, XXE, external entities, oversized files, and unsafe parser behavior."
 ];
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readResponseBody(response: Response) {
+  const responseText = await response.text();
+
+  if (!responseText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(responseText) as unknown;
+  } catch {
+    return responseText;
+  }
+}
+
+function getRecordsFromResponse(data: unknown) {
+  if (!isPlainObject(data) || !Array.isArray(data.records)) {
+    return [];
+  }
+
+  return data.records;
+}
+
+function readFindingCount(record: unknown) {
+  if (!isPlainObject(record)) {
+    return 0;
+  }
+
+  const directFindingsCount = record.findingsCount;
+
+  if (
+    typeof directFindingsCount === "number" &&
+    Number.isFinite(directFindingsCount)
+  ) {
+    return directFindingsCount;
+  }
+
+  if (Array.isArray(record.findings)) {
+    return record.findings.length;
+  }
+
+  if (isPlainObject(record.summary)) {
+    const summaryFindingsCount = record.summary.findingsCount;
+
+    if (
+      typeof summaryFindingsCount === "number" &&
+      Number.isFinite(summaryFindingsCount)
+    ) {
+      return summaryFindingsCount;
+    }
+  }
+
+  return 0;
+}
+
+function formatCount(value: number | null, isLoading: boolean) {
+  if (isLoading) {
+    return "Loading";
+  }
+
+  if (value === null) {
+    return "Not available";
+  }
+
+  return String(value);
+}
+
+function buildStats(counts: DashboardCounts, isLoading: boolean) {
+  return [
+    {
+      label: "Draft invoices",
+      value: formatCount(counts.invoiceDrafts, isLoading),
+      note:
+        counts.invoiceDrafts === null && !isLoading
+          ? "Could not read API-owned invoice draft count."
+          : "API-owned invoice drafts. No demo records are counted here."
+    },
+    {
+      label: "Validation runs",
+      value: formatCount(counts.validationRuns, isLoading),
+      note:
+        counts.validationRuns === null && !isLoading
+          ? "Could not read API-owned validation run count."
+          : "API-owned structured validation runs."
+    },
+    {
+      label: "XML reports",
+      value: formatCount(counts.xmlReadinessReports, isLoading),
+      note:
+        counts.xmlReadinessReports === null && !isLoading
+          ? "Could not read API-owned XML readiness report count."
+          : "API-owned XML readiness reports created from uploaded XML."
+    },
+    {
+      label: "Returned findings",
+      value: formatCount(counts.openFindings, isLoading),
+      note:
+        counts.openFindings === null && !isLoading
+          ? "Could not calculate findings from API-owned records."
+          : "Findings returned by real validation or XML readiness checks."
+    }
+  ];
+}
+
 export default function WorkspacePage() {
+  const [counts, setCounts] = useState<DashboardCounts>(emptyCounts);
+  const [isLoadingCounts, setIsLoadingCounts] = useState(true);
+  const [dashboardMessage, setDashboardMessage] = useState("");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDashboardCounts() {
+      setIsLoadingCounts(true);
+      setDashboardMessage("");
+
+      const nextCounts: DashboardCounts = {
+        invoiceDrafts: null,
+        validationRuns: null,
+        xmlReadinessReports: null,
+        openFindings: null
+      };
+
+      const messages: string[] = [];
+      let validationFindings = 0;
+      let xmlFindings = 0;
+
+      try {
+        const response = await fetch("/api/local/invoices/drafts", {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        const responseData = await readResponseBody(response);
+
+        if (response.ok) {
+          const records = getRecordsFromResponse(responseData);
+          nextCounts.invoiceDrafts = records.length;
+        } else {
+          messages.push("Invoice draft count is unavailable.");
+        }
+      } catch {
+        messages.push("Invoice draft count is unavailable.");
+      }
+
+      try {
+        const response = await fetch("/api/local/validation-runs", {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        const responseData = await readResponseBody(response);
+
+        if (response.ok) {
+          const records = getRecordsFromResponse(responseData);
+          nextCounts.validationRuns = records.length;
+          validationFindings = records.reduce((sum, record) => {
+            return sum + readFindingCount(record);
+          }, 0);
+        } else {
+          messages.push("Validation run count is unavailable.");
+        }
+      } catch {
+        messages.push("Validation run count is unavailable.");
+      }
+
+      try {
+        const response = await fetch("/api/local/xml/uploads", {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        const responseData = await readResponseBody(response);
+
+        if (response.ok) {
+          const records = getRecordsFromResponse(responseData);
+          nextCounts.xmlReadinessReports = records.length;
+          xmlFindings = records.reduce((sum, record) => {
+            return sum + readFindingCount(record);
+          }, 0);
+        } else {
+          messages.push("XML readiness report count is unavailable.");
+        }
+      } catch {
+        messages.push("XML readiness report count is unavailable.");
+      }
+
+      if (
+        nextCounts.validationRuns !== null ||
+        nextCounts.xmlReadinessReports !== null
+      ) {
+        nextCounts.openFindings = validationFindings + xmlFindings;
+      }
+
+      if (isMounted) {
+        setCounts(nextCounts);
+        setDashboardMessage(messages.join(" "));
+        setIsLoadingCounts(false);
+      }
+    }
+
+    loadDashboardCounts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const stats = useMemo(() => {
+    return buildStats(counts, isLoadingCounts);
+  }, [counts, isLoadingCounts]);
+
   return (
     <div className="workspace-page">
       <section className="workspace-hero">
@@ -87,9 +299,9 @@ export default function WorkspacePage() {
           </h2>
 
           <p>
-            This is the future authenticated product shell. The interface is shaped
-            around the real Invoice Lantern workflow: invoice creation, validation,
-            XML handling, API testing, audit trails, and privacy controls.
+            This workspace is shaped around the real Invoice Lantern workflow:
+            invoice creation, validation, XML handling, API testing, audit trails,
+            and privacy controls.
           </p>
         </div>
       </section>
@@ -103,6 +315,17 @@ export default function WorkspacePage() {
           </div>
         ))}
       </section>
+
+      {dashboardMessage ? (
+        <section className="workspace-alerts">
+          <div className="alert-list">
+            <div className="alert-item">
+              <span />
+              <p>{dashboardMessage}</p>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="workspace-command-grid">
         <div className="workspace-flow">
@@ -146,9 +369,9 @@ export default function WorkspacePage() {
           <Database size={24} />
           <h3>Product data layer</h3>
           <p>
-            The frontend will later consume invoices, validation runs, API requests,
-            privacy settings, audit events, and rule-pack metadata from the dedicated API
-            service.
+            The frontend consumes invoice drafts, validation runs, XML readiness
+            reports, privacy settings, and future audit events from the dedicated
+            API service. No demo records are shown as product data.
           </p>
         </div>
 
@@ -156,8 +379,8 @@ export default function WorkspacePage() {
           <ShieldCheck size={24} />
           <h3>Security-first shell</h3>
           <p>
-            The interface is planned around organization ownership, RBAC, secure API key
-            management, XML upload limits, audit logs, and GDPR-oriented controls.
+            The interface is planned around organization ownership, RBAC, secure API
+            key management, XML upload limits, audit logs, and GDPR-oriented controls.
           </p>
         </div>
       </section>
@@ -169,8 +392,8 @@ export default function WorkspacePage() {
           </div>
           <h3>Invoice studio</h3>
           <p>
-            Create structured invoice records from canonical fields, not scanned pixels or
-            untrusted visual extraction.
+            Create structured invoice records from canonical fields, not scanned
+            pixels or untrusted visual extraction.
           </p>
         </div>
 
@@ -180,8 +403,8 @@ export default function WorkspacePage() {
           </div>
           <h3>XML handling</h3>
           <p>
-            Prepare UBL XML generation, parsing, upload checks, safe parser behavior, and
-            validation-worker handoff.
+            Build toward UBL XML generation, parsing, upload checks, safe parser
+            behavior, and validation-worker handoff.
           </p>
         </div>
 
@@ -191,7 +414,7 @@ export default function WorkspacePage() {
           </div>
           <h3>API layer</h3>
           <p>
-            Keep web and API separated. The API will own validation, exports, logs, keys,
+            Keep web and API separated. The API owns validation, exports, logs, keys,
             webhooks, and rate limits.
           </p>
         </div>

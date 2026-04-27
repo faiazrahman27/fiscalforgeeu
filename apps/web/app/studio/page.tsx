@@ -29,13 +29,13 @@ const studioModules = [
     icon: <FileText size={22} />,
     title: "Canonical preview",
     description:
-      "Every user input becomes a CanonicalInvoice shape before validation, XML export, parsing, reporting, or API use."
+      "User input is prepared as structured invoice data before validation, XML preparation, reporting, or API use."
   },
   {
     icon: <WandSparkles size={22} />,
     title: "UBL preparation",
     description:
-      "Prepare invoice data for UBL XML generation while keeping the technical and legal boundaries clear."
+      "Prepare invoice data for UBL-style XML output while keeping technical, legal, tax, Peppol, EN 16931, ViDA, and authority boundaries clear."
   }
 ];
 
@@ -59,10 +59,11 @@ export default function StudioPage() {
             </h1>
 
             <p className="subpage-lead">
-              The Studio is the user-facing invoice creation layer. It turns business
-              data, buyer and seller profiles, invoice lines, VAT categories, and payment
-              information into a canonical invoice model that can later be validated,
-              exported, parsed, and reported.
+              The Studio is the user-facing invoice creation layer. It turns
+              business data, buyer and seller profiles, invoice lines, VAT
+              categories, and payment information into structured invoice data
+              that can later support validation, XML preparation, parsing, and
+              reporting workflows.
             </p>
           </Reveal>
 
@@ -82,7 +83,7 @@ export default function StudioPage() {
             <div className="deep-panel">
               <div>
                 <p className="section-kicker">Studio workflow</p>
-                <h2>From human invoice input to canonical invoice data.</h2>
+                <h2>From human invoice input to structured invoice data.</h2>
               </div>
 
               <div className="deep-list">

@@ -74,7 +74,10 @@ export type ValidationStatus =
   | "Passed"
   | "Failed"
   | "Warning"
-  | "Review required";
+  | "Review required"
+  | "API-backed"
+  | "Planned"
+  | "Simulation only";
 
 export type ValidationRunLayer = {
   iconKey: WorkspaceIconKey;
@@ -115,13 +118,7 @@ export type ApiEventPreview = {
 export type DeveloperEndpointPreview = {
   method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
-  payload: {
-    keyPrefix: string;
-    scope: string;
-    rateLimit: string;
-    status: string;
-    note: string;
-  };
+  payload: Record<string, string>;
 };
 
 export type PrivacyControl = {

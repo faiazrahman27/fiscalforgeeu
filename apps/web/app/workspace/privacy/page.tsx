@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   Archive,
   Download,
@@ -6,14 +7,11 @@ import {
   LockKeyhole,
   Trash2
 } from "lucide-react";
-import {
-  privacyControls,
-  retentionPolicies
-} from "../../../lib/mock-data";
+import { privacyControls, retentionPolicies } from "../../../lib/mock-data";
 import type { WorkspaceIconKey } from "../../../lib/types";
 
 function getPrivacyIcon(iconKey: WorkspaceIconKey) {
-  const icons: Record<string, React.ReactNode> = {
+  const icons: Record<string, ReactNode> = {
     dataExport: <Download size={22} />,
     deletion: <Trash2 size={22} />,
     retention: <Archive size={22} />,
@@ -30,9 +28,9 @@ export default function WorkspacePrivacyPage() {
         <p className="workspace-kicker">Privacy and Audit</p>
         <h2>GDPR-oriented controls for invoice data.</h2>
         <p>
-          Invoices may contain personal data. This screen will later expose privacy
-          controls, retention policies, audit events, exports, deletion requests, and
-          data minimisation settings.
+          Invoices may contain personal data. This workspace area is reserved for
+          privacy controls, retention configuration, audit events, data exports,
+          deletion requests, and data minimisation settings.
         </p>
       </section>
 
@@ -49,8 +47,8 @@ export default function WorkspacePrivacyPage() {
       <section className="privacy-retention">
         <div className="privacy-retention-head">
           <div>
-            <p>Default retention policy</p>
-            <h3>Configurable by organization later</h3>
+            <p>Retention configuration</p>
+            <h3>No retention policy is active yet</h3>
           </div>
 
           <LockKeyhole size={26} />

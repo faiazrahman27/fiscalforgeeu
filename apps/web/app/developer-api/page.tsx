@@ -16,7 +16,7 @@ const apiModules = [
     icon: <Braces size={22} />,
     title: "Validation endpoint",
     description:
-      "POST structured invoice JSON and receive a validation run ID, status fields, findings, rule versions, and safe disclaimers."
+      "POST structured invoice JSON and receive a validation run ID, status fields, findings, confidence labels, and safe disclaimers."
   },
   {
     icon: <KeyRound size={22} />,
@@ -28,13 +28,13 @@ const apiModules = [
     icon: <RadioTower size={22} />,
     title: "Webhook simulator",
     description:
-      "Developers can test webhook delivery for validation results, XML generation events, and report availability without official filing."
+      "Developers should be able to test webhook delivery for validation results, XML generation events, and report availability without official filing."
   },
   {
     icon: <ShieldCheck size={22} />,
     title: "Security controls",
     description:
-      "Every endpoint will need schema validation, object authorization, rate limits, input size limits, and audit logging."
+      "Every endpoint needs schema validation, object authorization, rate limits, input size limits, secure API-key handling, and audit logging."
   }
 ];
 
@@ -58,9 +58,10 @@ export default function DeveloperApiPage() {
             </h1>
 
             <p className="subpage-lead">
-              The Developer API will expose validation, UBL export, XML parsing,
-              VAT-number checks, ViDA simulation, country packs, rule sets, validation
-              runs, and webhook testing through secure organization-aware endpoints.
+              The Developer API is being built to expose validation, UBL export,
+              XML parsing, VAT-number checks, ViDA simulation, country packs, rule
+              sets, validation runs, and webhook testing through secure
+              organization-aware endpoints.
             </p>
           </Reveal>
 
@@ -86,22 +87,20 @@ export default function DeveloperApiPage() {
               </div>
 
               <pre>{`{
-  "validationRunId": "val_01HXABC",
-  "valid": false,
-  "technicalStatus": "failed",
-  "standardStatus": "warning",
-  "countrySimulationStatus": "review_required",
-  "vidaReadinessStatus": "relevant_simulation",
+  "validationRunId": "<generated-validation-run-id>",
+  "technicalStatus": "passed_or_failed",
+  "standardStatus": "ready_or_warning",
+  "countrySimulationStatus": "not_relevant_or_review_required",
+  "vidaReadinessStatus": "not_relevant_or_relevant_simulation",
   "findings": [
     {
-      "code": "BUYER_VAT_ID_REQUIRED",
-      "severity": "fatal",
-      "category": "VAT_ID",
-      "field": "buyer.vatId",
-      "legalConfidence": "educational_simulation"
+      "code": "<finding-code>",
+      "severity": "info_warning_or_fatal",
+      "field": "<field-path>",
+      "confidence": "technical_or_simulation_or_review_required"
     }
   ],
-  "disclaimer": "This validation is not legal, tax, or accounting advice."
+  "disclaimer": "This result is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
 }`}</pre>
             </div>
           </Reveal>

@@ -19,23 +19,23 @@ import type {
 export const commandStats: WorkspaceStat[] = [
   {
     label: "Draft invoices",
-    value: "12",
-    detail: "Structured invoice drafts ready for validation"
+    value: "0",
+    detail: "API-owned invoice drafts created in this workspace"
   },
   {
     label: "Validation runs",
-    value: "38",
-    detail: "Technical, standard-style, and simulation results"
+    value: "0",
+    detail: "API-owned validation and readiness reports"
   },
   {
     label: "Open findings",
-    value: "7",
-    detail: "Items requiring review before export"
+    value: "0",
+    detail: "Findings returned by real validation or XML readiness runs"
   },
   {
     label: "API requests",
-    value: "184",
-    detail: "Sandbox requests during the current cycle"
+    value: "0",
+    detail: "Request logging is not connected to this dashboard yet"
   }
 ];
 
@@ -58,7 +58,7 @@ export const commandFlow: WorkspaceAction[] = [
     iconKey: "developer",
     title: "Test API behavior",
     description:
-      "Use sandbox endpoint previews, API keys, webhook simulations, scopes, and request logs.",
+      "Review endpoint behavior, API key boundaries, webhook events, scopes, and request-log planning.",
     href: "/workspace/developer"
   },
   {
@@ -70,28 +70,7 @@ export const commandFlow: WorkspaceAction[] = [
   }
 ];
 
-export const workspaceAlerts: WorkspaceAlert[] = [
-  {
-    id: "alert_buyer_vat_missing",
-    message: "Buyer VAT ID missing in IL-2026-001",
-    severity: "fatal"
-  },
-  {
-    id: "alert_review_required",
-    message: "One validation report requires professional review",
-    severity: "warning"
-  },
-  {
-    id: "alert_country_pack_review",
-    message: "Country-pack source review is due for HU simulation",
-    severity: "warning"
-  },
-  {
-    id: "alert_xml_policy",
-    message: "XML upload limit policy is active: 5 MB",
-    severity: "info"
-  }
-];
+export const workspaceAlerts: WorkspaceAlert[] = [];
 
 export const workspaceMapCards: WorkspaceMapCard[] = [
   {
@@ -135,98 +114,40 @@ export const invoiceStages: InvoiceStage[] = [
   }
 ];
 
-export const invoiceDrafts: InvoiceDraft[] = [
-  {
-    id: "inv_001",
-    number: "IL-2026-001",
-    buyer: "Berlin Digital GmbH",
-    buyerCountry: "DE",
-    issueDate: "2026-04-25",
-    status: "Review required",
-    amount: "€1,240.00",
-    currency: "EUR"
-  },
-  {
-    id: "inv_002",
-    number: "IL-2026-002",
-    buyer: "Debrecen Research Lab",
-    buyerCountry: "HU",
-    issueDate: "2026-04-25",
-    status: "Draft",
-    amount: "€680.00",
-    currency: "EUR"
-  },
-  {
-    id: "inv_003",
-    number: "IL-2026-003",
-    buyer: "Milan Studio SRL",
-    buyerCountry: "IT",
-    issueDate: "2026-04-25",
-    status: "Validation failed",
-    amount: "€2,450.00",
-    currency: "EUR"
-  }
-];
+export const invoiceDrafts: InvoiceDraft[] = [];
 
 export const validationRunLayers: ValidationRunLayer[] = [
   {
     iconKey: "schema",
     title: "Input schema",
-    status: "Passed",
+    status: "API-backed",
     description:
       "Payload structure, required fields, length limits, and unexpected fields."
   },
   {
     iconKey: "calculation",
     title: "Calculation logic",
-    status: "Failed",
+    status: "API-backed",
     description:
       "Line net amount, taxable amount, VAT amount, allowances, charges, and payable total."
   },
   {
     iconKey: "ubl",
     title: "UBL mapping",
-    status: "Warning",
+    status: "Planned",
     description:
-      "Canonical data can be exported to UBL, but buyer VAT ID is missing for the simulated scenario."
+      "Canonical invoice data should be exportable to UBL XML with clear readiness and review signals."
   },
   {
     iconKey: "legal",
     title: "Legal-confidence label",
-    status: "Review required",
+    status: "Simulation only",
     description:
-      "The current finding is educational simulation only and requires professional review."
+      "Findings remain technical, educational simulation, or review-required. They do not become official legal, tax, Peppol, EN 16931, ViDA, government, or authority validation."
   }
 ];
 
-export const validationFindings: ValidationFindingPreview[] = [
-  {
-    code: "BR-CO-10",
-    severity: "fatal",
-    category: "CALCULATION",
-    field: "totals.payableAmount",
-    legalConfidence: "standard_based",
-    message:
-      "Invoice total does not match the calculated sum of line totals, taxes, allowances, and charges."
-  },
-  {
-    code: "BUYER_VAT_ID_REQUIRED",
-    severity: "fatal",
-    category: "VAT_ID",
-    field: "buyer.vatId",
-    legalConfidence: "educational_simulation",
-    message: "Buyer VAT ID is required for this intra-EU B2B simulation."
-  },
-  {
-    code: "INTRA_EU_B2B_REVERSE_CHARGE_WARNING",
-    severity: "warning",
-    category: "COUNTRY_PACK",
-    field: "transaction",
-    legalConfidence: "educational_simulation",
-    message:
-      "This transaction appears to match a possible intra-EU B2B reverse-charge scenario."
-  }
-];
+export const validationFindings: ValidationFindingPreview[] = [];
 
 export const apiControls: ApiControl[] = [
   {
@@ -278,11 +199,11 @@ export const developerEndpointPreview: DeveloperEndpointPreview = {
   method: "POST",
   path: "/api/v1/invoices/validate",
   payload: {
-    keyPrefix: "il_test_4x9p",
+    keyPrefix: "not_configured",
     scope: "invoices:validate",
-    rateLimit: "120 requests / minute",
-    status: "sandbox_ready",
-    note: "API keys are never stored in plain text."
+    rateLimit: "configured by API middleware",
+    status: "development_preview",
+    note: "API keys must never be stored in plain text."
   }
 };
 
@@ -316,27 +237,28 @@ export const privacyControls: PrivacyControl[] = [
 export const retentionPolicies: RetentionPolicyRow[] = [
   {
     label: "Uploaded XML files",
-    value: "30 days"
+    value: "Not configured"
   },
   {
     label: "API logs",
-    value: "90 days"
+    value: "Not configured"
   },
   {
     label: "Validation reports",
-    value: "12 months"
+    value: "Not configured"
   },
   {
     label: "Audit logs",
-    value: "12 months"
+    value: "Not configured"
   },
   {
     label: "Deleted account data",
-    value: "Purge within 30 days"
+    value: "Not configured"
   }
 ];
 
 export const countryOptions: SelectOption[] = [
+  { label: "Select country", value: "" },
   { label: "Hungary", value: "HU" },
   { label: "Germany", value: "DE" },
   { label: "Italy", value: "IT" },
@@ -364,60 +286,50 @@ export const vatCategoryOptions: SelectOption[] = [
 
 export const invoiceEditorDraft: InvoiceEditorDraft = {
   document: {
-    number: "IL-2026-004",
-    issueDate: "2026-04-25",
-    dueDate: "2026-05-25",
+    number: "",
+    issueDate: new Date().toISOString().slice(0, 10),
+    dueDate: "",
     currency: "EUR",
     invoiceType: "invoice",
-    profile: "PEPPOL_BIS_3",
-    buyerReference: "BR-DE-2048",
-    contractReference: "CTR-VIDA-SANDBOX"
+    profile: "EN16931",
+    buyerReference: "",
+    contractReference: ""
   },
   seller: {
-    name: "Invoice Lantern Demo Studio",
-    country: "HU",
-    vatId: "HU12345678",
-    city: "Debrecen",
-    postalCode: "4024",
-    street: "Sandbox Street 12",
-    electronicAddress: "9908:demo-seller"
+    name: "",
+    country: "",
+    vatId: "",
+    city: "",
+    postalCode: "",
+    street: "",
+    electronicAddress: ""
   },
   buyer: {
-    name: "Berlin Digital GmbH",
-    country: "DE",
-    vatId: "DE123456789",
-    city: "Berlin",
-    postalCode: "10115",
-    street: "Invalidenstrasse 44",
-    electronicAddress: "0088:buyer-demo"
+    name: "",
+    country: "",
+    vatId: "",
+    city: "",
+    postalCode: "",
+    street: "",
+    electronicAddress: ""
   },
   lines: [
     {
       id: "1",
-      description: "E-invoice validation sandbox consulting",
-      quantity: "10",
-      unitCode: "HUR",
-      unitPrice: "95.00",
-      vatCategory: "AE",
-      vatRate: "0",
-      netAmount: "950.00"
-    },
-    {
-      id: "2",
-      description: "Structured invoice data modelling session",
-      quantity: "2",
+      description: "",
+      quantity: "1",
       unitCode: "EA",
-      unitPrice: "145.00",
-      vatCategory: "AE",
+      unitPrice: "0.00",
+      vatCategory: "S",
       vatRate: "0",
-      netAmount: "290.00"
+      netAmount: "0.00"
     }
   ],
   totals: {
-    lineExtensionAmount: "1240.00",
-    taxExclusiveAmount: "1240.00",
+    lineExtensionAmount: "0.00",
+    taxExclusiveAmount: "0.00",
     taxAmount: "0.00",
-    taxInclusiveAmount: "1240.00",
-    payableAmount: "1240.00"
+    taxInclusiveAmount: "0.00",
+    payableAmount: "0.00"
   }
 };

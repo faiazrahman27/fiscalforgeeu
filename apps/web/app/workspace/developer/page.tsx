@@ -14,11 +14,7 @@ import {
   ShieldCheck,
   Trash2
 } from "lucide-react";
-import {
-  apiControls,
-  apiEventTypes,
-  developerEndpointPreview
-} from "../../../lib/mock-data";
+import { apiControls, apiEventTypes } from "../../../lib/mock-data";
 import type { WorkspaceIconKey } from "../../../lib/types";
 
 type ApiKeyStatus = "active" | "revoked";
@@ -46,55 +42,20 @@ type RequestLog = {
 const API_KEY_STORAGE_KEY = "invoice-lantern.workspace.apiKeys";
 const REQUEST_LOG_STORAGE_KEY = "invoice-lantern.workspace.requestLogs";
 
-const defaultApiKeys: SandboxApiKey[] = [
-  {
-    id: "key_sbx_001",
-    name: "Local validation testing",
-    prefix: "il_sbx",
-    lastFour: "A19K",
-    scopes: ["invoices:read", "validation:run", "reports:read"],
-    createdAt: "2026-04-24 16:20",
-    lastUsedAt: "2026-04-24 18:10",
-    status: "active"
-  },
-  {
-    id: "key_sbx_002",
-    name: "Webhook simulation client",
-    prefix: "il_sbx",
-    lastFour: "Q72M",
-    scopes: ["webhooks:test", "validation:read"],
-    createdAt: "2026-04-22 11:45",
-    lastUsedAt: "Never",
-    status: "active"
+const endpointPreview = {
+  method: "POST",
+  path: "/api/v1/invoices/validate",
+  payload: {
+    requiredHeaders: ["content-type: application/json", "x-api-key: <api-key>"],
+    requiredScope: "validation:run",
+    rateLimit: "Configured on the API service",
+    status: "planned developer test surface",
+    note: "Real API keys must be stored securely and shown only once."
   }
-];
+};
 
-const defaultRequestLogs: RequestLog[] = [
-  {
-    id: "req_001",
-    method: "POST",
-    path: "/api/v1/invoices/validate",
-    status: 422,
-    latency: "84ms",
-    createdAt: "2026-04-24 18:10"
-  },
-  {
-    id: "req_002",
-    method: "GET",
-    path: "/api/v1/validation-runs/val_01HXABC",
-    status: 200,
-    latency: "39ms",
-    createdAt: "2026-04-24 18:11"
-  },
-  {
-    id: "req_003",
-    method: "POST",
-    path: "/api/v1/webhooks/test",
-    status: 202,
-    latency: "121ms",
-    createdAt: "2026-04-24 18:13"
-  }
-];
+const legacySeedApiKeyIds = new Set(["key_sbx_001", "key_sbx_002"]);
+const legacySeedRequestLogIds = new Set(["req_001", "req_002", "req_003"]);
 
 function getDeveloperIcon(iconKey: WorkspaceIconKey) {
   const icons: Record<string, ReactNode> = {
@@ -137,36 +98,146 @@ function generateApiKeyValue() {
   return `il_sbx_${secret}`;
 }
 
-function readStoredArray<T>(key: string, fallback: T[]): T[] {
+function isApiKeyStatus(value: unknown): value is ApiKeyStatus {
+  return value === "active" || value === "revoked";
+}
+
+function readStringField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: string
+) {
+  const value = record[key];
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return fallback;
+}
+
+function readNumberField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: number
+) {
+  const value = record[key];
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  return fallback;
+}
+
+function readStringArrayField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
+function normalizeApiKey(value: unknown): SandboxApiKey | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = readStringField(record, "id", "");
+
+  if (!id || legacySeedApiKeyIds.has(id)) {
+    return null;
+  }
+
+  const lastFour = readStringField(record, "lastFour", "");
+
+  if (!lastFour) {
+    return null;
+  }
+
+  const status = isApiKeyStatus(record.status) ? record.status : "active";
+
+  return {
+    id,
+    name: readStringField(record, "name", "Sandbox API key"),
+    prefix: readStringField(record, "prefix", "il_sbx"),
+    lastFour,
+    scopes: readStringArrayField(record, "scopes"),
+    createdAt: readStringField(record, "createdAt", "Unknown"),
+    lastUsedAt: readStringField(record, "lastUsedAt", "Never"),
+    status
+  };
+}
+
+function normalizeRequestLog(value: unknown): RequestLog | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = readStringField(record, "id", "");
+
+  if (!id || legacySeedRequestLogIds.has(id)) {
+    return null;
+  }
+
+  const path = readStringField(record, "path", "");
+
+  if (!path) {
+    return null;
+  }
+
+  return {
+    id,
+    method: readStringField(record, "method", "GET").toUpperCase(),
+    path,
+    status: readNumberField(record, "status", 0),
+    latency: readStringField(record, "latency", "0ms"),
+    createdAt: readStringField(record, "createdAt", "Unknown")
+  };
+}
+
+function readStoredArray<T>(
+  key: string,
+  normalizeItem: (value: unknown) => T | null
+): T[] {
   if (typeof window === "undefined") {
-    return fallback;
+    return [];
   }
 
   const storedValue = window.localStorage.getItem(key);
 
   if (!storedValue) {
-    return fallback;
+    return [];
   }
 
   try {
     const parsed: unknown = JSON.parse(storedValue);
 
     if (!Array.isArray(parsed)) {
-      return fallback;
+      return [];
     }
 
-    return parsed as T[];
+    return parsed
+      .map((item) => normalizeItem(item))
+      .filter((item): item is T => item !== null);
   } catch {
-    return fallback;
+    return [];
   }
 }
 
 export default function WorkspaceDeveloperPage() {
-  const [apiKeys, setApiKeys] = useState<SandboxApiKey[]>(defaultApiKeys);
-  const [requestLogs, setRequestLogs] =
-    useState<RequestLog[]>(defaultRequestLogs);
-  const [generatedKey, setGeneratedKey] = useState<string>("");
-  const [copyMessage, setCopyMessage] = useState<string>("");
+  const [apiKeys, setApiKeys] = useState<SandboxApiKey[]>([]);
+  const [requestLogs, setRequestLogs] = useState<RequestLog[]>([]);
+  const [generatedKey, setGeneratedKey] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
 
   const activeKeyCount = useMemo(() => {
@@ -180,12 +251,12 @@ export default function WorkspaceDeveloperPage() {
   useEffect(() => {
     const storedApiKeys = readStoredArray<SandboxApiKey>(
       API_KEY_STORAGE_KEY,
-      defaultApiKeys
+      normalizeApiKey
     );
 
     const storedRequestLogs = readStoredArray<RequestLog>(
       REQUEST_LOG_STORAGE_KEY,
-      defaultRequestLogs
+      normalizeRequestLog
     );
 
     setApiKeys(storedApiKeys);
@@ -247,6 +318,10 @@ export default function WorkspaceDeveloperPage() {
     );
   }
 
+  function deleteSandboxKey(keyId: string) {
+    setApiKeys((current) => current.filter((apiKey) => apiKey.id !== keyId));
+  }
+
   async function copyGeneratedKey() {
     if (!generatedKey) {
       return;
@@ -270,14 +345,18 @@ export default function WorkspaceDeveloperPage() {
 
     const nextLog: RequestLog = {
       id: `req_${Date.now()}`,
-      method: developerEndpointPreview.method,
-      path: developerEndpointPreview.path,
-      status: 422,
+      method: endpointPreview.method,
+      path: endpointPreview.path,
+      status: activeKeyCount > 0 ? 202 : 401,
       latency: `${Math.floor(55 + Math.random() * 120)}ms`,
       createdAt: now
     };
 
-    setRequestLogs((current) => [nextLog, ...current].slice(0, 8));
+    setRequestLogs((current) => [nextLog, ...current].slice(0, 20));
+  }
+
+  function clearRequestLogs() {
+    setRequestLogs([]);
   }
 
   return (
@@ -287,8 +366,8 @@ export default function WorkspaceDeveloperPage() {
         <h2>Sandbox API controls without production risk.</h2>
         <p>
           This screen models the future developer console for API keys, scoped
-          access, request logs, endpoint testing, OpenAPI documentation, and
-          webhook simulation. Everything here is still local browser-side state.
+          access, local request-test events, endpoint previews, OpenAPI planning,
+          and webhook simulation. No seeded demo keys or seeded demo logs are shown.
         </p>
       </section>
 
@@ -306,19 +385,19 @@ export default function WorkspaceDeveloperPage() {
         <div className="workspace-stat">
           <p>Active keys</p>
           <strong>{activeKeyCount}</strong>
-          <span>Local sandbox API keys currently marked as usable.</span>
+          <span>Sandbox API keys currently marked as usable.</span>
         </div>
 
         <div className="workspace-stat">
           <p>Revoked keys</p>
           <strong>{revokedKeyCount}</strong>
-          <span>Keys disabled from the local developer console preview.</span>
+          <span>Keys disabled from this developer console.</span>
         </div>
 
         <div className="workspace-stat">
-          <p>Recent requests</p>
+          <p>Local test events</p>
           <strong>{requestLogs.length}</strong>
-          <span>Browser-side request log entries for API interface testing.</span>
+          <span>Request-test entries generated from this console.</span>
         </div>
 
         <div className="workspace-stat">
@@ -376,98 +455,168 @@ export default function WorkspaceDeveloperPage() {
         </div>
 
         <div className="workspace-table">
-          {apiKeys.map((apiKey) => (
-            <div className="workspace-table-row" key={apiKey.id}>
+          {apiKeys.length === 0 ? (
+            <div className="workspace-table-row">
               <div>
-                <strong>{apiKey.name}</strong>
-                <span>
-                  {apiKey.prefix}************{apiKey.lastFour}
-                </span>
+                <strong>No sandbox API keys</strong>
+                <span>Create a key to test the developer console flow.</span>
               </div>
 
               <div>
                 <Clock3 size={15} />
-                <span>{apiKey.createdAt}</span>
+                <span>waiting</span>
               </div>
 
               <div>
-                <span>{apiKey.scopes.join(", ")}</span>
+                <span>No scopes assigned yet</span>
               </div>
 
-              <strong>{apiKey.status}</strong>
+              <strong>empty</strong>
 
-              {apiKey.status === "active" ? (
-                <button
-                  type="button"
-                  className="text-link-button"
-                  onClick={() => revokeSandboxKey(apiKey.id)}
-                  title="Revoke key"
-                >
-                  <Trash2 size={15} />
-                </button>
-              ) : (
-                <ShieldCheck size={17} />
-              )}
+              <ShieldCheck size={17} />
             </div>
-          ))}
+          ) : (
+            apiKeys.map((apiKey) => (
+              <div className="workspace-table-row" key={apiKey.id}>
+                <div>
+                  <strong>{apiKey.name}</strong>
+                  <span>
+                    {apiKey.prefix}************{apiKey.lastFour}
+                  </span>
+                </div>
+
+                <div>
+                  <Clock3 size={15} />
+                  <span>{apiKey.createdAt}</span>
+                </div>
+
+                <div>
+                  <span>
+                    {apiKey.scopes.length > 0
+                      ? apiKey.scopes.join(", ")
+                      : "No scopes assigned"}
+                  </span>
+                </div>
+
+                <strong>{apiKey.status}</strong>
+
+                <div className="workspace-row-actions">
+                  {apiKey.status === "active" ? (
+                    <button
+                      type="button"
+                      className="text-link-button"
+                      onClick={() => revokeSandboxKey(apiKey.id)}
+                      title="Revoke key"
+                    >
+                      <ShieldCheck size={15} />
+                      Revoke
+                    </button>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    className="text-link-button"
+                    onClick={() => deleteSandboxKey(apiKey.id)}
+                    title="Delete key"
+                  >
+                    <Trash2 size={15} />
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
       <section className="developer-console">
         <div className="developer-console-head">
           <div>
-            <p>Sandbox endpoint</p>
+            <p>Endpoint preview</p>
             <h3>
               <span style={{ color: "var(--ff-teal, #64d2ff)" }}>
-                {developerEndpointPreview.method}
+                {endpointPreview.method}
               </span>{" "}
-              {developerEndpointPreview.path}
+              {endpointPreview.path}
             </h3>
           </div>
 
           <button type="button" onClick={testRequest}>
             <RotateCcw size={16} />
-            Test request
+            Add test event
           </button>
         </div>
 
-        <pre>{JSON.stringify(developerEndpointPreview.payload, null, 2)}</pre>
+        <pre>{JSON.stringify(endpointPreview.payload, null, 2)}</pre>
       </section>
 
       <section className="workspace-table-shell">
         <div className="workspace-table-head">
           <div>
-            <p>Request logs</p>
-            <h3>Recent sandbox API events</h3>
+            <p>Local request-test events</p>
+            <h3>Developer console event log</h3>
           </div>
 
-          <div className="confidence-label">
-            <Activity size={17} />
-            local logs
+          <div className="workspace-row-actions">
+            <div className="confidence-label">
+              <Activity size={17} />
+              local only
+            </div>
+
+            <button
+              type="button"
+              className="text-link-button"
+              onClick={clearRequestLogs}
+              disabled={requestLogs.length === 0}
+            >
+              <Trash2 size={16} />
+              Clear logs
+            </button>
           </div>
         </div>
 
         <div className="workspace-table">
-          {requestLogs.map((request) => (
-            <div className="workspace-table-row" key={request.id}>
+          {requestLogs.length === 0 ? (
+            <div className="workspace-table-row">
               <div>
-                <strong>{request.id}</strong>
-                <span>{request.path}</span>
+                <strong>No local request-test events</strong>
+                <span>Add a test event to verify the developer console flow.</span>
               </div>
 
               <div>
-                <span className="status-pill">{request.method}</span>
+                <span className="status-pill">empty</span>
               </div>
 
               <div>
-                <span>{request.createdAt}</span>
+                <span>waiting</span>
               </div>
 
-              <strong>{request.status}</strong>
+              <strong>0</strong>
 
-              <span>{request.latency}</span>
+              <span>0ms</span>
             </div>
-          ))}
+          ) : (
+            requestLogs.map((request) => (
+              <div className="workspace-table-row" key={request.id}>
+                <div>
+                  <strong>{request.id}</strong>
+                  <span>{request.path}</span>
+                </div>
+
+                <div>
+                  <span className="status-pill">{request.method}</span>
+                </div>
+
+                <div>
+                  <span>{request.createdAt}</span>
+                </div>
+
+                <strong>{request.status}</strong>
+
+                <span>{request.latency}</span>
+              </div>
+            ))
+          )}
         </div>
       </section>
 

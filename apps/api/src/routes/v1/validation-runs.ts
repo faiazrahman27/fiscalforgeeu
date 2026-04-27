@@ -63,9 +63,7 @@ export async function validationRunRoutes(app: FastifyInstance) {
       const runs = await listValidationRuns();
 
       return {
-        records: runs
-          .sort((first, second) => second.createdAt.localeCompare(first.createdAt))
-          .map(buildValidationRunSummary)
+        records: runs.map(buildValidationRunSummary)
       };
     }
   );
