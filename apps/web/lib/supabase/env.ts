@@ -1,32 +1,28 @@
-function readRequiredPublicEnvValue(primaryKey: string, fallbackKey?: string) {
-  const primaryValue = process.env[primaryKey]?.trim();
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
 
-  if (primaryValue) {
-    return primaryValue;
-  }
-
-  if (fallbackKey) {
-    const fallbackValue = process.env[fallbackKey]?.trim();
-
-    if (fallbackValue) {
-      return fallbackValue;
-    }
-  }
-
-  throw new Error(
-    fallbackKey
-      ? `Missing ${primaryKey} or ${fallbackKey} in apps/web/.env.local.`
-      : `Missing ${primaryKey} in apps/web/.env.local.`
-  );
-}
+const supabasePublicKey =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+  "";
 
 export function getSupabaseUrl() {
-  return readRequiredPublicEnvValue("NEXT_PUBLIC_SUPABASE_URL");
+  if (!supabaseUrl) {
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL in apps/web/.env.local.");
+  }
+
+  return supabaseUrl;
 }
 
 export function getSupabasePublicKey() {
-  return readRequiredPublicEnvValue(
-    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY"
-  );
+  if (!supabasePublicKey) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY in apps/web/.env.local."
+    );
+  }
+
+  return supabasePublicKey;
+}
+
+export function hasSupabasePublicBrowserConfig() {
+  return Boolean(supabaseUrl && supabasePublicKey);
 }
