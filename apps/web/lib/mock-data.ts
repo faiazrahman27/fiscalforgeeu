@@ -28,9 +28,9 @@ export const commandFlow: WorkspaceAction[] = [
   },
   {
     iconKey: "validation",
-    title: "Run validation",
+    title: "Review validation reports",
     description:
-      "Inspect schema checks, decimal calculations, UBL mapping, standard-style findings, and legal-confidence labels.",
+      "Inspect schema readiness, decimal calculations, VAT-number format, UBL mapping, standard-style findings, confidence labels, and simulation warnings.",
     href: "/workspace/validation-runs"
   },
   {

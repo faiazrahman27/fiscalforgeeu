@@ -89,7 +89,7 @@ function formatStatus(status: string) {
 function formatSourceType(sourceType: ValidationRunSourceType) {
   return sourceType === "xml_readiness"
     ? "XML readiness report"
-    : "Invoice validation run";
+    : "Invoice validation report";
 }
 
 function formatSourceValue(value: string | undefined, fallback = "Not detected") {
@@ -180,7 +180,7 @@ async function readResponseBody(response: Response) {
 
 function getApiErrorMessage(
   data: unknown,
-  fallback = "The validation run request failed."
+  fallback = "The report request failed."
 ) {
   if (typeof data === "string" && data.trim().length > 0) {
     return data.slice(0, 240);
@@ -206,7 +206,7 @@ function buildSourceContext(run: SavedValidationRun): EvidenceItem[] {
     return [
       {
         label: "Source type",
-        value: "XML readiness report mapped into the validation run queue."
+        value: "XML readiness report mapped into the report history."
       },
       {
         label: "Source file",
@@ -234,7 +234,7 @@ function buildSourceContext(run: SavedValidationRun): EvidenceItem[] {
   return [
     {
       label: "Source type",
-      value: "Structured invoice validation run generated from invoice data."
+      value: "Structured invoice validation report generated from invoice data."
     },
     {
       label: "Invoice number",
@@ -265,7 +265,7 @@ function buildEvidence(run: SavedValidationRun): EvidenceItem[] {
       {
         label: "XML readiness source",
         value:
-          "This validation report was generated from an API-owned XML readiness report, not from the manual invoice editor."
+          "This report was generated from an API-owned XML readiness report, not from the manual invoice editor."
       },
       {
         label: "Technical layer",
@@ -292,8 +292,8 @@ function buildEvidence(run: SavedValidationRun): EvidenceItem[] {
       label: "Schema layer",
       value:
         run.technicalStatus === "passed"
-          ? "The API accepted the request payload and produced a validation result."
-          : "The API produced blocking technical findings for this validation run."
+          ? "The API accepted the request payload and produced an invoice validation report."
+          : "The API produced blocking technical findings for this invoice validation report."
     },
     {
       label: "Calculation layer",
@@ -305,7 +305,7 @@ function buildEvidence(run: SavedValidationRun): EvidenceItem[] {
       value:
         run.countrySimulationStatus === "review_required"
           ? "Cross-border buyer/seller context requires professional review."
-          : "No cross-border country simulation was applied for this run."
+          : "No cross-border country simulation was applied for this report."
     },
     {
       label: "Rule source placeholder",
@@ -459,7 +459,7 @@ function buildExportPayload(run: SavedValidationRun, evidence: EvidenceItem[]) {
     },
     export: {
       exportedAt: new Date().toISOString(),
-      exportFormat: "invoice_lantern_validation_run_report_json_v1",
+      exportFormat: "invoice_lantern_validation_report_json_v1",
       sourceType: run.sourceType,
       rawXmlIncluded: false
     },
@@ -517,7 +517,7 @@ export default function ValidationRunDetailPage() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadValidationRun() {
+    async function loadValidationReport() {
       setIsLoadingRun(true);
       setRunLoadMessage("");
 
@@ -538,7 +538,7 @@ export default function ValidationRunDetailPage() {
             setRunLoadMessage(
               getApiErrorMessage(
                 responseData,
-                "Could not load this API-owned validation run."
+                "Could not load this API-owned validation report."
               )
             );
           }
@@ -556,7 +556,7 @@ export default function ValidationRunDetailPage() {
         if (!normalizedRun) {
           setRun(null);
           setRunLoadMessage(
-            "The API returned an unreadable validation run record."
+            "The API returned an unreadable validation report record."
           );
           return;
         }
@@ -566,7 +566,7 @@ export default function ValidationRunDetailPage() {
         if (isMounted) {
           setRun(null);
           setRunLoadMessage(
-            "The local validation run API is unavailable. Make sure apps/api and apps/web are both running."
+            "The local validation report API is unavailable. Make sure apps/api and apps/web are both running."
           );
         }
       } finally {
@@ -576,7 +576,7 @@ export default function ValidationRunDetailPage() {
       }
     }
 
-    loadValidationRun();
+    loadValidationReport();
 
     return () => {
       isMounted = false;
@@ -591,23 +591,23 @@ export default function ValidationRunDetailPage() {
       <section className="workspace-page-head">
         <Link href="/workspace/validation-runs" className="back-link">
           <ArrowLeft size={17} />
-          Validation runs
+          Reports
         </Link>
 
-        <p className="workspace-kicker">Validation report</p>
+        <p className="workspace-kicker">Invoice validation report</p>
         <h2>
           {isLoadingRun
-            ? "Loading validation run"
+            ? "Loading validation report"
             : run
               ? run.id
-              : "Validation run unavailable"}
+              : "Validation report unavailable"}
         </h2>
         <p>
           {run
             ? `Full report preview for ${run.invoiceNumber}. This page reads the report through the local Next.js proxy from the dedicated Invoice Lantern API service. Source: ${formatSourceType(
                 run.sourceType
               )}.`
-            : "No demo report is shown here. This page only displays API-owned validation run records."}
+            : "No demo report is shown here. This page only displays API-owned validation report records."}
         </p>
 
         {run ? (
@@ -638,7 +638,7 @@ export default function ValidationRunDetailPage() {
 
             <div>
               <p>Real data required</p>
-              <h3>No API-owned validation run was found.</h3>
+              <h3>No API-owned validation report was found.</h3>
             </div>
           </div>
 
@@ -647,15 +647,15 @@ export default function ValidationRunDetailPage() {
               <span />
               <p>
                 This report may have been deleted, the API may be unavailable, or
-                the route may have been opened with an invalid validation run ID.
+                the route may have been opened with an invalid report ID.
               </p>
             </div>
 
             <div className="alert-item">
               <span />
               <p>
-                Go back to the validation queue and open an existing API-owned
-                validation run, or create a new validation run from real invoice
+                Go back to the report history and open an existing API-owned
+                invoice validation report, or create a new report from real invoice
                 data.
               </p>
             </div>
@@ -810,7 +810,7 @@ export default function ValidationRunDetailPage() {
 
                   <div>
                     <strong>NO_FINDINGS_RETURNED</strong>
-                    <p>The API did not return any findings for this validation run.</p>
+                    <p>The API did not return any findings for this validation report.</p>
                   </div>
 
                   <span>info</span>
@@ -868,7 +868,7 @@ export default function ValidationRunDetailPage() {
                     <span className="status-pill">
                       {run.sourceType === "xml_readiness"
                         ? "xml readiness"
-                        : "invoice"}
+                        : "invoice validation"}
                     </span>
                   </div>
 

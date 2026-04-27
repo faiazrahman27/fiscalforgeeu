@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import {
-  Activity,
   Braces,
+  FileCheck2,
   FileCode2,
   FileInput,
   Home,
@@ -25,8 +25,8 @@ const workspaceNav = [
   },
   {
     href: "/workspace/validation-runs",
-    label: "Validation",
-    icon: <Activity size={18} />
+    label: "Reports",
+    icon: <FileCheck2 size={18} />
   },
   {
     href: "/workspace/xml-upload",

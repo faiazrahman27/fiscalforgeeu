@@ -3,11 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
   Braces,
   Database,
+  FileCheck2,
   FileCode2,
   FileText,
   KeyRound,
@@ -40,10 +40,10 @@ const commandFlow = [
     href: "/workspace/invoices/new"
   },
   {
-    icon: <Activity size={20} />,
-    title: "Run validation",
+    icon: <FileCheck2 size={20} />,
+    title: "Review validation reports",
     description:
-      "Inspect schema readiness, calculation logic, VAT-number format, confidence labels, and simulation warnings.",
+      "Inspect schema readiness, calculation logic, VAT-number format, XML readiness, confidence labels, findings, and simulation warnings.",
     href: "/workspace/validation-runs"
   },
   {
@@ -150,12 +150,12 @@ function buildStats(counts: DashboardCounts, isLoading: boolean) {
           : "API-owned invoice drafts. No demo records are counted here."
     },
     {
-      label: "Validation runs",
+      label: "Validation reports",
       value: formatCount(counts.validationRuns, isLoading),
       note:
         counts.validationRuns === null && !isLoading
-          ? "Could not read API-owned validation run count."
-          : "API-owned structured validation runs."
+          ? "Could not read API-owned invoice validation report count."
+          : "API-owned structured invoice validation reports."
     },
     {
       label: "XML reports",
@@ -232,10 +232,10 @@ export default function WorkspacePage() {
             return sum + readFindingCount(record);
           }, 0);
         } else {
-          messages.push("Validation run count is unavailable.");
+          messages.push("Invoice validation report count is unavailable.");
         }
       } catch {
-        messages.push("Validation run count is unavailable.");
+        messages.push("Invoice validation report count is unavailable.");
       }
 
       try {
@@ -296,8 +296,8 @@ export default function WorkspacePage() {
 
           <p>
             This workspace is shaped around the real Invoice Lantern workflow:
-            invoice creation, validation, XML handling, API testing, audit trails,
-            and privacy controls.
+            invoice creation, validation report review, XML handling, API testing,
+            audit trails, and privacy controls.
           </p>
         </div>
       </section>
@@ -365,9 +365,9 @@ export default function WorkspacePage() {
           <Database size={24} />
           <h3>Product data layer</h3>
           <p>
-            The frontend consumes invoice drafts, validation runs, XML readiness
-            reports, privacy settings, and future audit events from the dedicated
-            API service. No demo records are shown as product data.
+            The frontend consumes invoice drafts, invoice validation reports, XML
+            readiness reports, privacy settings, and future audit events from the
+            dedicated API service. No demo records are shown as product data.
           </p>
         </div>
 

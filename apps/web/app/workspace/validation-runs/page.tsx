@@ -266,7 +266,7 @@ async function readResponseBody(response: Response) {
 
 function getApiErrorMessage(
   data: unknown,
-  fallback = "The validation run request failed."
+  fallback = "The report history request failed."
 ) {
   if (typeof data === "string" && data.trim().length > 0) {
     return data.slice(0, 240);
@@ -503,8 +503,8 @@ function buildValidationQueueItem(run: ValidationRunSummary): ReportQueueItem {
   return {
     id: run.id,
     sourceType: "validation_run",
-    title: run.id,
-    subtitle: `${run.invoiceNumber} - ${run.buyer}`,
+    title: run.invoiceNumber,
+    subtitle: `${run.seller} to ${run.buyer}`,
     createdAt: run.createdAt,
     status: run.technicalStatus,
     secondaryStatus: run.standardStatus,
@@ -555,7 +555,7 @@ export default function WorkspaceValidationRunsPage() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadValidationRuns() {
+    async function loadReportHistory() {
       setIsLoadingRuns(true);
       setRunLoadMessage("");
 
@@ -574,7 +574,7 @@ export default function WorkspaceValidationRunsPage() {
           loadMessages.push(
             getApiErrorMessage(
               responseData,
-              "Could not load API-owned validation runs."
+              "Could not load API-owned validation reports."
             )
           );
         } else {
@@ -592,7 +592,7 @@ export default function WorkspaceValidationRunsPage() {
       } catch {
         setValidationRuns([]);
         loadMessages.push(
-          "The local validation run API is unavailable. Make sure apps/api and apps/web are both running."
+          "The local validation report API is unavailable. Make sure apps/api and apps/web are both running."
         );
       }
 
@@ -634,7 +634,7 @@ export default function WorkspaceValidationRunsPage() {
       }
     }
 
-    loadValidationRuns();
+    loadReportHistory();
 
     return () => {
       isMounted = false;
@@ -696,10 +696,10 @@ export default function WorkspaceValidationRunsPage() {
   }, [validationRuns, latestRunDetail?.id]);
 
   const reportQueueItems = useMemo(() => {
-    const apiItems = validationRuns.map(buildValidationQueueItem);
+    const validationItems = validationRuns.map(buildValidationQueueItem);
     const xmlItems = xmlUploads.map(buildXmlQueueItem);
 
-    return [...apiItems, ...xmlItems].sort((first, second) =>
+    return [...validationItems, ...xmlItems].sort((first, second) =>
       second.createdAt.localeCompare(first.createdAt)
     );
   }, [validationRuns, xmlUploads]);
@@ -750,7 +750,7 @@ export default function WorkspaceValidationRunsPage() {
         setLatestRunDetail(null);
       }
 
-      setRunLoadMessage("Validation run deleted.");
+      setRunLoadMessage("Invoice validation report deleted.");
     } catch {
       setRunLoadMessage(
         "Could not delete report. Make sure apps/api and apps/web are both running."
@@ -766,11 +766,11 @@ export default function WorkspaceValidationRunsPage() {
   return (
     <div className="workspace-page">
       <section className="workspace-page-head">
-        <p className="workspace-kicker">Validation Runs</p>
-        <h2>Every validation result must be explainable.</h2>
+        <p className="workspace-kicker">Reports</p>
+        <h2>Review invoice validation and XML readiness reports.</h2>
         <p>
-          This screen works as a unified report queue. It shows structured
-          validation runs and XML readiness reports from the API, while keeping
+          This screen works as a unified report queue. It shows structured invoice
+          validation reports and XML readiness reports from the API, while keeping
           each inspection engine technically separate.
         </p>
       </section>
@@ -793,7 +793,7 @@ export default function WorkspaceValidationRunsPage() {
         <div className="workspace-table-head">
           <div>
             <p>Unified report history</p>
-            <h3>Validation and XML readiness queue</h3>
+            <h3>Validation report history</h3>
           </div>
 
           <div className="confidence-label">
@@ -815,7 +815,8 @@ export default function WorkspaceValidationRunsPage() {
               <div>
                 <strong>Loading report history</strong>
                 <span>
-                  Reading validation runs and XML reports from the local API proxy.
+                  Reading invoice validation reports and XML readiness reports
+                  from the local API proxy.
                 </span>
               </div>
 
@@ -836,8 +837,8 @@ export default function WorkspaceValidationRunsPage() {
               <div>
                 <strong>No reports yet</strong>
                 <span>
-                  Create a validation run or upload XML to populate this API-owned
-                  report queue.
+                  Create an invoice validation report or upload XML to populate
+                  this API-owned report queue.
                 </span>
               </div>
 
@@ -863,7 +864,7 @@ export default function WorkspaceValidationRunsPage() {
                     Source:{" "}
                     {item.sourceType === "xml_readiness"
                       ? "XML readiness report"
-                      : "Structured validation run"}
+                      : "Invoice validation report"}
                     . Findings: {item.findingsCount}. Amount: {item.amountLabel}.
                   </span>
 
@@ -875,7 +876,7 @@ export default function WorkspaceValidationRunsPage() {
                         <ArrowRight size={16} />
                       )}
                       {item.sourceType === "xml_readiness"
-                        ? "Open XML reports"
+                        ? "Open XML report"
                         : "Open report"}
                     </Link>
 
@@ -951,9 +952,9 @@ export default function WorkspaceValidationRunsPage() {
               <div>
                 <strong>XML_READINESS_REPORT_AVAILABLE</strong>
                 <p>
-                  The latest report is an XML readiness report. Open XML reports to
-                  review extracted XML fields, profile signals, tax signals, totals,
-                  findings, and export options.
+                  The latest report is an XML readiness report. Open the XML
+                  report to review extracted XML fields, profile signals, tax
+                  signals, totals, findings, and export options.
                 </p>
               </div>
 
@@ -966,8 +967,8 @@ export default function WorkspaceValidationRunsPage() {
               <div>
                 <strong>VALIDATION_DETAIL_NOT_LOADED</strong>
                 <p>
-                  The latest validation run summary is available, but its detailed
-                  findings could not be loaded for this preview.
+                  The latest invoice validation report summary is available, but
+                  its detailed findings could not be loaded for this preview.
                 </p>
               </div>
 
@@ -979,7 +980,7 @@ export default function WorkspaceValidationRunsPage() {
 
               <div>
                 <strong>NO_FINDINGS_RETURNED</strong>
-                <p>The latest validation run did not return any findings.</p>
+                <p>The latest invoice validation report did not return any findings.</p>
               </div>
 
               <span>info</span>
