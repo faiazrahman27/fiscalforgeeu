@@ -6,7 +6,8 @@ import {
   getLocalApiProxyConfig,
   hasLocalApiProxyConfig,
   readLocalApiResponseData
-} from "../../../../lib/api/local-proxy";
+} from "../../../../../lib/api/local-proxy";
+
 
 export async function GET() {
   if (!hasLocalApiProxyConfig()) {
