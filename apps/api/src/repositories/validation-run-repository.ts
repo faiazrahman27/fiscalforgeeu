@@ -79,6 +79,28 @@ type SupabaseValidationRunRow = {
   updated_at: string;
 };
 
+type ValidationRunTotalsRow = {
+  organization_id: string;
+  validation_run_id: string;
+  line_extension_amount: number;
+  tax_exclusive_amount: number;
+  tax_amount: number;
+  tax_inclusive_amount: number;
+  payable_amount: number;
+  currency: string;
+};
+
+type ValidationRunFindingRow = {
+  organization_id: string;
+  validation_run_id: string;
+  finding_position: number;
+  code: string;
+  severity: FindingSeverity;
+  field_path: string;
+  message: string;
+  legal_confidence: Finding["legalConfidence"];
+};
+
 const VALIDATION_RUNS_FILE = "validation-runs.json";
 const MAX_STORED_VALIDATION_RUNS = 250;
 const VALIDATION_RUN_SELECT_FIELDS =
@@ -267,9 +289,7 @@ function normalizeVidaReadinessStatus(
     : "not_relevant";
 }
 
-function normalizeConfidence(
-  value: string
-): ValidationRunRecord["confidence"] {
+function normalizeConfidence(value: string): ValidationRunRecord["confidence"] {
   return value === "educational_simulation"
     ? "educational_simulation"
     : "technical_preview";
@@ -334,6 +354,91 @@ function buildSupabaseValidationRunValues(
     disclaimer: record.disclaimer,
     created_at: record.createdAt
   };
+}
+
+function buildValidationRunTotalsRow(
+  record: ValidationRunRecord,
+  organizationId: string,
+  validationRunId: string
+): ValidationRunTotalsRow {
+  return {
+    organization_id: organizationId,
+    validation_run_id: validationRunId,
+    line_extension_amount: record.totals.lineExtensionAmount,
+    tax_exclusive_amount: record.totals.taxExclusiveAmount,
+    tax_amount: record.totals.taxAmount,
+    tax_inclusive_amount: record.totals.taxInclusiveAmount,
+    payable_amount: record.totals.payableAmount,
+    currency: record.currency
+  };
+}
+
+function buildValidationRunFindingRows(
+  record: ValidationRunRecord,
+  organizationId: string,
+  validationRunId: string
+): ValidationRunFindingRow[] {
+  return record.findings.map((finding, index) => ({
+    organization_id: organizationId,
+    validation_run_id: validationRunId,
+    finding_position: index + 1,
+    code: finding.code,
+    severity: finding.severity,
+    field_path: finding.field,
+    message: finding.message,
+    legal_confidence: finding.legalConfidence
+  }));
+}
+
+async function replaceValidationRunRelationalRows(
+  supabase: SupabaseClient,
+  organizationId: string,
+  validationRunId: string,
+  record: ValidationRunRecord
+) {
+  const childTables = ["validation_run_findings", "validation_run_totals"];
+
+  for (const tableName of childTables) {
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("validation_run_id", validationRunId);
+
+    if (error) {
+      throw new Error(
+        `Could not clear ${tableName} rows for validation run: ${error.message}`
+      );
+    }
+  }
+
+  const { error: totalsInsertError } = await supabase
+    .from("validation_run_totals")
+    .insert(buildValidationRunTotalsRow(record, organizationId, validationRunId));
+
+  if (totalsInsertError) {
+    throw new Error(
+      `Could not insert validation run totals row: ${totalsInsertError.message}`
+    );
+  }
+
+  const findingRows = buildValidationRunFindingRows(
+    record,
+    organizationId,
+    validationRunId
+  );
+
+  if (findingRows.length > 0) {
+    const { error: findingsInsertError } = await supabase
+      .from("validation_run_findings")
+      .insert(findingRows);
+
+    if (findingsInsertError) {
+      throw new Error(
+        `Could not insert validation run finding rows: ${findingsInsertError.message}`
+      );
+    }
+  }
 }
 
 async function getWorkspaceForAuthenticatedUser(supabase: SupabaseClient) {
@@ -556,7 +661,34 @@ export async function saveAuthenticatedValidationRun(
     throw new Error(`Could not create Supabase validation run: ${error.message}`);
   }
 
-  return normalizeSupabaseValidationRunRow(data as SupabaseValidationRunRow);
+  const savedRecord = normalizeSupabaseValidationRunRow(
+    data as SupabaseValidationRunRow
+  );
+
+  try {
+    await replaceValidationRunRelationalRows(
+      supabase,
+      workspace.organizationId,
+      savedRecord.id,
+      savedRecord
+    );
+  } catch (relationalError) {
+    /*
+     * Supabase client calls are not wrapped in a database transaction here.
+     * If child-row persistence fails, remove the parent row to avoid a partial
+     * validation run record. ON DELETE CASCADE clears any child rows that may
+     * have been inserted before the failure.
+     */
+    await supabase
+      .from("validation_runs")
+      .delete()
+      .eq("id", savedRecord.id)
+      .eq("organization_id", workspace.organizationId);
+
+    throw relationalError;
+  }
+
+  return savedRecord;
 }
 
 export async function deleteAuthenticatedValidationRunById(
@@ -566,6 +698,10 @@ export async function deleteAuthenticatedValidationRunById(
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
 
+  /*
+   * Child rows are linked with ON DELETE CASCADE, so deleting the parent run
+   * also removes totals and findings.
+   */
   const { data, error } = await supabase
     .from("validation_runs")
     .delete()
