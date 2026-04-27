@@ -1,0 +1,17 @@
+{
+  "name": "invoice-lantern-platform",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev:api": "npm --prefix apps/api run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "build:api": "npm --prefix apps/api run build",
+    "build": "npm run build:api && npm run build:web",
+    "check:api": "npm --prefix apps/api run check",
+    "check:web": "npm --prefix apps/web run build",
+    "check": "npm run check:api && npm run check:web",
+    "start:web": "npm --prefix apps/web run start",
+    "start:api": "npm --prefix apps/api run start"
+  }
+}
