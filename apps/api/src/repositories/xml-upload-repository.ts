@@ -102,6 +102,63 @@ type SupabaseXmlReadinessReportRow = {
   updated_at: string;
 };
 
+type XmlReadinessMonetaryTotalsRow = {
+  organization_id: string;
+  xml_readiness_report_id: string;
+  line_extension_amount: string;
+  tax_exclusive_amount: string;
+  tax_amount: string;
+  tax_inclusive_amount: string;
+  payable_amount: string;
+  currency: string;
+};
+
+type XmlReadinessTaxSignalRow = {
+  organization_id: string;
+  xml_readiness_report_id: string;
+  tax_total_detected: boolean;
+  tax_subtotal_detected: boolean;
+  tax_category_detected: boolean;
+  tax_rate_count: number;
+  tax_category_codes: string[];
+  vat_percent_values: string[];
+};
+
+type XmlReadinessProfileSignalRow = {
+  organization_id: string;
+  xml_readiness_report_id: string;
+  customization_id: string;
+  profile_id: string;
+  profile_hints: string[];
+  ubl_namespace_detected: boolean;
+  ubl_document_detected: boolean;
+  peppol_signal_detected: boolean;
+  en16931_signal_detected: boolean;
+  endpoint_count: number;
+  seller_endpoint_id: string;
+  seller_endpoint_scheme: string;
+  buyer_endpoint_id: string;
+  buyer_endpoint_scheme: string;
+  seller_country: string;
+  buyer_country: string;
+  country_pair: string;
+  cross_border_signal: boolean;
+  payment_means_detected: boolean;
+  payment_terms_detected: boolean;
+  allowance_charge_detected: boolean;
+};
+
+type XmlReadinessFindingRow = {
+  organization_id: string;
+  xml_readiness_report_id: string;
+  finding_position: number;
+  code: string;
+  severity: XmlReadinessFinding["severity"];
+  field_path: string;
+  message: string;
+  confidence: XmlReadinessFinding["confidence"];
+};
+
 const XML_UPLOADS_FILE = "xml-uploads.json";
 const MAX_STORED_XML_UPLOADS = 250;
 const XML_REPORT_SELECT_FIELDS =
@@ -386,6 +443,185 @@ function buildSupabaseXmlReadinessReportValues(
   };
 }
 
+function buildXmlReadinessMonetaryTotalsRow(
+  input: CreateXmlUploadRecordInput,
+  organizationId: string,
+  xmlReadinessReportId: string
+): XmlReadinessMonetaryTotalsRow {
+  const monetaryTotals = input.readinessReport.extractedData.monetaryTotals;
+
+  return {
+    organization_id: organizationId,
+    xml_readiness_report_id: xmlReadinessReportId,
+    line_extension_amount: monetaryTotals.lineExtensionAmount,
+    tax_exclusive_amount: monetaryTotals.taxExclusiveAmount,
+    tax_amount: monetaryTotals.taxAmount,
+    tax_inclusive_amount: monetaryTotals.taxInclusiveAmount,
+    payable_amount: monetaryTotals.payableAmount,
+    currency: input.readinessReport.extractedData.currency
+  };
+}
+
+function buildXmlReadinessTaxSignalRow(
+  input: CreateXmlUploadRecordInput,
+  organizationId: string,
+  xmlReadinessReportId: string
+): XmlReadinessTaxSignalRow {
+  const extractedData = input.readinessReport.extractedData;
+  const taxSignal = extractedData.taxSignal;
+  const profileSignal = extractedData.profileSignal;
+
+  return {
+    organization_id: organizationId,
+    xml_readiness_report_id: xmlReadinessReportId,
+    tax_total_detected: taxSignal.taxTotalDetected,
+    tax_subtotal_detected: taxSignal.taxSubtotalDetected,
+    tax_category_detected: taxSignal.taxCategoryDetected,
+    tax_rate_count: taxSignal.taxRateCount,
+    tax_category_codes: profileSignal.taxCategoryCodes,
+    vat_percent_values: profileSignal.vatPercentValues
+  };
+}
+
+function buildXmlReadinessProfileSignalRow(
+  input: CreateXmlUploadRecordInput,
+  organizationId: string,
+  xmlReadinessReportId: string
+): XmlReadinessProfileSignalRow {
+  const profileSignal = input.readinessReport.extractedData.profileSignal;
+
+  return {
+    organization_id: organizationId,
+    xml_readiness_report_id: xmlReadinessReportId,
+    customization_id: profileSignal.customizationId,
+    profile_id: profileSignal.profileId,
+    profile_hints: profileSignal.profileHints,
+    ubl_namespace_detected: profileSignal.ublNamespaceDetected,
+    ubl_document_detected: profileSignal.ublDocumentDetected,
+    peppol_signal_detected: profileSignal.peppolSignalDetected,
+    en16931_signal_detected: profileSignal.en16931SignalDetected,
+    endpoint_count: profileSignal.endpointCount,
+    seller_endpoint_id: profileSignal.sellerEndpointId,
+    seller_endpoint_scheme: profileSignal.sellerEndpointScheme,
+    buyer_endpoint_id: profileSignal.buyerEndpointId,
+    buyer_endpoint_scheme: profileSignal.buyerEndpointScheme,
+    seller_country: profileSignal.sellerCountry,
+    buyer_country: profileSignal.buyerCountry,
+    country_pair: profileSignal.countryPair,
+    cross_border_signal: profileSignal.crossBorderSignal,
+    payment_means_detected: profileSignal.paymentMeansDetected,
+    payment_terms_detected: profileSignal.paymentTermsDetected,
+    allowance_charge_detected: profileSignal.allowanceChargeDetected
+  };
+}
+
+function buildXmlReadinessFindingRows(
+  input: CreateXmlUploadRecordInput,
+  organizationId: string,
+  xmlReadinessReportId: string
+): XmlReadinessFindingRow[] {
+  return input.readinessReport.findings.map((finding, index) => ({
+    organization_id: organizationId,
+    xml_readiness_report_id: xmlReadinessReportId,
+    finding_position: index + 1,
+    code: finding.code,
+    severity: finding.severity,
+    field_path: finding.field,
+    message: finding.message,
+    confidence: finding.confidence
+  }));
+}
+
+async function replaceXmlReadinessRelationalRows(
+  supabase: SupabaseClient,
+  organizationId: string,
+  xmlReadinessReportId: string,
+  input: CreateXmlUploadRecordInput
+) {
+  const childTables = [
+    "xml_readiness_findings",
+    "xml_readiness_profile_signals",
+    "xml_readiness_tax_signals",
+    "xml_readiness_monetary_totals"
+  ];
+
+  for (const tableName of childTables) {
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("xml_readiness_report_id", xmlReadinessReportId);
+
+    if (error) {
+      throw new Error(
+        `Could not clear ${tableName} rows for XML report: ${error.message}`
+      );
+    }
+  }
+
+  const { error: monetaryTotalsInsertError } = await supabase
+    .from("xml_readiness_monetary_totals")
+    .insert(
+      buildXmlReadinessMonetaryTotalsRow(
+        input,
+        organizationId,
+        xmlReadinessReportId
+      )
+    );
+
+  if (monetaryTotalsInsertError) {
+    throw new Error(
+      `Could not insert XML monetary totals row: ${monetaryTotalsInsertError.message}`
+    );
+  }
+
+  const { error: taxSignalInsertError } = await supabase
+    .from("xml_readiness_tax_signals")
+    .insert(
+      buildXmlReadinessTaxSignalRow(input, organizationId, xmlReadinessReportId)
+    );
+
+  if (taxSignalInsertError) {
+    throw new Error(
+      `Could not insert XML tax signal row: ${taxSignalInsertError.message}`
+    );
+  }
+
+  const { error: profileSignalInsertError } = await supabase
+    .from("xml_readiness_profile_signals")
+    .insert(
+      buildXmlReadinessProfileSignalRow(
+        input,
+        organizationId,
+        xmlReadinessReportId
+      )
+    );
+
+  if (profileSignalInsertError) {
+    throw new Error(
+      `Could not insert XML profile signal row: ${profileSignalInsertError.message}`
+    );
+  }
+
+  const findingRows = buildXmlReadinessFindingRows(
+    input,
+    organizationId,
+    xmlReadinessReportId
+  );
+
+  if (findingRows.length > 0) {
+    const { error: findingsInsertError } = await supabase
+      .from("xml_readiness_findings")
+      .insert(findingRows);
+
+    if (findingsInsertError) {
+      throw new Error(
+        `Could not insert XML finding rows: ${findingsInsertError.message}`
+      );
+    }
+  }
+}
+
 async function getWorkspaceForAuthenticatedUser(supabase: SupabaseClient) {
   const { data, error } = await supabase.rpc("bootstrap_personal_workspace");
 
@@ -561,9 +797,34 @@ export async function createAuthenticatedXmlUploadRecord(
     throw new Error(`Could not create Supabase XML report: ${error.message}`);
   }
 
-  return normalizeSupabaseXmlReadinessReportRow(
+  const record = normalizeSupabaseXmlReadinessReportRow(
     data as SupabaseXmlReadinessReportRow
   );
+
+  try {
+    await replaceXmlReadinessRelationalRows(
+      supabase,
+      workspace.organizationId,
+      record.id,
+      input
+    );
+  } catch (relationalError) {
+    /*
+     * Supabase client calls are not wrapped in a database transaction here.
+     * If child-row persistence fails, remove the parent row to avoid a partial
+     * XML readiness report. ON DELETE CASCADE clears any child rows that may
+     * have been inserted before the failure.
+     */
+    await supabase
+      .from("xml_readiness_reports")
+      .delete()
+      .eq("id", record.id)
+      .eq("organization_id", workspace.organizationId);
+
+    throw relationalError;
+  }
+
+  return record;
 }
 
 export async function deleteAuthenticatedXmlUploadRecordById(
@@ -573,6 +834,10 @@ export async function deleteAuthenticatedXmlUploadRecordById(
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
 
+  /*
+   * Child rows are linked with ON DELETE CASCADE, so deleting the parent report
+   * also removes monetary totals, tax signals, profile signals, and findings.
+   */
   const { data, error } = await supabase
     .from("xml_readiness_reports")
     .delete()
