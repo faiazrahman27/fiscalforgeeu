@@ -22,7 +22,7 @@ const envSchema = z.object({
     .int()
     .min(1024)
     .max(10 * 1024 * 1024)
-    .default(1024 * 1024)
+    .default(2 * 1024 * 1024)
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
