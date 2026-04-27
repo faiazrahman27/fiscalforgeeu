@@ -1,104 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "../../../../../lib/supabase/server";
+import {
+  buildLocalApiHeaders,
+  buildLocalApiProxyError,
+  buildLocalApiProxyNotConfiguredError,
+  getLocalApiProxyConfig,
+  hasLocalApiProxyConfig,
+  readLocalApiResponseData
+} from "../../../../../lib/api/local-proxy";
 
-const API_BASE_URL = process.env.INVOICE_LANTERN_API_BASE_URL;
-const DEV_API_KEY = process.env.INVOICE_LANTERN_DEV_API_KEY;
 const MAX_XML_BODY_BYTES = 1024 * 1024 * 2;
-
-type ApiHeaders = {
-  "content-type": string;
-  "x-api-key": string;
-  "x-file-name": string;
-  "x-file-size": string;
-  authorization?: string;
-};
-
-function buildProxyError(message: string, status = 502) {
-  return NextResponse.json(
-    {
-      error: {
-        code: "LOCAL_XML_PROXY_ERROR",
-        message,
-        details: null
-      }
-    },
-    {
-      status
-    }
-  );
-}
-
-function buildNotConfiguredError() {
-  return NextResponse.json(
-    {
-      error: {
-        code: "WEB_API_PROXY_NOT_CONFIGURED",
-        message:
-          "Missing INVOICE_LANTERN_API_BASE_URL or INVOICE_LANTERN_DEV_API_KEY in apps/web/.env.local.",
-        details: null
-      }
-    },
-    { status: 500 }
-  );
-}
-
-async function readSupabaseAccessToken() {
-  try {
-    const supabase = await createSupabaseServerClient();
-    const {
-      data: { session }
-    } = await supabase.auth.getSession();
-
-    return session?.access_token ?? "";
-  } catch {
-    /*
-     * Keep the local API proxy usable when Supabase is not configured yet.
-     * The dedicated API still receives the development API key below.
-     */
-    return "";
-  }
-}
-
-async function buildApiHeaders(request: NextRequest): Promise<ApiHeaders> {
-  const accessToken = await readSupabaseAccessToken();
-
-  const headers: ApiHeaders = {
-    "content-type": "application/xml",
-    "x-api-key": DEV_API_KEY ?? "",
-    "x-file-name": sanitizeForwardedHeaderValue(
-      readHeaderValue(request, "x-file-name")
-    ),
-    "x-file-size": sanitizeForwardedHeaderValue(
-      readHeaderValue(request, "x-file-size")
-    )
-  };
-
-  if (accessToken) {
-    headers.authorization = `Bearer ${accessToken}`;
-  }
-
-  return headers;
-}
-
-async function readResponseData(response: Response) {
-  const responseText = await response.text();
-
-  if (!responseText.trim()) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(responseText) as unknown;
-  } catch {
-    return {
-      error: {
-        code: "UPSTREAM_NON_JSON_RESPONSE",
-        message: responseText.slice(0, 500),
-        details: null
-      }
-    };
-  }
-}
 
 function readHeaderValue(request: NextRequest, key: string) {
   return request.headers.get(key)?.trim() ?? "";
@@ -123,10 +33,11 @@ function getUtf8ByteLength(value: string) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!API_BASE_URL || !DEV_API_KEY) {
-    return buildNotConfiguredError();
+  if (!hasLocalApiProxyConfig()) {
+    return buildLocalApiProxyNotConfiguredError();
   }
 
+  const { apiBaseUrl } = getLocalApiProxyConfig();
   const contentType = readHeaderValue(request, "content-type");
 
   if (!isXmlContentType(contentType)) {
@@ -171,20 +82,31 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const apiResponse = await fetch(`${API_BASE_URL}/api/v1/xml/inspect`, {
+    const apiResponse = await fetch(`${apiBaseUrl}/api/v1/xml/inspect`, {
       method: "POST",
-      headers: await buildApiHeaders(request),
+      headers: await buildLocalApiHeaders({
+        contentType: "application/xml",
+        extraHeaders: {
+          "x-file-name": sanitizeForwardedHeaderValue(
+            readHeaderValue(request, "x-file-name")
+          ),
+          "x-file-size": sanitizeForwardedHeaderValue(
+            readHeaderValue(request, "x-file-size")
+          )
+        }
+      }),
       body: xmlBody,
       cache: "no-store"
     });
 
-    const data = await readResponseData(apiResponse);
+    const data = await readLocalApiResponseData(apiResponse);
 
     return NextResponse.json(data, {
       status: apiResponse.status
     });
   } catch {
-    return buildProxyError(
+    return buildLocalApiProxyError(
+      "LOCAL_XML_PROXY_ERROR",
       "Could not reach the Invoice Lantern API. Make sure apps/api is running on port 4000.",
       503
     );
