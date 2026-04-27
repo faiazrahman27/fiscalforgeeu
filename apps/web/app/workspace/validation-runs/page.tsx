@@ -14,10 +14,17 @@ import {
   ShieldAlert,
   Trash2
 } from "lucide-react";
-import { validationRunLayers } from "../../../lib/mock-data";
-import type { WorkspaceIconKey } from "../../../lib/types";
 
 type FindingSeverity = "info" | "warning" | "fatal";
+
+type ValidationLayerIconKey = "schema" | "calculation" | "ubl" | "legal";
+
+type ValidationLayerCard = {
+  iconKey: ValidationLayerIconKey;
+  title: string;
+  status: string;
+  description: string;
+};
 
 type ValidationFinding = {
   code: string;
@@ -106,11 +113,11 @@ type XmlUploadRecord = {
 };
 
 type ValidationRunListResponse = {
-  records?: ValidationRunSummary[];
+  records?: unknown[];
 };
 
 type ValidationRunDetailResponse = {
-  record?: SavedValidationRun;
+  record?: unknown;
 };
 
 type XmlUploadListResponse = {
@@ -131,15 +138,46 @@ type ReportQueueItem = {
   canDelete: boolean;
 };
 
-function getValidationIcon(iconKey: WorkspaceIconKey) {
-  const icons: Record<string, ReactNode> = {
+const validationLayerCards: ValidationLayerCard[] = [
+  {
+    iconKey: "schema",
+    title: "Input schema",
+    status: "API-backed",
+    description:
+      "Payload structure, required fields, length limits, and unexpected fields."
+  },
+  {
+    iconKey: "calculation",
+    title: "Calculation logic",
+    status: "API-backed",
+    description:
+      "Line net amount, taxable amount, VAT amount, allowances, charges, and payable total."
+  },
+  {
+    iconKey: "ubl",
+    title: "UBL mapping",
+    status: "Planned",
+    description:
+      "Canonical invoice data should be exportable to UBL XML with clear readiness and review signals."
+  },
+  {
+    iconKey: "legal",
+    title: "Legal-confidence label",
+    status: "Simulation only",
+    description:
+      "Findings remain technical, educational simulation, or review-required. They do not become official legal, tax, Peppol, EN 16931, ViDA, government, or authority validation."
+  }
+];
+
+function getValidationIcon(iconKey: ValidationLayerIconKey) {
+  const icons: Record<ValidationLayerIconKey, ReactNode> = {
     schema: <Layers3 size={22} />,
     calculation: <Calculator size={22} />,
     ubl: <FileCheck2 size={22} />,
     legal: <ShieldAlert size={22} />
   };
 
-  return icons[iconKey] ?? <FileCheck2 size={22} />;
+  return icons[iconKey];
 }
 
 function formatStatus(status: string) {
@@ -238,7 +276,8 @@ function getApiErrorMessage(
     return fallback;
   }
 
-  const message = data.error.message;
+  const error = data.error;
+  const message = error.message;
 
   return typeof message === "string" && message.trim().length > 0
     ? message
@@ -248,12 +287,11 @@ function getApiErrorMessage(
 function normalizeValidationRunSummary(
   value: unknown
 ): ValidationRunSummary | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return null;
   }
 
-  const record = value as Record<string, unknown>;
-  const id = readStringField(record, "id", "");
+  const id = readStringField(value, "id", "");
 
   if (!id) {
     return null;
@@ -261,73 +299,72 @@ function normalizeValidationRunSummary(
 
   return {
     id,
-    invoiceNumber: readStringField(record, "invoiceNumber", "Untitled invoice"),
-    buyer: readStringField(record, "buyer", "Unknown buyer"),
-    seller: readStringField(record, "seller", "Unknown seller"),
-    createdAt: readStringField(record, "createdAt", new Date().toISOString()),
-    technicalStatus: readStringField(record, "technicalStatus", "failed"),
-    standardStatus: readStringField(record, "standardStatus", "warning"),
+    invoiceNumber: readStringField(value, "invoiceNumber", "Untitled invoice"),
+    buyer: readStringField(value, "buyer", "Unknown buyer"),
+    seller: readStringField(value, "seller", "Unknown seller"),
+    createdAt: readStringField(value, "createdAt", new Date().toISOString()),
+    technicalStatus: readStringField(value, "technicalStatus", "failed"),
+    standardStatus: readStringField(value, "standardStatus", "warning"),
     countrySimulationStatus: readStringField(
-      record,
+      value,
       "countrySimulationStatus",
       "not_relevant"
     ),
     vidaReadinessStatus: readStringField(
-      record,
+      value,
       "vidaReadinessStatus",
       "not_relevant"
     ),
-    confidence: readStringField(record, "confidence", "technical_preview"),
-    profile: readStringField(record, "profile", "API_VALIDATION"),
-    currency: readStringField(record, "currency", "EUR"),
-    findingsCount: readNumberField(record, "findingsCount", 0),
-    payableAmount: readNumberField(record, "payableAmount", 0)
+    confidence: readStringField(value, "confidence", "technical_preview"),
+    profile: readStringField(value, "profile", "API_VALIDATION"),
+    currency: readStringField(value, "currency", "EUR"),
+    findingsCount: readNumberField(value, "findingsCount", 0),
+    payableAmount: readNumberField(value, "payableAmount", 0)
   };
 }
 
 function normalizeValidationRunDetail(value: unknown): SavedValidationRun | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return null;
   }
 
-  const record = value as Record<string, unknown>;
-  const id = readStringField(record, "id", "");
+  const id = readStringField(value, "id", "");
 
   if (!id) {
     return null;
   }
 
-  const findings = Array.isArray(record.findings)
-    ? record.findings
+  const findings = Array.isArray(value.findings)
+    ? value.findings
         .map((finding) => normalizeFinding(finding))
         .filter((finding): finding is ValidationFinding => finding !== null)
     : [];
 
   return {
     id,
-    invoiceNumber: readStringField(record, "invoiceNumber", "Untitled invoice"),
-    buyer: readStringField(record, "buyer", "Unknown buyer"),
-    seller: readStringField(record, "seller", "Unknown seller"),
-    createdAt: readStringField(record, "createdAt", new Date().toISOString()),
-    technicalStatus: readStringField(record, "technicalStatus", "failed"),
-    standardStatus: readStringField(record, "standardStatus", "warning"),
+    invoiceNumber: readStringField(value, "invoiceNumber", "Untitled invoice"),
+    buyer: readStringField(value, "buyer", "Unknown buyer"),
+    seller: readStringField(value, "seller", "Unknown seller"),
+    createdAt: readStringField(value, "createdAt", new Date().toISOString()),
+    technicalStatus: readStringField(value, "technicalStatus", "failed"),
+    standardStatus: readStringField(value, "standardStatus", "warning"),
     countrySimulationStatus: readStringField(
-      record,
+      value,
       "countrySimulationStatus",
       "not_relevant"
     ),
     vidaReadinessStatus: readStringField(
-      record,
+      value,
       "vidaReadinessStatus",
       "not_relevant"
     ),
-    confidence: readStringField(record, "confidence", "technical_preview"),
-    profile: readStringField(record, "profile", "API_VALIDATION"),
-    currency: readStringField(record, "currency", "EUR"),
-    totals: normalizeTotals(record.totals),
+    confidence: readStringField(value, "confidence", "technical_preview"),
+    profile: readStringField(value, "profile", "API_VALIDATION"),
+    currency: readStringField(value, "currency", "EUR"),
+    totals: normalizeTotals(value.totals),
     findings,
     disclaimer: readStringField(
-      record,
+      value,
       "disclaimer",
       "This validation report is a development sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
     )
@@ -335,47 +372,46 @@ function normalizeValidationRunDetail(value: unknown): SavedValidationRun | null
 }
 
 function normalizeFinding(value: unknown): ValidationFinding | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return null;
   }
 
-  const record = value as Record<string, unknown>;
-  const code = readStringField(record, "code", "");
+  const code = readStringField(value, "code", "");
 
   if (!code) {
     return null;
   }
 
   const severity =
-    record.severity === "info" ||
-    record.severity === "warning" ||
-    record.severity === "fatal"
-      ? record.severity
+    value.severity === "info" ||
+    value.severity === "warning" ||
+    value.severity === "fatal"
+      ? value.severity
       : "info";
 
   return {
     code,
     severity,
     field:
-      typeof record.field === "string" && record.field.trim().length > 0
-        ? record.field.trim()
+      typeof value.field === "string" && value.field.trim().length > 0
+        ? value.field.trim()
         : undefined,
     message: readStringField(
-      record,
+      value,
       "message",
       "Validation finding returned without a message."
     ),
     legalConfidence:
-      record.legalConfidence === "technical" ||
-      record.legalConfidence === "educational_simulation" ||
-      record.legalConfidence === "review_required"
-        ? record.legalConfidence
+      value.legalConfidence === "technical" ||
+      value.legalConfidence === "educational_simulation" ||
+      value.legalConfidence === "review_required"
+        ? value.legalConfidence
         : undefined
   };
 }
 
 function normalizeTotals(value: unknown): ValidationTotals {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return {
       lineExtensionAmount: 0,
       taxExclusiveAmount: 0,
@@ -385,81 +421,80 @@ function normalizeTotals(value: unknown): ValidationTotals {
     };
   }
 
-  const record = value as Record<string, unknown>;
-
   return {
-    lineExtensionAmount: readNumberField(record, "lineExtensionAmount", 0),
-    taxExclusiveAmount: readNumberField(record, "taxExclusiveAmount", 0),
-    taxAmount: readNumberField(record, "taxAmount", 0),
-    taxInclusiveAmount: readNumberField(record, "taxInclusiveAmount", 0),
-    payableAmount: readNumberField(record, "payableAmount", 0)
+    lineExtensionAmount: readNumberField(value, "lineExtensionAmount", 0),
+    taxExclusiveAmount: readNumberField(value, "taxExclusiveAmount", 0),
+    taxAmount: readNumberField(value, "taxAmount", 0),
+    taxInclusiveAmount: readNumberField(value, "taxInclusiveAmount", 0),
+    payableAmount: readNumberField(value, "payableAmount", 0)
   };
 }
 
 function normalizeXmlUploadRecord(value: unknown): XmlUploadRecord | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject(value)) {
     return null;
   }
 
-  const record = value as Record<string, unknown>;
-  const summary = isPlainObject(record.summary)
-    ? (record.summary as XmlUploadSummary)
+  const summary = isPlainObject(value.summary)
+    ? (value.summary as XmlUploadSummary)
     : undefined;
 
-  const id = readStringField(record, "id", "");
+  const id = readStringField(value, "id", "");
 
   if (!id) {
     return null;
   }
 
   const currency = readStringField(
-    record,
+    value,
     "currency",
     typeof summary?.currency === "string" ? summary.currency : "not_detected"
   );
 
-  const findings = Array.isArray(record.findings) ? record.findings.length : 0;
+  const findingsFromArray = Array.isArray(value.findings)
+    ? value.findings.length
+    : 0;
 
   return {
     id,
-    fileName: readStringField(record, "fileName", "unknown.xml"),
-    fileSize: readStringField(record, "fileSize", "0 B"),
-    uploadedAt: readStringField(record, "uploadedAt", new Date().toISOString()),
-    detectedDocument: readStringField(record, "detectedDocument", "unknown"),
-    rootElement: readStringField(record, "rootElement", "unknown"),
-    invoiceId: readStringField(record, "invoiceId", "not_detected"),
-    issueDate: readStringField(record, "issueDate", "not_detected"),
+    fileName: readStringField(value, "fileName", "unknown.xml"),
+    fileSize: readStringField(value, "fileSize", "0 B"),
+    uploadedAt: readStringField(value, "uploadedAt", new Date().toISOString()),
+    detectedDocument: readStringField(value, "detectedDocument", "unknown"),
+    rootElement: readStringField(value, "rootElement", "unknown"),
+    invoiceId: readStringField(value, "invoiceId", "not_detected"),
+    issueDate: readStringField(value, "issueDate", "not_detected"),
     currency,
-    apiStatus: readStringField(record, "apiStatus", "review_required"),
-    status: readStringField(record, "status", "rejected"),
-    note: readStringField(record, "note", "Stored XML readiness report."),
+    apiStatus: readStringField(value, "apiStatus", "review_required"),
+    status: readStringField(value, "status", "rejected"),
+    note: readStringField(value, "note", "Stored XML readiness report."),
     disclaimer: readStringField(
-      record,
+      value,
       "disclaimer",
       "Invoice Lantern performs a technical readiness simulation only. This result is not official validation."
     ),
     technicalStatus: readStringField(
-      record,
+      value,
       "technicalStatus",
       typeof summary?.technicalStatus === "string"
         ? summary.technicalStatus
         : "failed"
     ),
     readinessStatus: readStringField(
-      record,
+      value,
       "readinessStatus",
       typeof summary?.readinessStatus === "string"
         ? summary.readinessStatus
         : "needs_attention"
     ),
-    documentStatus: readStringField(record, "documentStatus", "recognized"),
-    calculationStatus: readStringField(record, "calculationStatus", "not_checked"),
-    profileStatus: readStringField(record, "profileStatus", "unknown_profile"),
+    documentStatus: readStringField(value, "documentStatus", "recognized"),
+    calculationStatus: readStringField(value, "calculationStatus", "not_checked"),
+    profileStatus: readStringField(value, "profileStatus", "unknown_profile"),
     findingsCount:
       typeof summary?.findingsCount === "number" &&
       Number.isFinite(summary.findingsCount)
         ? summary.findingsCount
-        : findings,
+        : findingsFromArray,
     summary
   };
 }
@@ -475,7 +510,7 @@ function buildValidationQueueItem(run: ValidationRunSummary): ReportQueueItem {
     secondaryStatus: run.standardStatus,
     amountLabel: formatMoneyValue(run.currency, run.payableAmount),
     findingsCount: run.findingsCount,
-    href: `/workspace/validation-runs/${run.id}`,
+    href: `/workspace/validation-runs/${encodeURIComponent(run.id)}`,
     canDelete: true
   };
 }
@@ -495,7 +530,9 @@ function buildXmlQueueItem(upload: XmlUploadRecord): ReportQueueItem {
     id: upload.id,
     sourceType: "xml_readiness",
     title: invoiceLabel,
-    subtitle: `${upload.fileName} - ${formatStatus(upload.detectedDocument)} XML readiness`,
+    subtitle: `${upload.fileName} - ${formatStatus(
+      upload.detectedDocument
+    )} XML readiness`,
     createdAt: upload.uploadedAt,
     status: upload.readinessStatus,
     secondaryStatus: upload.profileStatus,
@@ -533,6 +570,7 @@ export default function WorkspaceValidationRunsPage() {
         const responseData = await readResponseBody(response);
 
         if (!response.ok) {
+          setValidationRuns([]);
           loadMessages.push(
             getApiErrorMessage(
               responseData,
@@ -550,38 +588,9 @@ export default function WorkspaceValidationRunsPage() {
           if (isMounted) {
             setValidationRuns(normalizedRuns);
           }
-
-          if (normalizedRuns.length > 0) {
-            const latestRunId = normalizedRuns[0].id;
-            const detailResponse = await fetch(
-              `/api/local/validation-runs/${encodeURIComponent(latestRunId)}`,
-              {
-                method: "GET",
-                cache: "no-store"
-              }
-            );
-
-            const detailData = await readResponseBody(detailResponse);
-
-            if (detailResponse.ok) {
-              const detailPayload = detailData as ValidationRunDetailResponse;
-              const normalizedDetail = normalizeValidationRunDetail(
-                detailPayload.record
-              );
-
-              if (isMounted) {
-                setLatestRunDetail(normalizedDetail);
-              }
-            } else {
-              loadMessages.push(
-                "Validation runs loaded, but the latest validation run detail could not be loaded."
-              );
-            }
-          } else if (isMounted) {
-            setLatestRunDetail(null);
-          }
         }
       } catch {
+        setValidationRuns([]);
         loadMessages.push(
           "The local validation run API is unavailable. Make sure apps/api and apps/web are both running."
         );
@@ -596,6 +605,7 @@ export default function WorkspaceValidationRunsPage() {
         const xmlData = await readResponseBody(xmlResponse);
 
         if (!xmlResponse.ok) {
+          setXmlUploads([]);
           loadMessages.push(
             getApiErrorMessage(xmlData, "Could not load XML readiness reports.")
           );
@@ -612,6 +622,7 @@ export default function WorkspaceValidationRunsPage() {
           }
         }
       } catch {
+        setXmlUploads([]);
         loadMessages.push(
           "Could not load XML readiness reports. Make sure apps/api and apps/web are both running."
         );
@@ -629,6 +640,60 @@ export default function WorkspaceValidationRunsPage() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLatestValidationRunDetail() {
+      const latestRun = validationRuns[0];
+
+      if (!latestRun) {
+        setLatestRunDetail(null);
+        return;
+      }
+
+      if (latestRunDetail?.id === latestRun.id) {
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `/api/local/validation-runs/${encodeURIComponent(latestRun.id)}`,
+          {
+            method: "GET",
+            cache: "no-store"
+          }
+        );
+
+        const responseData = await readResponseBody(response);
+
+        if (!response.ok) {
+          if (isMounted) {
+            setLatestRunDetail(null);
+          }
+
+          return;
+        }
+
+        const payload = responseData as ValidationRunDetailResponse;
+        const normalizedDetail = normalizeValidationRunDetail(payload.record);
+
+        if (isMounted) {
+          setLatestRunDetail(normalizedDetail);
+        }
+      } catch {
+        if (isMounted) {
+          setLatestRunDetail(null);
+        }
+      }
+    }
+
+    loadLatestValidationRunDetail();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [validationRuns, latestRunDetail?.id]);
 
   const reportQueueItems = useMemo(() => {
     const apiItems = validationRuns.map(buildValidationQueueItem);
@@ -711,7 +776,7 @@ export default function WorkspaceValidationRunsPage() {
       </section>
 
       <section className="validation-run-grid">
-        {validationRunLayers.map((item) => (
+        {validationLayerCards.map((item) => (
           <div className="validation-run-layer" key={item.title}>
             <div className="validation-layer-icon">
               {getValidationIcon(item.iconKey)}

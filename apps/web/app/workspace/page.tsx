@@ -24,10 +24,6 @@ type DashboardCounts = {
   openFindings: number | null;
 };
 
-type ApiRecordListResponse = {
-  records?: unknown[];
-};
-
 const emptyCounts: DashboardCounts = {
   invoiceDrafts: null,
   validationRuns: null,
