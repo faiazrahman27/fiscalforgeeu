@@ -15,6 +15,7 @@ export type AuthenticatedRequestUser = {
 declare module "fastify" {
   interface FastifyRequest {
     authenticatedUser?: AuthenticatedRequestUser;
+    authenticatedAccessToken?: string;
     authenticationMode?: "dev_api_key" | "supabase_user";
   }
 }
@@ -64,22 +65,32 @@ function sendUnauthorized(
   });
 }
 
+function authenticateWithDevApiKey(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const rawApiKey = request.headers["x-api-key"];
+
+  if (Array.isArray(rawApiKey) || typeof rawApiKey !== "string") {
+    return sendUnauthorized(
+      reply,
+      "API_KEY_REQUIRED",
+      "Missing x-api-key header."
+    );
+  }
+
+  if (!safeCompare(rawApiKey, env.DEV_API_KEY)) {
+    return sendUnauthorized(reply, "API_KEY_INVALID", "Invalid API key.");
+  }
+
+  request.authenticationMode = "dev_api_key";
+}
+
 async function authenticateWithSupabaseBearerToken(
   token: string,
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  if (!hasSupabaseJwtConfig()) {
-    return reply.status(503).send({
-      error: {
-        code: "AUTH_PROVIDER_NOT_CONFIGURED",
-        message:
-          "Supabase authentication is not configured for the API service.",
-        details: null
-      }
-    });
-  }
-
   const supabase = getSupabasePublicClient();
   const { data, error } = await supabase.auth.getUser(token);
 
@@ -97,6 +108,12 @@ async function authenticateWithSupabaseBearerToken(
     role: "authenticated"
   };
 
+  /*
+   * Keep the bearer token available only inside the API request lifecycle.
+   * Repository functions can use it to create a user-scoped Supabase client,
+   * so database reads/writes are evaluated by RLS as the signed-in user.
+   */
+  request.authenticatedAccessToken = token;
   request.authenticationMode = "supabase_user";
 }
 
@@ -106,23 +123,17 @@ export async function requireApiKey(
 ) {
   const bearerToken = readBearerToken(request);
 
-  if (bearerToken) {
+  /*
+   * During the current transition phase, the web proxy sends both:
+   * - x-api-key for the existing local API flow
+   * - Authorization: Bearer <token> when the user is signed in
+   *
+   * If the API does not have Supabase auth config yet, ignore the bearer token
+   * and preserve the working development API-key flow.
+   */
+  if (bearerToken && hasSupabaseJwtConfig()) {
     return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
   }
 
-  const rawApiKey = request.headers["x-api-key"];
-
-  if (Array.isArray(rawApiKey) || typeof rawApiKey !== "string") {
-    return sendUnauthorized(
-      reply,
-      "API_KEY_REQUIRED",
-      "Missing x-api-key header."
-    );
-  }
-
-  if (!safeCompare(rawApiKey, env.DEV_API_KEY)) {
-    return sendUnauthorized(reply, "API_KEY_INVALID", "Invalid API key.");
-  }
-
-  request.authenticationMode = "dev_api_key";
+  return authenticateWithDevApiKey(request, reply);
 }

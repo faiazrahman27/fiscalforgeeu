@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { createSupabaseServerClient } from "../../lib/supabase/server";
 import "./workspace.css";
+export const dynamic = "force-dynamic";
+
 
 const workspaceNav = [
   {
@@ -48,6 +50,21 @@ const workspaceNav = [
   }
 ];
 
+type WorkspaceContext = {
+  signedInUserEmail: string;
+  workspaceTitle: string;
+  workspaceSubtitle: string;
+  workspaceStatusLabel: string;
+};
+
+type BootstrapWorkspaceRecord = {
+  organizationId: string;
+  organizationName: string;
+  organizationSlug: string;
+  membershipRole: string;
+  userEmail: string;
+};
+
 function hasSupabasePublicConfig() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const supabasePublicKey =
@@ -57,20 +74,118 @@ function hasSupabasePublicConfig() {
   return Boolean(supabaseUrl && supabasePublicKey);
 }
 
-async function getSignedInUserEmail() {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readStringField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback = ""
+) {
+  const value = record[key];
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : fallback;
+}
+
+function normalizeBootstrapWorkspaceRecord(
+  value: unknown
+): BootstrapWorkspaceRecord | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const organizationId = readStringField(value, "organization_id");
+  const organizationName = readStringField(value, "organization_name");
+  const organizationSlug = readStringField(value, "organization_slug");
+  const membershipRole = readStringField(value, "membership_role", "member");
+  const userEmail = readStringField(value, "user_email");
+
+  if (!organizationId || !organizationName || !organizationSlug) {
+    return null;
+  }
+
+  return {
+    organizationId,
+    organizationName,
+    organizationSlug,
+    membershipRole,
+    userEmail
+  };
+}
+
+function getLocalWorkspaceContext(): WorkspaceContext {
+  return {
+    signedInUserEmail: "",
+    workspaceTitle: "Local workspace",
+    workspaceSubtitle: "No organization account connected",
+    workspaceStatusLabel: "Workspace status"
+  };
+}
+
+function getPersonalWorkspaceFallback(email: string): WorkspaceContext {
+  return {
+    signedInUserEmail: email,
+    workspaceTitle: "Personal workspace",
+    workspaceSubtitle: email || "Organization bootstrap pending",
+    workspaceStatusLabel: "Workspace status"
+  };
+}
+
+async function getWorkspaceContext(): Promise<WorkspaceContext> {
   if (!hasSupabasePublicConfig()) {
-    return "";
+    return getLocalWorkspaceContext();
   }
 
   try {
     const supabase = await createSupabaseServerClient();
+
     const {
       data: { user }
     } = await supabase.auth.getUser();
 
-    return user?.email ?? "";
-  } catch {
-    return "";
+    if (!user) {
+      return getLocalWorkspaceContext();
+    }
+
+    const signedInUserEmail = user.email ?? "";
+
+    /*
+     * This RPC creates or loads:
+     * - public.profiles
+     * - public.organizations
+     * - public.organization_memberships
+     *
+     * It runs as a controlled security-definer database function, so the
+     * bootstrap is atomic and avoids separate RLS-sensitive inserts here.
+     */
+    const { data, error } = await supabase.rpc("bootstrap_personal_workspace");
+
+    if (error) {
+      console.error("Workspace bootstrap failed:", error.message);
+      return getPersonalWorkspaceFallback(signedInUserEmail);
+    }
+
+    const firstRecord = Array.isArray(data) ? data[0] : data;
+    const bootstrapRecord = normalizeBootstrapWorkspaceRecord(firstRecord);
+
+    if (!bootstrapRecord) {
+      return getPersonalWorkspaceFallback(signedInUserEmail);
+    }
+
+    const visibleEmail = bootstrapRecord.userEmail || signedInUserEmail;
+
+    return {
+      signedInUserEmail: visibleEmail,
+      workspaceTitle: bootstrapRecord.organizationName,
+      workspaceSubtitle: `${bootstrapRecord.membershipRole} · ${visibleEmail}`,
+      workspaceStatusLabel: "Organization workspace"
+    };
+  } catch (error) {
+    console.error("Workspace context failed:", error);
+    return getLocalWorkspaceContext();
   }
 }
 
@@ -79,7 +194,13 @@ export default async function WorkspaceLayout({
 }: {
   children: ReactNode;
 }) {
-  const signedInUserEmail = await getSignedInUserEmail();
+  const workspaceContext = await getWorkspaceContext();
+  const {
+    signedInUserEmail,
+    workspaceTitle,
+    workspaceSubtitle,
+    workspaceStatusLabel
+  } = workspaceContext;
 
   return (
     <main className="workspace-shell">
@@ -92,11 +213,9 @@ export default async function WorkspaceLayout({
         </Link>
 
         <div className="workspace-org">
-          <p>Workspace status</p>
-          <h2>{signedInUserEmail ? "Personal workspace" : "Local workspace"}</h2>
-          <span>
-            {signedInUserEmail || "No organization account connected"}
-          </span>
+          <p>{workspaceStatusLabel}</p>
+          <h2>{workspaceTitle}</h2>
+          <span>{workspaceSubtitle}</span>
         </div>
 
         <nav className="workspace-nav">
