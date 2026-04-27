@@ -40,8 +40,11 @@ type SupabaseInvoiceDraftRow = {
   organization_id: string;
   created_by: string;
   invoice_number: string;
+  seller_name: string;
+  seller_country: string;
   buyer_name: string;
   buyer_country: string;
+  issue_date: string;
   currency: string;
   payable_amount: string;
   payload: unknown;
@@ -52,6 +55,9 @@ type SupabaseInvoiceDraftRow = {
 
 const INVOICE_DRAFTS_FILE = "invoice-drafts.json";
 const MAX_STORED_INVOICE_DRAFTS = 250;
+const INVOICE_DRAFT_SELECT_FIELDS =
+  "id, organization_id, created_by, invoice_number, seller_name, seller_country, buyer_name, buyer_country, issue_date, currency, payable_amount, payload, summary, created_at, updated_at";
+
 const storageProvider = getCollectionStorageProvider();
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -165,13 +171,18 @@ function buildSupabaseInvoiceDraftValues(
     organization_id: organizationId,
     created_by: userId,
     invoice_number: payload.document.number,
+    seller_name: payload.seller.name,
+    seller_country: payload.seller.country,
     buyer_name: payload.buyer.name,
     buyer_country: payload.buyer.country,
+    issue_date: payload.document.issueDate,
     currency: payload.document.currency,
     payable_amount: payload.totals.payableAmount,
     payload,
     summary: {
       number: payload.document.number,
+      seller: payload.seller.name,
+      sellerCountry: payload.seller.country,
       buyer: payload.buyer.name,
       buyerCountry: payload.buyer.country,
       issueDate: payload.document.issueDate,
@@ -205,9 +216,7 @@ async function listSupabaseInvoiceDrafts(
 ) {
   const { data, error } = await supabase
     .from("invoice_drafts")
-    .select(
-      "id, organization_id, created_by, invoice_number, buyer_name, buyer_country, currency, payable_amount, payload, summary, created_at, updated_at"
-    )
+    .select(INVOICE_DRAFT_SELECT_FIELDS)
     .eq("organization_id", organizationId)
     .order("updated_at", {
       ascending: false
@@ -413,11 +422,15 @@ export async function createAuthenticatedInvoiceDraft(
   if (existingDraft) {
     const { data, error } = await supabase
       .from("invoice_drafts")
-      .update(buildSupabaseInvoiceDraftValues(payload, workspace.organizationId, context.userId))
-      .eq("id", existingDraft.id)
-      .select(
-        "id, organization_id, created_by, invoice_number, buyer_name, buyer_country, currency, payable_amount, payload, summary, created_at, updated_at"
+      .update(
+        buildSupabaseInvoiceDraftValues(
+          payload,
+          workspace.organizationId,
+          context.userId
+        )
       )
+      .eq("id", existingDraft.id)
+      .select(INVOICE_DRAFT_SELECT_FIELDS)
       .single();
 
     if (error) {
@@ -437,10 +450,14 @@ export async function createAuthenticatedInvoiceDraft(
 
   const { data, error } = await supabase
     .from("invoice_drafts")
-    .insert(buildSupabaseInvoiceDraftValues(payload, workspace.organizationId, context.userId))
-    .select(
-      "id, organization_id, created_by, invoice_number, buyer_name, buyer_country, currency, payable_amount, payload, summary, created_at, updated_at"
+    .insert(
+      buildSupabaseInvoiceDraftValues(
+        payload,
+        workspace.organizationId,
+        context.userId
+      )
     )
+    .select(INVOICE_DRAFT_SELECT_FIELDS)
     .single();
 
   if (error) {
@@ -468,12 +485,16 @@ export async function updateAuthenticatedInvoiceDraftById(
 
   const { data, error } = await supabase
     .from("invoice_drafts")
-    .update(buildSupabaseInvoiceDraftValues(payload, workspace.organizationId, context.userId))
+    .update(
+      buildSupabaseInvoiceDraftValues(
+        payload,
+        workspace.organizationId,
+        context.userId
+      )
+    )
     .eq("id", id)
     .eq("organization_id", workspace.organizationId)
-    .select(
-      "id, organization_id, created_by, invoice_number, buyer_name, buyer_country, currency, payable_amount, payload, summary, created_at, updated_at"
-    )
+    .select(INVOICE_DRAFT_SELECT_FIELDS)
     .maybeSingle();
 
   if (error) {
@@ -496,9 +517,7 @@ export async function getAuthenticatedInvoiceDraftById(
 
   const { data, error } = await supabase
     .from("invoice_drafts")
-    .select(
-      "id, organization_id, created_by, invoice_number, buyer_name, buyer_country, currency, payable_amount, payload, summary, created_at, updated_at"
-    )
+    .select(INVOICE_DRAFT_SELECT_FIELDS)
     .eq("id", id)
     .eq("organization_id", workspace.organizationId)
     .maybeSingle();
