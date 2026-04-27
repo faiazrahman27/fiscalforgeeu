@@ -1,3 +1,5 @@
+import { XMLParser, XMLValidator } from "fast-xml-parser";
+
 export type XmlFindingSeverity = "info" | "warning" | "fatal";
 
 export type XmlProfileStatus =
@@ -92,6 +94,41 @@ export type XmlUploadSummaryShape = {
   currency: string;
 };
 
+type XmlParserContext = {
+  xml: string;
+  parsedXml: unknown;
+  rootElement: string;
+  isWellFormed: boolean;
+  parserErrorMessage: string;
+};
+
+const parser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  textNodeName: "#text",
+  removeNSPrefix: true,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: true,
+  alwaysCreateTextNode: true
+});
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (value === undefined || value === null) {
+    return [];
+  }
+
+  return [value];
+}
+
 function detectRootElement(xml: string) {
   const match = xml.match(/<([A-Za-z_][\w:.-]*)(\s|>)/);
   const rawRoot = match?.[1] ?? "unknown";
@@ -113,175 +150,276 @@ function detectDocumentType(rootElement: string) {
   return "unknown";
 }
 
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function getValidationErrorMessage(result: unknown) {
+  if (result === true) {
+    return "";
+  }
+
+  if (isPlainObject(result) && isPlainObject(result.err)) {
+    const message = result.err.msg;
+
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message.trim().slice(0, 240);
+    }
+  }
+
+  return "XML parser reported a well-formedness error.";
 }
 
-function buildNamespacedTagPattern(tagName: string) {
-  const escapedTag = escapeRegex(tagName);
+function buildXmlParserContext(xml: string): XmlParserContext {
+  const validationResult = XMLValidator.validate(xml);
+  const isWellFormed = validationResult === true;
+  const rootElement = detectRootElement(xml);
 
-  return new RegExp(
-    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedTag}>`,
-    "i"
-  );
+  if (!isWellFormed) {
+    return {
+      xml,
+      parsedXml: {},
+      rootElement,
+      isWellFormed: false,
+      parserErrorMessage: getValidationErrorMessage(validationResult)
+    };
+  }
+
+  try {
+    return {
+      xml,
+      parsedXml: parser.parse(xml) as unknown,
+      rootElement,
+      isWellFormed: true,
+      parserErrorMessage: ""
+    };
+  } catch (error) {
+    return {
+      xml,
+      parsedXml: {},
+      rootElement,
+      isWellFormed: false,
+      parserErrorMessage:
+        error instanceof Error
+          ? error.message.slice(0, 240)
+          : "XML parser failed to parse the uploaded XML."
+    };
+  }
 }
 
-function buildNamespacedTagGlobalPattern(tagName: string) {
-  const escapedTag = escapeRegex(tagName);
+function nodeToText(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
 
-  return new RegExp(
-    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedTag}>`,
-    "gi"
-  );
-}
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
 
-function hasTag(xml: string, tagName: string) {
-  return buildNamespacedTagPattern(tagName).test(xml);
-}
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = nodeToText(item);
 
-function countTags(xml: string, tagName: string) {
-  return xml.match(buildNamespacedTagGlobalPattern(tagName))?.length ?? 0;
-}
-
-function extractFirstTagValue(xml: string, tagName: string) {
-  const escapedTag = escapeRegex(tagName);
-
-  const namespacedPattern = new RegExp(
-    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedTag}>`,
-    "i"
-  );
-
-  const match = xml.match(namespacedPattern);
-
-  return match?.[1]?.trim().slice(0, 240) || "not_detected";
-}
-
-function extractAllTagValues(xml: string, tagName: string, maxResults = 30) {
-  const escapedTag = escapeRegex(tagName);
-  const namespacedPattern = new RegExp(
-    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedTag}>`,
-    "gi"
-  );
-
-  const values: string[] = [];
-  let match = namespacedPattern.exec(xml);
-
-  while (match && values.length < maxResults) {
-    const value = match[1]?.trim().slice(0, 180);
-
-    if (value) {
-      values.push(value);
+      if (text) {
+        return text;
+      }
     }
 
-    match = namespacedPattern.exec(xml);
+    return "";
   }
 
-  return values;
-}
+  if (isPlainObject(value)) {
+    const textNode = value["#text"];
 
-function extractFirstBlock(xml: string, blockTag: string) {
-  const escapedTag = escapeRegex(blockTag);
+    if (typeof textNode === "string" && textNode.trim().length > 0) {
+      return textNode.trim();
+    }
 
-  const blockPattern = new RegExp(
-    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}(?:\\s[^>]*)?>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${escapedTag}>`,
-    "i"
-  );
-
-  return xml.match(blockPattern)?.[0] ?? "";
-}
-
-function extractAllBlocks(xml: string, blockTag: string, maxResults = 30) {
-  const pattern = buildNamespacedTagGlobalPattern(blockTag);
-  const blocks: string[] = [];
-  let match = pattern.exec(xml);
-
-  while (match && blocks.length < maxResults) {
-    blocks.push(match[0]);
-    match = pattern.exec(xml);
+    if (typeof textNode === "number" || typeof textNode === "boolean") {
+      return String(textNode);
+    }
   }
 
-  return blocks;
+  return "";
 }
 
-function extractFirstTagOpening(xml: string, tagName: string) {
-  const escapedTag = escapeRegex(tagName);
+function getFirstChildNode(parent: unknown, tagName: string) {
+  if (!isPlainObject(parent)) {
+    return undefined;
+  }
 
-  const pattern = new RegExp(
-    `<(?:[A-Za-z_][\\w.-]*:)?${escapedTag}(?:\\s[^>]*)?>`,
-    "i"
-  );
-
-  return xml.match(pattern)?.[0] ?? "";
+  return asArray(parent[tagName])[0];
 }
 
-function extractAttributeValueFromOpeningTag(
-  openingTag: string,
-  attributeName: string
-) {
-  const escapedAttribute = escapeRegex(attributeName);
-  const pattern = new RegExp(
-    `${escapedAttribute}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`,
-    "i"
-  );
+function getFirstChildText(parent: unknown, tagName: string, maxLength = 240) {
+  const text = nodeToText(getFirstChildNode(parent, tagName));
 
-  const match = openingTag.match(pattern);
-
-  return match?.[1]?.trim() || match?.[2]?.trim() || "not_detected";
+  return text ? text.slice(0, maxLength) : "not_detected";
 }
 
-function extractFirstTagAttribute(
-  xml: string,
+function collectDescendantNodes(
+  node: unknown,
   tagName: string,
-  attributeName: string
-) {
-  const openingTag = extractFirstTagOpening(xml, tagName);
-
-  if (!openingTag) {
-    return "not_detected";
+  maxResults = 200,
+  results: unknown[] = []
+): unknown[] {
+  if (results.length >= maxResults) {
+    return results;
   }
 
-  return extractAttributeValueFromOpeningTag(openingTag, attributeName);
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      collectDescendantNodes(item, tagName, maxResults, results);
+
+      if (results.length >= maxResults) {
+        break;
+      }
+    }
+
+    return results;
+  }
+
+  if (!isPlainObject(node)) {
+    return results;
+  }
+
+  for (const [key, value] of Object.entries(node)) {
+    if (key === tagName) {
+      for (const item of asArray(value)) {
+        if (results.length >= maxResults) {
+          break;
+        }
+
+        results.push(item);
+      }
+    }
+
+    if (!key.startsWith("@_") && key !== "#text") {
+      collectDescendantNodes(value, tagName, maxResults, results);
+    }
+
+    if (results.length >= maxResults) {
+      break;
+    }
+  }
+
+  return results;
 }
 
-function extractFirstTagValueInsideBlock(
-  xml: string,
-  blockTag: string,
-  tagName: string
-) {
-  const block = extractFirstBlock(xml, blockTag);
+function getRootNode(context: XmlParserContext) {
+  if (!isPlainObject(context.parsedXml)) {
+    return undefined;
+  }
 
-  if (!block) {
+  const directRoot = context.parsedXml[context.rootElement];
+
+  if (directRoot !== undefined) {
+    return Array.isArray(directRoot) ? directRoot[0] : directRoot;
+  }
+
+  const firstDocumentEntry = Object.entries(context.parsedXml).find(([key]) => {
+    return !key.startsWith("?") && !key.startsWith("@_");
+  });
+
+  const value = firstDocumentEntry?.[1];
+
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function hasTag(context: XmlParserContext, tagName: string) {
+  return collectDescendantNodes(context.parsedXml, tagName, 1).length > 0;
+}
+
+function countTags(context: XmlParserContext, tagName: string) {
+  return collectDescendantNodes(context.parsedXml, tagName, 500).length;
+}
+
+function extractFirstTagValue(
+  context: XmlParserContext,
+  tagName: string,
+  maxLength = 240
+) {
+  const firstNode = collectDescendantNodes(context.parsedXml, tagName, 1)[0];
+  const text = nodeToText(firstNode);
+
+  return text ? text.slice(0, maxLength) : "not_detected";
+}
+
+function extractDocumentField(context: XmlParserContext, tagName: string) {
+  const rootNode = getRootNode(context);
+  const directValue = getFirstChildText(rootNode, tagName);
+
+  if (directValue !== "not_detected") {
+    return directValue;
+  }
+
+  return extractFirstTagValue(context, tagName);
+}
+
+function extractAllTagValues(
+  context: XmlParserContext,
+  tagName: string,
+  maxResults = 30
+) {
+  return collectDescendantNodes(context.parsedXml, tagName, maxResults)
+    .map((node) => nodeToText(node).slice(0, 180))
+    .filter(Boolean);
+}
+
+function getAttributeValue(node: unknown, attributeName: string) {
+  if (!isPlainObject(node)) {
     return "not_detected";
   }
 
-  return extractFirstTagValue(block, tagName);
+  const directValue = node[`@_${attributeName}`] ?? node[attributeName];
+
+  if (typeof directValue === "string" && directValue.trim().length > 0) {
+    return directValue.trim().slice(0, 180);
+  }
+
+  if (typeof directValue === "number" || typeof directValue === "boolean") {
+    return String(directValue);
+  }
+
+  return "not_detected";
 }
 
 function uniqueValues(values: string[]) {
   return [...new Set(values.filter((value) => value && value !== "not_detected"))];
 }
 
-function extractPartyName(xml: string, partyBlockTag: string) {
-  const partyBlock = extractFirstBlock(xml, partyBlockTag);
+function extractFirstDescendantText(parent: unknown, tagName: string) {
+  const firstNode = collectDescendantNodes(parent, tagName, 1)[0];
+  const text = nodeToText(firstNode);
+
+  return text ? text.slice(0, 240) : "not_detected";
+}
+
+function extractPartyNode(context: XmlParserContext, partyBlockTag: string) {
+  return collectDescendantNodes(context.parsedXml, partyBlockTag, 1)[0];
+}
+
+function extractPartyName(context: XmlParserContext, partyBlockTag: string) {
+  const partyBlock = extractPartyNode(context, partyBlockTag);
 
   if (!partyBlock) {
     return "not_detected";
   }
 
-  const partyNameBlock = extractFirstBlock(partyBlock, "PartyName");
+  const partyNameBlock = collectDescendantNodes(partyBlock, "PartyName", 1)[0];
 
   if (partyNameBlock) {
-    const nameFromPartyName = extractFirstTagValue(partyNameBlock, "Name");
+    const nameFromPartyName = extractFirstDescendantText(partyNameBlock, "Name");
 
     if (nameFromPartyName !== "not_detected") {
       return nameFromPartyName;
     }
   }
 
-  const partyLegalEntityBlock = extractFirstBlock(partyBlock, "PartyLegalEntity");
+  const partyLegalEntityBlock = collectDescendantNodes(
+    partyBlock,
+    "PartyLegalEntity",
+    1
+  )[0];
 
   if (partyLegalEntityBlock) {
-    const registrationName = extractFirstTagValue(
+    const registrationName = extractFirstDescendantText(
       partyLegalEntityBlock,
       "RegistrationName"
     );
@@ -291,79 +429,98 @@ function extractPartyName(xml: string, partyBlockTag: string) {
     }
   }
 
-  return extractFirstTagValue(partyBlock, "Name");
+  return extractFirstDescendantText(partyBlock, "Name");
 }
 
-function extractPartyEndpointId(xml: string, partyBlockTag: string) {
-  const partyBlock = extractFirstBlock(xml, partyBlockTag);
+function extractPartyEndpointId(
+  context: XmlParserContext,
+  partyBlockTag: string
+) {
+  const partyBlock = extractPartyNode(context, partyBlockTag);
 
   if (!partyBlock) {
     return "not_detected";
   }
 
-  return extractFirstTagValue(partyBlock, "EndpointID");
+  return extractFirstDescendantText(partyBlock, "EndpointID");
 }
 
-function extractPartyEndpointScheme(xml: string, partyBlockTag: string) {
-  const partyBlock = extractFirstBlock(xml, partyBlockTag);
+function extractPartyEndpointScheme(
+  context: XmlParserContext,
+  partyBlockTag: string
+) {
+  const partyBlock = extractPartyNode(context, partyBlockTag);
 
   if (!partyBlock) {
     return "not_detected";
   }
 
-  return extractFirstTagAttribute(partyBlock, "EndpointID", "schemeID");
+  const endpointNode = collectDescendantNodes(partyBlock, "EndpointID", 1)[0];
+
+  return getAttributeValue(endpointNode, "schemeID");
 }
 
-function extractPartyCountryCode(xml: string, partyBlockTag: string) {
-  const partyBlock = extractFirstBlock(xml, partyBlockTag);
+function extractPartyCountryCode(
+  context: XmlParserContext,
+  partyBlockTag: string
+) {
+  const partyBlock = extractPartyNode(context, partyBlockTag);
 
   if (!partyBlock) {
     return "not_detected";
   }
 
-  const countryBlock = extractFirstBlock(partyBlock, "Country");
+  const countryBlock = collectDescendantNodes(partyBlock, "Country", 1)[0];
 
   if (!countryBlock) {
     return "not_detected";
   }
 
-  return extractFirstTagValue(countryBlock, "IdentificationCode");
+  return extractFirstDescendantText(countryBlock, "IdentificationCode");
 }
 
-function extractTaxCategoryCodes(xml: string) {
-  const taxCategoryBlocks = extractAllBlocks(xml, "TaxCategory", 40);
+function extractTaxCategoryCodes(context: XmlParserContext) {
+  const taxCategoryBlocks = collectDescendantNodes(
+    context.parsedXml,
+    "TaxCategory",
+    40
+  );
 
   return uniqueValues(
-    taxCategoryBlocks.map((block) => extractFirstTagValue(block, "ID"))
+    taxCategoryBlocks.map((block) => getFirstChildText(block, "ID", 180))
   );
 }
 
-function extractVatPercentValues(xml: string) {
-  return uniqueValues(extractAllTagValues(xml, "Percent", 40));
+function extractVatPercentValues(context: XmlParserContext) {
+  return uniqueValues(extractAllTagValues(context, "Percent", 40));
 }
 
-function extractMonetaryTotal(xml: string, tagName: string) {
-  const valueInsideLegalTotal = extractFirstTagValueInsideBlock(
-    xml,
+function extractMonetaryTotal(context: XmlParserContext, tagName: string) {
+  const legalTotalBlock = collectDescendantNodes(
+    context.parsedXml,
     "LegalMonetaryTotal",
-    tagName
-  );
+    1
+  )[0];
 
-  if (valueInsideLegalTotal !== "not_detected") {
-    return valueInsideLegalTotal;
+  if (legalTotalBlock) {
+    const valueInsideLegalTotal = getFirstChildText(legalTotalBlock, tagName);
+
+    if (valueInsideLegalTotal !== "not_detected") {
+      return valueInsideLegalTotal;
+    }
   }
 
-  return extractFirstTagValue(xml, tagName);
+  return extractFirstTagValue(context, tagName);
 }
 
-function extractTaxAmount(xml: string) {
-  const taxTotalBlock = extractFirstBlock(xml, "TaxTotal");
+function extractTaxAmount(context: XmlParserContext) {
+  const taxTotalBlock = collectDescendantNodes(context.parsedXml, "TaxTotal", 1)[0];
 
   if (!taxTotalBlock) {
     return "not_detected";
   }
 
-  return extractFirstTagValue(taxTotalBlock, "TaxAmount");
+  return getFirstChildText(taxTotalBlock, "TaxAmount");
 }
 
 function parseMoney(value: string) {
@@ -389,40 +546,29 @@ function valuesApproximatelyEqual(first: number, second: number) {
   return Math.abs(first - second) <= 0.02;
 }
 
-function hasParseRisk(xml: string) {
-  const openingLikeTags = xml.match(/<[A-Za-z_][\w:.-]*(?:\s[^>]*)?>/g) ?? [];
-  const closingLikeTags = xml.match(/<\/[A-Za-z_][\w:.-]*>/g) ?? [];
-
-  if (openingLikeTags.length === 0) {
-    return true;
-  }
-
-  return closingLikeTags.length === 0;
-}
-
-function hasUblNamespaceSignal(xml: string) {
+function hasUblNamespaceSignal(context: XmlParserContext) {
   return (
     /urn:oasis:names:specification:ubl:schema:xsd:(Invoice|CreditNote)-2/i.test(
-      xml
+      context.xml
     ) ||
     /urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2/i.test(
-      xml
+      context.xml
     ) ||
     /urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2/i.test(
-      xml
+      context.xml
     )
   );
 }
 
 function pushMissingTagFinding(
   findings: XmlReadinessFinding[],
-  xml: string,
+  context: XmlParserContext,
   tagName: string,
   field: string,
   label: string,
   severity: XmlFindingSeverity = "warning"
 ) {
-  if (hasTag(xml, tagName)) {
+  if (hasTag(context, tagName)) {
     return;
   }
 
@@ -451,19 +597,19 @@ function pushExtractedInfoFinding(
 }
 
 function buildProfileSignal(
-  xml: string,
+  context: XmlParserContext,
   detectedDocument: string
 ): XmlProfileSignal {
-  const customizationId = extractFirstTagValue(xml, "CustomizationID");
-  const profileId = extractFirstTagValue(xml, "ProfileID");
+  const customizationId = extractDocumentField(context, "CustomizationID");
+  const profileId = extractDocumentField(context, "ProfileID");
   const normalizedProfileText = `${customizationId} ${profileId}`.toLowerCase();
 
-  const ublNamespaceDetected = hasUblNamespaceSignal(xml);
+  const ublNamespaceDetected = hasUblNamespaceSignal(context);
   const ublDocumentDetected =
     detectedDocument !== "unknown" &&
     (ublNamespaceDetected ||
-      hasTag(xml, "AccountingSupplierParty") ||
-      hasTag(xml, "AccountingCustomerParty"));
+      hasTag(context, "AccountingSupplierParty") ||
+      hasTag(context, "AccountingCustomerParty"));
 
   const peppolSignalDetected =
     normalizedProfileText.includes("peppol") ||
@@ -476,8 +622,11 @@ function buildProfileSignal(
     normalizedProfileText.includes("urn:cen.eu:en16931") ||
     normalizedProfileText.includes("cius");
 
-  const sellerCountry = extractPartyCountryCode(xml, "AccountingSupplierParty");
-  const buyerCountry = extractPartyCountryCode(xml, "AccountingCustomerParty");
+  const sellerCountry = extractPartyCountryCode(
+    context,
+    "AccountingSupplierParty"
+  );
+  const buyerCountry = extractPartyCountryCode(context, "AccountingCustomerParty");
 
   const countryPair =
     sellerCountry !== "not_detected" || buyerCountry !== "not_detected"
@@ -492,7 +641,7 @@ function buildProfileSignal(
   const profileHints: string[] = [];
 
   if (ublDocumentDetected) {
-    profileHints.push("UBL document surface");
+    profileHints.push("UBL document parser signal");
   }
 
   if (peppolSignalDetected) {
@@ -515,26 +664,26 @@ function buildProfileSignal(
     ublDocumentDetected,
     peppolSignalDetected,
     en16931SignalDetected,
-    endpointCount: countTags(xml, "EndpointID"),
-    sellerEndpointId: extractPartyEndpointId(xml, "AccountingSupplierParty"),
+    endpointCount: countTags(context, "EndpointID"),
+    sellerEndpointId: extractPartyEndpointId(context, "AccountingSupplierParty"),
     sellerEndpointScheme: extractPartyEndpointScheme(
-      xml,
+      context,
       "AccountingSupplierParty"
     ),
-    buyerEndpointId: extractPartyEndpointId(xml, "AccountingCustomerParty"),
+    buyerEndpointId: extractPartyEndpointId(context, "AccountingCustomerParty"),
     buyerEndpointScheme: extractPartyEndpointScheme(
-      xml,
+      context,
       "AccountingCustomerParty"
     ),
     sellerCountry,
     buyerCountry,
     countryPair,
     crossBorderSignal,
-    taxCategoryCodes: extractTaxCategoryCodes(xml),
-    vatPercentValues: extractVatPercentValues(xml),
-    paymentMeansDetected: hasTag(xml, "PaymentMeans"),
-    paymentTermsDetected: hasTag(xml, "PaymentTerms"),
-    allowanceChargeDetected: hasTag(xml, "AllowanceCharge")
+    taxCategoryCodes: extractTaxCategoryCodes(context),
+    vatPercentValues: extractVatPercentValues(context),
+    paymentMeansDetected: hasTag(context, "PaymentMeans"),
+    paymentTermsDetected: hasTag(context, "PaymentTerms"),
+    allowanceChargeDetected: hasTag(context, "AllowanceCharge")
   };
 }
 
@@ -647,7 +796,7 @@ function addProfileSignalFindings(
       severity: "warning",
       field: "CustomizationID/ProfileID",
       message:
-        "A customization/profile value was detected, but Invoice Lantern could not confidently classify it as Peppol BIS or EN 16931 from surface signals.",
+        "A customization/profile value was detected, but Invoice Lantern could not confidently classify it as Peppol BIS or EN 16931 from parser-level signals.",
       confidence: "review_required"
     });
   }
@@ -751,35 +900,35 @@ function addProfileSignalFindings(
 }
 
 function buildExtractedData(
-  xml: string,
+  context: XmlParserContext,
   currency: string,
   detectedDocument: string
 ): XmlExtractedData {
-  const invoiceLineCount = countTags(xml, "InvoiceLine");
-  const creditNoteLineCount = countTags(xml, "CreditNoteLine");
+  const invoiceLineCount = countTags(context, "InvoiceLine");
+  const creditNoteLineCount = countTags(context, "CreditNoteLine");
   const lineCount = invoiceLineCount + creditNoteLineCount;
 
   return {
-    sellerName: extractPartyName(xml, "AccountingSupplierParty"),
-    buyerName: extractPartyName(xml, "AccountingCustomerParty"),
+    sellerName: extractPartyName(context, "AccountingSupplierParty"),
+    buyerName: extractPartyName(context, "AccountingCustomerParty"),
     lineCount,
     invoiceLineCount,
     creditNoteLineCount,
     currency,
     monetaryTotals: {
-      lineExtensionAmount: extractMonetaryTotal(xml, "LineExtensionAmount"),
-      taxExclusiveAmount: extractMonetaryTotal(xml, "TaxExclusiveAmount"),
-      taxAmount: extractTaxAmount(xml),
-      taxInclusiveAmount: extractMonetaryTotal(xml, "TaxInclusiveAmount"),
-      payableAmount: extractMonetaryTotal(xml, "PayableAmount")
+      lineExtensionAmount: extractMonetaryTotal(context, "LineExtensionAmount"),
+      taxExclusiveAmount: extractMonetaryTotal(context, "TaxExclusiveAmount"),
+      taxAmount: extractTaxAmount(context),
+      taxInclusiveAmount: extractMonetaryTotal(context, "TaxInclusiveAmount"),
+      payableAmount: extractMonetaryTotal(context, "PayableAmount")
     },
     taxSignal: {
-      taxTotalDetected: hasTag(xml, "TaxTotal"),
-      taxSubtotalDetected: hasTag(xml, "TaxSubtotal"),
-      taxCategoryDetected: hasTag(xml, "TaxCategory"),
-      taxRateCount: countTags(xml, "Percent")
+      taxTotalDetected: hasTag(context, "TaxTotal"),
+      taxSubtotalDetected: hasTag(context, "TaxSubtotal"),
+      taxCategoryDetected: hasTag(context, "TaxCategory"),
+      taxRateCount: countTags(context, "Percent")
     },
-    profileSignal: buildProfileSignal(xml, detectedDocument)
+    profileSignal: buildProfileSignal(context, detectedDocument)
   };
 }
 
@@ -864,7 +1013,7 @@ function addCalculationFindings(
       severity: "warning",
       field: "LegalMonetaryTotal.TaxInclusiveAmount",
       message:
-        "Tax-inclusive amount does not match tax-exclusive amount plus tax amount in this surface-level check.",
+        "Tax-inclusive amount does not match tax-exclusive amount plus tax amount in this parser-backed check.",
       confidence: "readiness_simulation"
     });
 
@@ -876,7 +1025,7 @@ function addCalculationFindings(
     severity: "info",
     field: "LegalMonetaryTotal.TaxInclusiveAmount",
     message:
-      "Tax-inclusive amount matches tax-exclusive amount plus tax amount in this surface-level check.",
+      "Tax-inclusive amount matches tax-exclusive amount plus tax amount in this parser-backed check.",
     confidence: "readiness_simulation"
   });
 
@@ -896,14 +1045,14 @@ function addCalculationFindings(
 }
 
 function buildReadinessReport({
-  xml,
+  context,
   detectedDocument,
   rootElement,
   invoiceId,
   issueDate,
   currency
 }: {
-  xml: string;
+  context: XmlParserContext;
   detectedDocument: string;
   rootElement: string;
   invoiceId: string;
@@ -911,15 +1060,22 @@ function buildReadinessReport({
   currency: string;
 }): XmlReadinessReport {
   const findings: XmlReadinessFinding[] = [];
-  const extractedData = buildExtractedData(xml, currency, detectedDocument);
+  const extractedData = buildExtractedData(context, currency, detectedDocument);
 
-  if (hasParseRisk(xml)) {
+  if (!context.isWellFormed) {
     findings.push({
-      code: "XML_SURFACE_PARSE_RISK",
+      code: "XML_WELL_FORMEDNESS_FAILED",
       severity: "fatal",
       field: "xml",
-      message:
-        "The XML text does not look structurally complete enough for readiness inspection.",
+      message: context.parserErrorMessage,
+      confidence: "technical"
+    });
+  } else {
+    findings.push({
+      code: "XML_WELL_FORMEDNESS_PASSED",
+      severity: "info",
+      field: "xml",
+      message: "The uploaded XML passed parser-level well-formedness validation.",
       confidence: "technical"
     });
   }
@@ -983,7 +1139,7 @@ function buildReadinessReport({
 
   pushMissingTagFinding(
     findings,
-    xml,
+    context,
     "AccountingSupplierParty",
     "AccountingSupplierParty",
     "Seller/supplier party block",
@@ -992,7 +1148,7 @@ function buildReadinessReport({
 
   pushMissingTagFinding(
     findings,
-    xml,
+    context,
     "AccountingCustomerParty",
     "AccountingCustomerParty",
     "Buyer/customer party block",
@@ -1001,7 +1157,7 @@ function buildReadinessReport({
 
   pushMissingTagFinding(
     findings,
-    xml,
+    context,
     "TaxTotal",
     "TaxTotal",
     "Tax total block",
@@ -1010,7 +1166,7 @@ function buildReadinessReport({
 
   pushMissingTagFinding(
     findings,
-    xml,
+    context,
     "LegalMonetaryTotal",
     "LegalMonetaryTotal",
     "Legal monetary total block",
@@ -1027,10 +1183,10 @@ function buildReadinessReport({
     });
   }
 
-  if (hasTag(xml, "LegalMonetaryTotal")) {
+  if (hasTag(context, "LegalMonetaryTotal")) {
     pushMissingTagFinding(
       findings,
-      xml,
+      context,
       "LineExtensionAmount",
       "LegalMonetaryTotal.LineExtensionAmount",
       "Line extension amount",
@@ -1039,7 +1195,7 @@ function buildReadinessReport({
 
     pushMissingTagFinding(
       findings,
-      xml,
+      context,
       "TaxExclusiveAmount",
       "LegalMonetaryTotal.TaxExclusiveAmount",
       "Tax exclusive amount",
@@ -1048,7 +1204,7 @@ function buildReadinessReport({
 
     pushMissingTagFinding(
       findings,
-      xml,
+      context,
       "TaxInclusiveAmount",
       "LegalMonetaryTotal.TaxInclusiveAmount",
       "Tax inclusive amount",
@@ -1057,7 +1213,7 @@ function buildReadinessReport({
 
     pushMissingTagFinding(
       findings,
-      xml,
+      context,
       "PayableAmount",
       "LegalMonetaryTotal.PayableAmount",
       "Payable amount",
@@ -1096,10 +1252,10 @@ function buildReadinessReport({
   const hasWarning = findings.some((finding) => finding.severity === "warning");
 
   const calculationStatus =
-    hasTag(xml, "LegalMonetaryTotal") &&
+    hasTag(context, "LegalMonetaryTotal") &&
     findings.some((finding) => finding.code === "TAX_INCLUSIVE_TOTAL_MISMATCH")
       ? "inconsistent"
-      : hasTag(xml, "LegalMonetaryTotal")
+      : hasTag(context, "LegalMonetaryTotal")
         ? "surface_checked"
         : "not_checked";
 
@@ -1125,14 +1281,15 @@ function buildReadinessReport({
 }
 
 export function inspectXmlReadiness(xml: string): XmlReadinessInspection {
-  const rootElement = detectRootElement(xml);
+  const context = buildXmlParserContext(xml);
+  const rootElement = context.rootElement;
   const detectedDocument = detectDocumentType(rootElement);
-  const invoiceId = extractFirstTagValue(xml, "ID");
-  const issueDate = extractFirstTagValue(xml, "IssueDate");
-  const currency = extractFirstTagValue(xml, "DocumentCurrencyCode");
+  const invoiceId = extractDocumentField(context, "ID");
+  const issueDate = extractDocumentField(context, "IssueDate");
+  const currency = extractDocumentField(context, "DocumentCurrencyCode");
 
   const report = buildReadinessReport({
-    xml,
+    context,
     detectedDocument,
     rootElement,
     invoiceId,
