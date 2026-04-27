@@ -8,8 +8,11 @@ import {
   Home,
   KeyRound,
   LockKeyhole,
+  LogIn,
+  LogOut,
   ShieldCheck
 } from "lucide-react";
+import { createSupabaseServerClient } from "../../lib/supabase/server";
 import "./workspace.css";
 
 const workspaceNav = [
@@ -45,11 +48,39 @@ const workspaceNav = [
   }
 ];
 
-export default function WorkspaceLayout({
+function hasSupabasePublicConfig() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabasePublicKey =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+
+  return Boolean(supabaseUrl && supabasePublicKey);
+}
+
+async function getSignedInUserEmail() {
+  if (!hasSupabasePublicConfig()) {
+    return "";
+  }
+
+  try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    return user?.email ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export default async function WorkspaceLayout({
   children
 }: {
   children: ReactNode;
 }) {
+  const signedInUserEmail = await getSignedInUserEmail();
+
   return (
     <main className="workspace-shell">
       <aside className="workspace-sidebar">
@@ -62,8 +93,10 @@ export default function WorkspaceLayout({
 
         <div className="workspace-org">
           <p>Workspace status</p>
-          <h2>Local workspace</h2>
-          <span>No organization account connected</span>
+          <h2>{signedInUserEmail ? "Personal workspace" : "Local workspace"}</h2>
+          <span>
+            {signedInUserEmail || "No organization account connected"}
+          </span>
         </div>
 
         <nav className="workspace-nav">
@@ -92,6 +125,20 @@ export default function WorkspaceLayout({
           </div>
 
           <div className="workspace-top-actions">
+            {signedInUserEmail ? (
+              <form action="/auth/sign-out" method="post">
+                <button type="submit" className="workspace-auth-action">
+                  <LogOut size={16} />
+                  Sign out
+                </button>
+              </form>
+            ) : (
+              <Link href="/auth/sign-in">
+                <LogIn size={16} />
+                Sign in
+              </Link>
+            )}
+
             <Link href="/developer-api">
               <KeyRound size={16} />
               API docs

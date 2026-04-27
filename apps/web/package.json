@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.104.1",
     "lucide-react": "^1.11.0",
     "motion": "^12.38.0",
     "next": "latest",
@@ -21,4 +23,3 @@
     "typescript": "latest"
   }
 }
-

@@ -228,6 +228,44 @@ a {
   box-shadow: 0 0 24px rgba(100,210,255,0.08);
 }
 
+.site-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.header-secondary-action {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0.65rem 0.85rem;
+  color: rgba(255,255,255,0.58);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transition:
+    color 200ms ease,
+    border-color 200ms ease,
+    background 200ms ease;
+}
+
+.header-secondary-action:hover {
+  color: white;
+  border-color: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.035);
+}
+
+@media (max-width: 760px) {
+  .site-header-actions {
+    gap: 0.45rem;
+  }
+
+  .header-secondary-action {
+    display: none;
+  }
+}
+
+
 .hero-section {
   position: relative;
   min-height: 100vh;

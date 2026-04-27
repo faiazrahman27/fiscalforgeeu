@@ -227,6 +227,40 @@
   box-shadow: 0 0 20px rgba(100,210,255,0.06);
 }
 
+.workspace-top-actions form {
+  display: contents;
+}
+
+.workspace-auth-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.045);
+  padding: 0.75rem 0.9rem;
+  color: rgba(255,255,255,0.76);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.workspace-auth-action:hover {
+  border-color: rgba(100,210,255,0.24);
+  box-shadow: 0 0 20px rgba(100,210,255,0.06);
+}
+
+@media (max-width: 720px) {
+  .workspace-auth-action {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+
 .workspace-hero,
 .workspace-page-head {
   position: relative;

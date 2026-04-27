@@ -28,9 +28,15 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <Link href="/workspace" className="header-action">
-          Sandbox
-        </Link>
+        <div className="site-header-actions">
+          <Link href="/auth/sign-in" className="header-secondary-action">
+            Sign in
+          </Link>
+
+          <Link href="/workspace" className="header-action">
+            Sandbox
+          </Link>
+        </div>
       </div>
     </header>
   );
