@@ -45,7 +45,16 @@ type SupabaseInvoiceDraftRow = {
   buyer_name: string;
   buyer_country: string;
   issue_date: string;
+  due_date: string;
+  invoice_type: string;
+  profile: string;
+  buyer_reference: string;
+  contract_reference: string;
   currency: string;
+  line_extension_amount: string;
+  tax_exclusive_amount: string;
+  tax_amount: string;
+  tax_inclusive_amount: string;
   payable_amount: string;
   payload: unknown;
   summary: unknown;
@@ -53,10 +62,49 @@ type SupabaseInvoiceDraftRow = {
   updated_at: string;
 };
 
+type InvoiceDraftPartyRole = "seller" | "buyer";
+
+type InvoiceDraftPartyRow = {
+  organization_id: string;
+  invoice_draft_id: string;
+  party_role: InvoiceDraftPartyRole;
+  name: string;
+  country: string;
+  vat_id: string;
+  city: string;
+  postal_code: string;
+  street: string;
+  electronic_address: string;
+};
+
+type InvoiceDraftLineRow = {
+  organization_id: string;
+  invoice_draft_id: string;
+  source_line_id: string;
+  line_position: number;
+  description: string;
+  quantity: number;
+  unit_code: string;
+  unit_price: number;
+  vat_category: string;
+  vat_rate: number;
+  net_amount: number;
+};
+
+type InvoiceDraftTaxSummaryRow = {
+  organization_id: string;
+  invoice_draft_id: string;
+  vat_category: string;
+  vat_rate: number;
+  taxable_amount: number;
+  tax_amount: number;
+  currency: string;
+};
+
 const INVOICE_DRAFTS_FILE = "invoice-drafts.json";
 const MAX_STORED_INVOICE_DRAFTS = 250;
 const INVOICE_DRAFT_SELECT_FIELDS =
-  "id, organization_id, created_by, invoice_number, seller_name, seller_country, buyer_name, buyer_country, issue_date, currency, payable_amount, payload, summary, created_at, updated_at";
+  "id, organization_id, created_by, invoice_number, seller_name, seller_country, buyer_name, buyer_country, issue_date, due_date, invoice_type, profile, buyer_reference, contract_reference, currency, line_extension_amount, tax_exclusive_amount, tax_amount, tax_inclusive_amount, payable_amount, payload, summary, created_at, updated_at";
 
 const storageProvider = getCollectionStorageProvider();
 
@@ -74,6 +122,26 @@ function readStringField(
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : fallback;
+}
+
+function parseDecimalString(value: string) {
+  const normalizedValue = value.trim();
+
+  if (!normalizedValue) {
+    return 0;
+  }
+
+  const parsedValue = Number(normalizedValue);
+
+  return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function roundMoney(value: number) {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Number(value.toFixed(2));
 }
 
 function getDraftNumberKey(draft: Pick<InvoiceDraftRecord, "document">) {
@@ -170,27 +238,250 @@ function buildSupabaseInvoiceDraftValues(
   return {
     organization_id: organizationId,
     created_by: userId,
+
     invoice_number: payload.document.number,
+    issue_date: payload.document.issueDate,
+    due_date: payload.document.dueDate,
+    invoice_type: payload.document.invoiceType,
+    profile: payload.document.profile,
+    buyer_reference: payload.document.buyerReference,
+    contract_reference: payload.document.contractReference,
+
     seller_name: payload.seller.name,
     seller_country: payload.seller.country,
     buyer_name: payload.buyer.name,
     buyer_country: payload.buyer.country,
-    issue_date: payload.document.issueDate,
+
     currency: payload.document.currency,
+    line_extension_amount: payload.totals.lineExtensionAmount,
+    tax_exclusive_amount: payload.totals.taxExclusiveAmount,
+    tax_amount: payload.totals.taxAmount,
+    tax_inclusive_amount: payload.totals.taxInclusiveAmount,
     payable_amount: payload.totals.payableAmount,
+
     payload,
     summary: {
       number: payload.document.number,
+      issueDate: payload.document.issueDate,
+      dueDate: payload.document.dueDate,
+      invoiceType: payload.document.invoiceType,
+      profile: payload.document.profile,
+      buyerReference: payload.document.buyerReference,
+      contractReference: payload.document.contractReference,
+
       seller: payload.seller.name,
       sellerCountry: payload.seller.country,
       buyer: payload.buyer.name,
       buyerCountry: payload.buyer.country,
-      issueDate: payload.document.issueDate,
+
       status: "Draft",
-      amount: `${payload.document.currency} ${payload.totals.payableAmount}`,
-      currency: payload.document.currency
+      currency: payload.document.currency,
+      lineExtensionAmount: payload.totals.lineExtensionAmount,
+      taxExclusiveAmount: payload.totals.taxExclusiveAmount,
+      taxAmount: payload.totals.taxAmount,
+      taxInclusiveAmount: payload.totals.taxInclusiveAmount,
+      payableAmount: payload.totals.payableAmount,
+      amount: `${payload.document.currency} ${payload.totals.payableAmount}`
     }
   };
+}
+
+function buildInvoiceDraftPartyRows(
+  payload: InvoiceEditorDraftPayload,
+  organizationId: string,
+  invoiceDraftId: string
+): InvoiceDraftPartyRow[] {
+  return [
+    {
+      organization_id: organizationId,
+      invoice_draft_id: invoiceDraftId,
+      party_role: "seller",
+      name: payload.seller.name,
+      country: payload.seller.country,
+      vat_id: payload.seller.vatId,
+      city: payload.seller.city,
+      postal_code: payload.seller.postalCode,
+      street: payload.seller.street,
+      electronic_address: payload.seller.electronicAddress
+    },
+    {
+      organization_id: organizationId,
+      invoice_draft_id: invoiceDraftId,
+      party_role: "buyer",
+      name: payload.buyer.name,
+      country: payload.buyer.country,
+      vat_id: payload.buyer.vatId,
+      city: payload.buyer.city,
+      postal_code: payload.buyer.postalCode,
+      street: payload.buyer.street,
+      electronic_address: payload.buyer.electronicAddress
+    }
+  ];
+}
+
+function calculateLineNetAmount(line: InvoiceEditorDraftPayload["lines"][number]) {
+  const explicitNetAmount = parseDecimalString(line.netAmount);
+
+  if (explicitNetAmount > 0) {
+    return roundMoney(explicitNetAmount);
+  }
+
+  const quantity = parseDecimalString(line.quantity);
+  const unitPrice = parseDecimalString(line.unitPrice);
+
+  return roundMoney(quantity * unitPrice);
+}
+
+function buildInvoiceDraftLineRows(
+  payload: InvoiceEditorDraftPayload,
+  organizationId: string,
+  invoiceDraftId: string
+): InvoiceDraftLineRow[] {
+  return payload.lines.map((line, index) => {
+    return {
+      organization_id: organizationId,
+      invoice_draft_id: invoiceDraftId,
+      source_line_id: line.id,
+      line_position: index + 1,
+      description: line.description,
+      quantity: parseDecimalString(line.quantity),
+      unit_code: line.unitCode,
+      unit_price: parseDecimalString(line.unitPrice),
+      vat_category: line.vatCategory,
+      vat_rate: parseDecimalString(line.vatRate),
+      net_amount: calculateLineNetAmount(line)
+    };
+  });
+}
+
+function buildInvoiceDraftTaxSummaryRows(
+  payload: InvoiceEditorDraftPayload,
+  organizationId: string,
+  invoiceDraftId: string
+): InvoiceDraftTaxSummaryRow[] {
+  const taxSummaryMap = new Map<
+    string,
+    {
+      vatCategory: string;
+      vatRate: number;
+      taxableAmount: number;
+      taxAmount: number;
+    }
+  >();
+
+  for (const line of payload.lines) {
+    const vatCategory = line.vatCategory.trim();
+    const vatRate = parseDecimalString(line.vatRate);
+    const taxableAmount = calculateLineNetAmount(line);
+    const taxAmount = roundMoney((taxableAmount * vatRate) / 100);
+    const key = `${vatCategory}::${vatRate.toFixed(4)}`;
+
+    const existingSummary = taxSummaryMap.get(key);
+
+    if (existingSummary) {
+      existingSummary.taxableAmount = roundMoney(
+        existingSummary.taxableAmount + taxableAmount
+      );
+      existingSummary.taxAmount = roundMoney(existingSummary.taxAmount + taxAmount);
+      continue;
+    }
+
+    taxSummaryMap.set(key, {
+      vatCategory,
+      vatRate,
+      taxableAmount,
+      taxAmount
+    });
+  }
+
+  return [...taxSummaryMap.values()].map((summary) => ({
+    organization_id: organizationId,
+    invoice_draft_id: invoiceDraftId,
+    vat_category: summary.vatCategory,
+    vat_rate: summary.vatRate,
+    taxable_amount: summary.taxableAmount,
+    tax_amount: summary.taxAmount,
+    currency: payload.document.currency
+  }));
+}
+
+async function replaceInvoiceDraftRelationalRows(
+  supabase: SupabaseClient,
+  organizationId: string,
+  invoiceDraftId: string,
+  payload: InvoiceEditorDraftPayload
+) {
+  const childTables = [
+    "invoice_draft_tax_summaries",
+    "invoice_draft_lines",
+    "invoice_draft_parties"
+  ];
+
+  for (const tableName of childTables) {
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("invoice_draft_id", invoiceDraftId);
+
+    if (error) {
+      throw new Error(
+        `Could not clear ${tableName} rows for invoice draft: ${error.message}`
+      );
+    }
+  }
+
+  const partyRows = buildInvoiceDraftPartyRows(
+    payload,
+    organizationId,
+    invoiceDraftId
+  );
+
+  const lineRows = buildInvoiceDraftLineRows(
+    payload,
+    organizationId,
+    invoiceDraftId
+  );
+
+  const taxSummaryRows = buildInvoiceDraftTaxSummaryRows(
+    payload,
+    organizationId,
+    invoiceDraftId
+  );
+
+  const { error: partyInsertError } = await supabase
+    .from("invoice_draft_parties")
+    .insert(partyRows);
+
+  if (partyInsertError) {
+    throw new Error(
+      `Could not insert invoice draft party rows: ${partyInsertError.message}`
+    );
+  }
+
+  if (lineRows.length > 0) {
+    const { error: lineInsertError } = await supabase
+      .from("invoice_draft_lines")
+      .insert(lineRows);
+
+    if (lineInsertError) {
+      throw new Error(
+        `Could not insert invoice draft line rows: ${lineInsertError.message}`
+      );
+    }
+  }
+
+  if (taxSummaryRows.length > 0) {
+    const { error: taxSummaryInsertError } = await supabase
+      .from("invoice_draft_tax_summaries")
+      .insert(taxSummaryRows);
+
+    if (taxSummaryInsertError) {
+      throw new Error(
+        `Could not insert invoice draft tax summary rows: ${taxSummaryInsertError.message}`
+      );
+    }
+  }
 }
 
 async function getWorkspaceForAuthenticatedUser(supabase: SupabaseClient) {
@@ -445,6 +736,13 @@ export async function createAuthenticatedInvoiceDraft(
       throw new Error("Supabase invoice draft update returned unreadable data.");
     }
 
+    await replaceInvoiceDraftRelationalRows(
+      supabase,
+      workspace.organizationId,
+      existingDraft.id,
+      payload
+    );
+
     return updatedDraft;
   }
 
@@ -471,6 +769,13 @@ export async function createAuthenticatedInvoiceDraft(
   if (!createdDraft) {
     throw new Error("Supabase invoice draft create returned unreadable data.");
   }
+
+  await replaceInvoiceDraftRelationalRows(
+    supabase,
+    workspace.organizationId,
+    createdDraft.id,
+    payload
+  );
 
   return createdDraft;
 }
@@ -505,7 +810,22 @@ export async function updateAuthenticatedInvoiceDraftById(
     return null;
   }
 
-  return normalizeSupabaseInvoiceDraftRow(data as SupabaseInvoiceDraftRow);
+  const updatedDraft = normalizeSupabaseInvoiceDraftRow(
+    data as SupabaseInvoiceDraftRow
+  );
+
+  if (!updatedDraft) {
+    throw new Error("Supabase invoice draft update returned unreadable data.");
+  }
+
+  await replaceInvoiceDraftRelationalRows(
+    supabase,
+    workspace.organizationId,
+    updatedDraft.id,
+    payload
+  );
+
+  return updatedDraft;
 }
 
 export async function getAuthenticatedInvoiceDraftById(
@@ -540,6 +860,10 @@ export async function deleteAuthenticatedInvoiceDraftById(
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
 
+  /*
+   * Child rows are linked with ON DELETE CASCADE, so deleting the parent draft
+   * also removes parties, lines, and tax summaries.
+   */
   const { data, error } = await supabase
     .from("invoice_drafts")
     .delete()
