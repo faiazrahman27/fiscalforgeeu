@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Activity,
   AlertTriangle,
   ArrowRight,
   Braces,
@@ -22,6 +23,20 @@ type DashboardCounts = {
   validationRuns: number | null;
   xmlReadinessReports: number | null;
   openFindings: number | null;
+};
+
+type WorkspaceActivitySeverity = "info" | "warning" | "error";
+
+type WorkspaceActivityEvent = {
+  id: string;
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  severity: WorkspaceActivitySeverity;
+  source: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
 };
 
 const emptyCounts: DashboardCounts = {
@@ -95,6 +110,60 @@ function getRecordsFromResponse(data: unknown) {
   return data.records;
 }
 
+function readStringField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback = ""
+) {
+  const value = record[key];
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : fallback;
+}
+
+function normalizeActivitySeverity(value: string): WorkspaceActivitySeverity {
+  if (value === "warning" || value === "error") {
+    return value;
+  }
+
+  return "info";
+}
+
+function normalizeWorkspaceActivityEvent(
+  value: unknown
+): WorkspaceActivityEvent | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id");
+  const eventType = readStringField(value, "eventType");
+  const entityType = readStringField(value, "entityType");
+  const entityId = readStringField(value, "entityId");
+  const entityLabel = readStringField(value, "entityLabel", entityId);
+  const source = readStringField(value, "source", "api");
+  const createdAt = readStringField(value, "createdAt");
+  const severity = normalizeActivitySeverity(readStringField(value, "severity"));
+  const metadata = isPlainObject(value.metadata) ? value.metadata : {};
+
+  if (!id || !eventType || !entityType || !entityId || !createdAt) {
+    return null;
+  }
+
+  return {
+    id,
+    eventType,
+    entityType,
+    entityId,
+    entityLabel,
+    severity,
+    source,
+    metadata,
+    createdAt
+  };
+}
+
 function readFindingCount(record: unknown) {
   if (!isPlainObject(record)) {
     return 0;
@@ -139,6 +208,26 @@ function formatCount(value: number | null, isLoading: boolean) {
   return String(value);
 }
 
+function formatActivityType(eventType: string) {
+  return eventType
+    .split(".")
+    .map((segment) => segment.replace(/_/g, " "))
+    .join(" · ");
+}
+
+function formatActivityTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+}
+
 function buildStats(counts: DashboardCounts, isLoading: boolean) {
   return [
     {
@@ -180,6 +269,12 @@ export default function WorkspacePage() {
   const [counts, setCounts] = useState<DashboardCounts>(emptyCounts);
   const [isLoadingCounts, setIsLoadingCounts] = useState(true);
   const [dashboardMessage, setDashboardMessage] = useState("");
+
+  const [activityEvents, setActivityEvents] = useState<WorkspaceActivityEvent[]>(
+    []
+  );
+  const [isLoadingActivity, setIsLoadingActivity] = useState(true);
+  const [activityMessage, setActivityMessage] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -280,9 +375,62 @@ export default function WorkspacePage() {
     };
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadWorkspaceActivity() {
+      setIsLoadingActivity(true);
+      setActivityMessage("");
+
+      try {
+        const response = await fetch("/api/local/workspace/activity", {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        const responseData = await readResponseBody(response);
+
+        if (!response.ok) {
+          if (isMounted) {
+            setActivityEvents([]);
+            setActivityMessage("Workspace activity is unavailable.");
+            setIsLoadingActivity(false);
+          }
+
+          return;
+        }
+
+        const records = getRecordsFromResponse(responseData)
+          .map((record) => normalizeWorkspaceActivityEvent(record))
+          .filter((record): record is WorkspaceActivityEvent => record !== null);
+
+        if (isMounted) {
+          setActivityEvents(records);
+          setIsLoadingActivity(false);
+        }
+      } catch {
+        if (isMounted) {
+          setActivityEvents([]);
+          setActivityMessage("Workspace activity is unavailable.");
+          setIsLoadingActivity(false);
+        }
+      }
+    }
+
+    loadWorkspaceActivity();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const stats = useMemo(() => {
     return buildStats(counts, isLoadingCounts);
   }, [counts, isLoadingCounts]);
+
+  const visibleActivityEvents = useMemo(() => {
+    return activityEvents.slice(0, 6);
+  }, [activityEvents]);
 
   return (
     <div className="workspace-page">
@@ -360,13 +508,59 @@ export default function WorkspacePage() {
         </aside>
       </section>
 
+      <section className="workspace-alerts">
+        <div className="alerts-head">
+          <Activity size={22} />
+
+          <div>
+            <p>Workspace activity</p>
+            <h3>Recent API-owned events.</h3>
+          </div>
+        </div>
+
+        <div className="alert-list">
+          {isLoadingActivity ? (
+            <div className="alert-item">
+              <span />
+              <p>Loading workspace activity.</p>
+            </div>
+          ) : activityMessage ? (
+            <div className="alert-item">
+              <span />
+              <p>{activityMessage}</p>
+            </div>
+          ) : visibleActivityEvents.length > 0 ? (
+            visibleActivityEvents.map((event) => (
+              <div className="alert-item" key={event.id}>
+                <span />
+                <p>
+                  <strong>{formatActivityType(event.eventType)}</strong>
+                  <br />
+                  {event.entityLabel || event.entityId} · {event.severity} ·{" "}
+                  {formatActivityTime(event.createdAt)}
+                </p>
+              </div>
+            ))
+          ) : (
+            <div className="alert-item">
+              <span />
+              <p>
+                No workspace activity has been recorded yet. Create, update, or
+                delete an invoice draft, validation report, or XML report to
+                populate this feed.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
       <section className="workspace-map">
         <div>
           <Database size={24} />
           <h3>Product data layer</h3>
           <p>
             The frontend consumes invoice drafts, invoice validation reports, XML
-            readiness reports, privacy settings, and future audit events from the
+            readiness reports, privacy settings, and audit events from the
             dedicated API service. No demo records are shown as product data.
           </p>
         </div>
