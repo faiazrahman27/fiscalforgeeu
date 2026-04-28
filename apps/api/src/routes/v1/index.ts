@@ -4,6 +4,8 @@ import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { validateInvoiceRoutes } from "./validate-invoice.js";
 import { validationRunRoutes } from "./validation-runs.js";
 import { workspaceActivityRoutes } from "./workspace-activity.js";
+import { workspacePrivacyRequestRoutes } from "./workspace-privacy-requests.js";
+import { workspaceSettingsRoutes } from "./workspace-settings.js";
 import { xmlRoutes } from "./xml.js";
 
 export async function v1Routes(app: FastifyInstance) {
@@ -28,6 +30,14 @@ export async function v1Routes(app: FastifyInstance) {
   });
 
   await app.register(workspaceActivityRoutes, {
+    prefix: "/workspace"
+  });
+
+  await app.register(workspaceSettingsRoutes, {
+    prefix: "/workspace"
+  });
+
+  await app.register(workspacePrivacyRequestRoutes, {
     prefix: "/workspace"
   });
 }
