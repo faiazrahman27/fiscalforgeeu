@@ -32,6 +32,21 @@ type WorkspaceSettings = {
   updatedAt: string;
 };
 
+type RetentionPreviewBucket = {
+  retentionDays: number;
+  cutoffDate: string;
+  affectedCount: number;
+};
+
+type WorkspaceRetentionPreview = {
+  retentionMode: RetentionMode;
+  generatedAt: string;
+  invoiceDrafts: RetentionPreviewBucket;
+  validationRuns: RetentionPreviewBucket;
+  xmlReadinessReports: RetentionPreviewBucket;
+  activityEvents: RetentionPreviewBucket;
+};
+
 type PrivacyRequestType = "data_export" | "deletion" | "retention_review";
 
 type PrivacyRequestStatus = "submitted" | "in_review" | "completed" | "rejected";
@@ -54,6 +69,32 @@ type PrivacyRequestReviewDraft = {
   reviewNote: string;
 };
 
+type WorkspaceExportPackageStatus = "prepared" | "failed";
+
+type WorkspaceExportPackageRecordCounts = {
+  invoiceDrafts: number;
+  validationRuns: number;
+  xmlReadinessReports: number;
+  workspaceSettings: number;
+  privacyRequests: number;
+  activityEvents: number;
+};
+
+type WorkspaceExportPackage = {
+  id: string;
+  packageType: "full_workspace";
+  status: WorkspaceExportPackageStatus;
+  exportName: string;
+  exportFormat: "json";
+  sourcePrivacyRequestId: string;
+  recordCounts: WorkspaceExportPackageRecordCounts;
+  packagePayload: unknown;
+  packageSizeBytes: number;
+  errorMessage: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type PrivacyControlCard = {
   title: string;
   description: string;
@@ -69,6 +110,21 @@ const defaultWorkspaceSettings: WorkspaceSettings = {
   allowDataExportRequests: true,
   allowDeletionRequests: true,
   updatedAt: ""
+};
+
+const emptyRetentionPreviewBucket: RetentionPreviewBucket = {
+  retentionDays: 0,
+  cutoffDate: "",
+  affectedCount: 0
+};
+
+const emptyExportRecordCounts: WorkspaceExportPackageRecordCounts = {
+  invoiceDrafts: 0,
+  validationRuns: 0,
+  xmlReadinessReports: 0,
+  workspaceSettings: 0,
+  privacyRequests: 0,
+  activityEvents: 0
 };
 
 const privacyControls: PrivacyControlCard[] = [
@@ -180,6 +236,10 @@ function normalizePrivacyRequestStatus(value: string): PrivacyRequestStatus {
   return "submitted";
 }
 
+function normalizeExportPackageStatus(value: string): WorkspaceExportPackageStatus {
+  return value === "failed" ? "failed" : "prepared";
+}
+
 function clampRetentionDays(value: number) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -199,6 +259,18 @@ function getSettingsRecordFromResponse(data: unknown) {
 
   if (isPlainObject(data.settings)) {
     return data.settings;
+  }
+
+  return data;
+}
+
+function getSingleRecordFromResponse(data: unknown) {
+  if (!isPlainObject(data)) {
+    return null;
+  }
+
+  if (isPlainObject(data.record)) {
+    return data.record;
   }
 
   return data;
@@ -265,6 +337,60 @@ function normalizeWorkspaceSettings(data: unknown): WorkspaceSettings {
   };
 }
 
+function normalizeRetentionPreviewBucket(
+  value: unknown,
+  fallbackRetentionDays: number
+): RetentionPreviewBucket {
+  if (!isPlainObject(value)) {
+    return {
+      ...emptyRetentionPreviewBucket,
+      retentionDays: fallbackRetentionDays
+    };
+  }
+
+  return {
+    retentionDays: clampRetentionDays(
+      readNumberField(value, "retentionDays", fallbackRetentionDays)
+    ),
+    cutoffDate: readStringField(value, "cutoffDate"),
+    affectedCount: Math.max(0, readNumberField(value, "affectedCount", 0))
+  };
+}
+
+function normalizeWorkspaceRetentionPreview(
+  data: unknown,
+  settings: WorkspaceSettings
+): WorkspaceRetentionPreview | null {
+  const record = getSingleRecordFromResponse(data);
+
+  if (!record) {
+    return null;
+  }
+
+  return {
+    retentionMode: normalizeRetentionMode(
+      readStringField(record, "retentionMode", settings.retentionMode)
+    ),
+    generatedAt: readStringField(record, "generatedAt"),
+    invoiceDrafts: normalizeRetentionPreviewBucket(
+      record.invoiceDrafts,
+      settings.invoiceDraftRetentionDays
+    ),
+    validationRuns: normalizeRetentionPreviewBucket(
+      record.validationRuns,
+      settings.validationRunRetentionDays
+    ),
+    xmlReadinessReports: normalizeRetentionPreviewBucket(
+      record.xmlReadinessReports,
+      settings.xmlReportRetentionDays
+    ),
+    activityEvents: normalizeRetentionPreviewBucket(
+      record.activityEvents,
+      settings.activityLogRetentionDays
+    )
+  };
+}
+
 function normalizeWorkspacePrivacyRequest(
   value: unknown
 ): WorkspacePrivacyRequest | null {
@@ -303,6 +429,54 @@ function normalizeWorkspacePrivacyRequest(
   };
 }
 
+function normalizeExportRecordCounts(
+  value: unknown
+): WorkspaceExportPackageRecordCounts {
+  if (!isPlainObject(value)) {
+    return emptyExportRecordCounts;
+  }
+
+  return {
+    invoiceDrafts: readNumberField(value, "invoiceDrafts", 0),
+    validationRuns: readNumberField(value, "validationRuns", 0),
+    xmlReadinessReports: readNumberField(value, "xmlReadinessReports", 0),
+    workspaceSettings: readNumberField(value, "workspaceSettings", 0),
+    privacyRequests: readNumberField(value, "privacyRequests", 0),
+    activityEvents: readNumberField(value, "activityEvents", 0)
+  };
+}
+
+function normalizeWorkspaceExportPackage(
+  value: unknown
+): WorkspaceExportPackage | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id");
+  const exportName = readStringField(value, "exportName");
+  const createdAt = readStringField(value, "createdAt");
+
+  if (!id || !exportName || !createdAt) {
+    return null;
+  }
+
+  return {
+    id,
+    packageType: "full_workspace",
+    status: normalizeExportPackageStatus(readStringField(value, "status")),
+    exportName,
+    exportFormat: "json",
+    sourcePrivacyRequestId: readStringField(value, "sourcePrivacyRequestId"),
+    recordCounts: normalizeExportRecordCounts(value.recordCounts),
+    packagePayload: value.packagePayload ?? null,
+    packageSizeBytes: readNumberField(value, "packageSizeBytes", 0),
+    errorMessage: readStringField(value, "errorMessage"),
+    createdAt,
+    updatedAt: readStringField(value, "updatedAt")
+  };
+}
+
 function buildSettingsPayload(settings: WorkspaceSettings) {
   return {
     retentionMode: settings.retentionMode,
@@ -331,6 +505,13 @@ function buildReviewDrafts(records: WorkspacePrivacyRequest[]) {
   );
 }
 
+function buildDefaultExportName() {
+  const date = new Date();
+  const datePart = date.toISOString().slice(0, 10);
+
+  return `Workspace export ${datePart}`;
+}
+
 function formatUpdatedAt(value: string) {
   if (!value) {
     return "Not saved yet";
@@ -345,6 +526,22 @@ function formatUpdatedAt(value: string) {
   return date.toLocaleString(undefined, {
     dateStyle: "medium",
     timeStyle: "short"
+  });
+}
+
+function formatDateOnly(value: string) {
+  if (!value) {
+    return "Not available";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    dateStyle: "medium"
   });
 }
 
@@ -380,10 +577,57 @@ function formatPrivacyRequestStatus(value: PrivacyRequestStatus) {
   return "Submitted";
 }
 
+function formatExportPackageStatus(value: WorkspaceExportPackageStatus) {
+  return value === "failed" ? "Failed" : "Prepared";
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B";
+  }
+
+  if (value < 1024) {
+    return `${value} B`;
+  }
+
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(value / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function formatRecordCounts(counts: WorkspaceExportPackageRecordCounts) {
+  return [
+    `${counts.invoiceDrafts} draft(s)`,
+    `${counts.validationRuns} validation run(s)`,
+    `${counts.xmlReadinessReports} XML report(s)`,
+    `${counts.privacyRequests} privacy request(s)`,
+    `${counts.activityEvents} activity event(s)`
+  ].join(" · ");
+}
+
+function downloadJsonFile(fileName: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json"
+  });
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = objectUrl;
+  link.download = `${fileName.replace(/[^\w.-]+/g, "-").slice(0, 120)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export default function WorkspacePrivacyPage() {
   const [settings, setSettings] = useState<WorkspaceSettings>(
     defaultWorkspaceSettings
   );
+  const [retentionPreview, setRetentionPreview] =
+    useState<WorkspaceRetentionPreview | null>(null);
   const [privacyRequests, setPrivacyRequests] = useState<
     WorkspacePrivacyRequest[]
   >([]);
@@ -391,21 +635,38 @@ export default function WorkspacePrivacyPage() {
     Record<string, PrivacyRequestReviewDraft>
   >({});
 
+  const [exportPackages, setExportPackages] = useState<WorkspaceExportPackage[]>(
+    []
+  );
+  const [exportName, setExportName] = useState(buildDefaultExportName);
+  const [sourcePrivacyRequestId, setSourcePrivacyRequestId] = useState("");
+
   const [requestType, setRequestType] =
     useState<PrivacyRequestType>("data_export");
   const [requestSubject, setRequestSubject] = useState("");
   const [requestDetails, setRequestDetails] = useState("");
 
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingRetentionPreview, setIsLoadingRetentionPreview] =
+    useState(true);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
+  const [isLoadingExportPackages, setIsLoadingExportPackages] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+  const [isCreatingExportPackage, setIsCreatingExportPackage] = useState(false);
+  const [downloadingExportPackageId, setDownloadingExportPackageId] = useState("");
   const [updatingRequestId, setUpdatingRequestId] = useState("");
 
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [retentionPreviewStatusMessage, setRetentionPreviewStatusMessage] =
+    useState("");
+  const [retentionPreviewErrorMessage, setRetentionPreviewErrorMessage] =
+    useState("");
   const [requestStatusMessage, setRequestStatusMessage] = useState("");
   const [requestErrorMessage, setRequestErrorMessage] = useState("");
+  const [exportStatusMessage, setExportStatusMessage] = useState("");
+  const [exportErrorMessage, setExportErrorMessage] = useState("");
 
   async function loadSettings() {
     setIsLoading(true);
@@ -436,6 +697,42 @@ export default function WorkspacePrivacyPage() {
         "Workspace settings are not connected yet. The privacy controls are ready for the API route."
       );
       setIsLoading(false);
+    }
+  }
+
+  async function loadRetentionPreview() {
+    setIsLoadingRetentionPreview(true);
+    setRetentionPreviewStatusMessage("");
+    setRetentionPreviewErrorMessage("");
+
+    try {
+      const response = await fetch("/api/local/workspace/retention-preview", {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setRetentionPreview(null);
+        setRetentionPreviewErrorMessage(
+          "Retention preview is not connected yet. The preview UI is ready for the API route."
+        );
+        setIsLoadingRetentionPreview(false);
+        return;
+      }
+
+      const preview = normalizeWorkspaceRetentionPreview(responseData, settings);
+
+      setRetentionPreview(preview);
+      setRetentionPreviewStatusMessage("Retention preview loaded.");
+      setIsLoadingRetentionPreview(false);
+    } catch {
+      setRetentionPreview(null);
+      setRetentionPreviewErrorMessage(
+        "Retention preview is not connected yet. The preview UI is ready for the API route."
+      );
+      setIsLoadingRetentionPreview(false);
     }
   }
 
@@ -478,6 +775,44 @@ export default function WorkspacePrivacyPage() {
     }
   }
 
+  async function loadExportPackages() {
+    setIsLoadingExportPackages(true);
+    setExportStatusMessage("");
+    setExportErrorMessage("");
+
+    try {
+      const response = await fetch("/api/local/workspace/export-packages", {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setExportPackages([]);
+        setExportErrorMessage(
+          "Export packages are not connected yet. The export UI is ready for the API route."
+        );
+        setIsLoadingExportPackages(false);
+        return;
+      }
+
+      const records = getRecordsFromResponse(responseData)
+        .map((record) => normalizeWorkspaceExportPackage(record))
+        .filter((record): record is WorkspaceExportPackage => record !== null);
+
+      setExportPackages(records);
+      setExportStatusMessage("Export package history loaded.");
+      setIsLoadingExportPackages(false);
+    } catch {
+      setExportPackages([]);
+      setExportErrorMessage(
+        "Export packages are not connected yet. The export UI is ready for the API route."
+      );
+      setIsLoadingExportPackages(false);
+    }
+  }
+
   async function saveSettings() {
     setIsSaving(true);
     setStatusMessage("");
@@ -504,6 +839,7 @@ export default function WorkspacePrivacyPage() {
       setSettings(normalizeWorkspaceSettings(responseData));
       setStatusMessage("Workspace privacy settings saved.");
       setIsSaving(false);
+      void loadRetentionPreview();
     } catch {
       setErrorMessage("Could not save workspace privacy settings.");
       setIsSaving(false);
@@ -571,6 +907,10 @@ export default function WorkspacePrivacyPage() {
             reviewNote: createdRecord.reviewNote
           }
         }));
+
+        if (createdRecord.requestType === "data_export") {
+          setSourcePrivacyRequestId(createdRecord.id);
+        }
       }
 
       setRequestSubject("");
@@ -646,9 +986,112 @@ export default function WorkspacePrivacyPage() {
     }
   }
 
+  async function createExportPackage() {
+    const cleanExportName = exportName.trim();
+
+    if (cleanExportName.length < 3) {
+      setExportErrorMessage("Export name must contain at least 3 characters.");
+      return;
+    }
+
+    if (!settings.allowDataExportRequests) {
+      setExportErrorMessage("Data export requests are disabled in workspace settings.");
+      return;
+    }
+
+    setIsCreatingExportPackage(true);
+    setExportStatusMessage("");
+    setExportErrorMessage("");
+
+    try {
+      const response = await fetch("/api/local/workspace/export-packages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          exportName: cleanExportName,
+          ...(sourcePrivacyRequestId
+            ? {
+                sourcePrivacyRequestId
+              }
+            : {})
+        })
+      });
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setExportErrorMessage("Could not create export package.");
+        setIsCreatingExportPackage(false);
+        return;
+      }
+
+      const recordSource = getSingleRecordFromResponse(responseData);
+      const createdRecord = normalizeWorkspaceExportPackage(recordSource);
+
+      if (createdRecord) {
+        setExportPackages((currentPackages) => [
+          createdRecord,
+          ...currentPackages.filter((item) => item.id !== createdRecord.id)
+        ]);
+        setExportName(buildDefaultExportName());
+      }
+
+      setExportStatusMessage("Workspace export package prepared.");
+      setIsCreatingExportPackage(false);
+    } catch {
+      setExportErrorMessage("Could not create export package.");
+      setIsCreatingExportPackage(false);
+    }
+  }
+
+  async function downloadExportPackage(packageRecord: WorkspaceExportPackage) {
+    setDownloadingExportPackageId(packageRecord.id);
+    setExportStatusMessage("");
+    setExportErrorMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/workspace/export-packages/${encodeURIComponent(packageRecord.id)}`,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setExportErrorMessage("Could not load export package payload.");
+        setDownloadingExportPackageId("");
+        return;
+      }
+
+      const recordSource = getSingleRecordFromResponse(responseData);
+      const record = normalizeWorkspaceExportPackage(recordSource);
+
+      if (!record || !record.packagePayload) {
+        setExportErrorMessage("Export package payload is not available.");
+        setDownloadingExportPackageId("");
+        return;
+      }
+
+      downloadJsonFile(record.exportName || record.id, record.packagePayload);
+      setExportStatusMessage("Export package JSON downloaded.");
+      setDownloadingExportPackageId("");
+    } catch {
+      setExportErrorMessage("Could not download export package.");
+      setDownloadingExportPackageId("");
+    }
+  }
+
   useEffect(() => {
     void loadSettings();
+    void loadRetentionPreview();
     void loadPrivacyRequests();
+    void loadExportPackages();
   }, []);
 
   const retentionRows = useMemo(() => {
@@ -688,6 +1131,40 @@ export default function WorkspacePrivacyPage() {
     ];
   }, [settings]);
 
+  const retentionPreviewRows = useMemo(() => {
+    if (!retentionPreview) {
+      return [];
+    }
+
+    return [
+      {
+        label: "Invoice drafts",
+        bucket: retentionPreview.invoiceDrafts,
+        description: "Draft records older than the invoice draft retention window."
+      },
+      {
+        label: "Validation reports",
+        bucket: retentionPreview.validationRuns,
+        description:
+          "Validation run records older than the validation report retention window."
+      },
+      {
+        label: "XML readiness reports",
+        bucket: retentionPreview.xmlReadinessReports,
+        description: "XML readiness records older than the XML report retention window."
+      },
+      {
+        label: "Workspace activity events",
+        bucket: retentionPreview.activityEvents,
+        description: "Audit/activity records older than the activity log retention window."
+      }
+    ];
+  }, [retentionPreview]);
+
+  const dataExportPrivacyRequests = useMemo(() => {
+    return privacyRequests.filter((request) => request.requestType === "data_export");
+  }, [privacyRequests]);
+
   const selectedRequestTypeAllowed =
     requestType === "data_export"
       ? settings.allowDataExportRequests
@@ -699,6 +1176,11 @@ export default function WorkspacePrivacyPage() {
     selectedRequestTypeAllowed &&
     requestSubject.trim().length >= 3 &&
     !isSubmittingRequest;
+
+  const canCreateExportPackage =
+    settings.allowDataExportRequests &&
+    exportName.trim().length >= 3 &&
+    !isCreatingExportPackage;
 
   return (
     <div className="workspace-page">
@@ -922,6 +1404,122 @@ export default function WorkspacePrivacyPage() {
       <section className="privacy-retention">
         <div className="privacy-retention-head">
           <div>
+            <p>Retention impact preview</p>
+            <h3>Non-destructive cleanup estimate</h3>
+          </div>
+
+          <Archive size={26} />
+        </div>
+
+        <div className="workspace-row-actions">
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={isLoadingRetentionPreview}
+            onClick={() => {
+              void loadRetentionPreview();
+            }}
+          >
+            <RefreshCcw size={16} />
+            {isLoadingRetentionPreview ? "Loading" : "Reload preview"}
+          </button>
+        </div>
+
+        <div className="retention-list">
+          {isLoadingRetentionPreview ? (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>Loading retention preview</span>
+              </div>
+
+              <strong>Loading</strong>
+            </div>
+          ) : retentionPreview ? (
+            <>
+              <div className="retention-row">
+                <div>
+                  <FileClock size={16} />
+                  <span>
+                    Preview generated at {formatUpdatedAt(retentionPreview.generatedAt)}
+                    <br />
+                    Mode: {formatRetentionMode(retentionPreview.retentionMode)}
+                    <br />
+                    This is a read-only estimate. No records are deleted from this
+                    preview.
+                  </span>
+                </div>
+
+                <strong>Preview</strong>
+              </div>
+
+              {retentionPreviewRows.map((item) => (
+                <div className="retention-row" key={item.label}>
+                  <div>
+                    <FileClock size={16} />
+                    <span>
+                      {item.label}
+                      <br />
+                      {item.description}
+                      <br />
+                      Retention: {item.bucket.retentionDays} days · Cutoff:{" "}
+                      {formatDateOnly(item.bucket.cutoffDate)}
+                    </span>
+                  </div>
+
+                  <strong>{item.bucket.affectedCount} affected</strong>
+                </div>
+              ))}
+            </>
+          ) : (
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>
+                  Retention preview is unavailable. Save settings and reload the
+                  preview after the API route is available.
+                </span>
+              </div>
+
+              <strong>Unavailable</strong>
+            </div>
+          )}
+        </div>
+
+        {retentionPreviewStatusMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <CheckCircle2 size={16} />
+                <span>{retentionPreviewStatusMessage}</span>
+              </div>
+
+              <strong>OK</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {retentionPreviewErrorMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>{retentionPreviewErrorMessage}</span>
+              </div>
+
+              <strong>
+                {retentionPreviewErrorMessage.includes("not connected")
+                  ? "Pending API"
+                  : "Review"}
+              </strong>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="privacy-retention">
+        <div className="privacy-retention-head">
+          <div>
             <p>Privacy request workflow</p>
             <h3>Submit data export, deletion, or retention review requests</h3>
           </div>
@@ -1031,6 +1629,186 @@ export default function WorkspacePrivacyPage() {
             </div>
           </div>
         ) : null}
+      </section>
+
+      <section className="privacy-retention">
+        <div className="privacy-retention-head">
+          <div>
+            <p>Workspace export packages</p>
+            <h3>Prepare downloadable JSON exports from real workspace records</h3>
+          </div>
+
+          <Download size={26} />
+        </div>
+
+        <div className="workspace-history-filters">
+          <label>
+            <span>Export name</span>
+            <input
+              type="text"
+              maxLength={180}
+              value={exportName}
+              disabled={isCreatingExportPackage}
+              onChange={(event) => {
+                setExportName(event.target.value);
+              }}
+            />
+          </label>
+
+          <label>
+            <span>Linked data export request</span>
+            <select
+              value={sourcePrivacyRequestId}
+              disabled={isCreatingExportPackage}
+              onChange={(event) => {
+                setSourcePrivacyRequestId(event.target.value);
+              }}
+            >
+              <option value="">No linked request</option>
+              {dataExportPrivacyRequests.map((request) => (
+                <option value={request.id} key={request.id}>
+                  {request.subject} · {formatPrivacyRequestStatus(request.status)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={!canCreateExportPackage}
+            onClick={() => {
+              void createExportPackage();
+            }}
+          >
+            <Download size={16} />
+            {isCreatingExportPackage ? "Preparing" : "Prepare export"}
+          </button>
+
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={isLoadingExportPackages}
+            onClick={() => {
+              void loadExportPackages();
+            }}
+          >
+            <RefreshCcw size={16} />
+            Reload
+          </button>
+        </div>
+
+        {!settings.allowDataExportRequests ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>
+                  Export package preparation is disabled because data export
+                  requests are disabled in workspace settings.
+                </span>
+              </div>
+
+              <strong>Disabled</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {exportStatusMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <CheckCircle2 size={16} />
+                <span>{exportStatusMessage}</span>
+              </div>
+
+              <strong>OK</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {exportErrorMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>{exportErrorMessage}</span>
+              </div>
+
+              <strong>
+                {exportErrorMessage.includes("not connected")
+                  ? "Pending API"
+                  : "Review"}
+              </strong>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="retention-list">
+          {isLoadingExportPackages ? (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>Loading export packages</span>
+              </div>
+
+              <strong>Loading</strong>
+            </div>
+          ) : exportPackages.length > 0 ? (
+            exportPackages.map((item) => (
+              <div className="retention-row" key={item.id}>
+                <div>
+                  <Download size={16} />
+                  <span>
+                    {item.exportName}
+                    <br />
+                    {formatRecordCounts(item.recordCounts)}
+                    <br />
+                    {formatBytes(item.packageSizeBytes)} · Created{" "}
+                    {formatUpdatedAt(item.createdAt)}
+                    {item.sourcePrivacyRequestId ? (
+                      <>
+                        <br />
+                        Linked request: {item.sourcePrivacyRequestId}
+                      </>
+                    ) : null}
+                    {item.errorMessage ? (
+                      <>
+                        <br />
+                        Error: {item.errorMessage}
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+
+                <div className="workspace-row-actions">
+                  <strong>{formatExportPackageStatus(item.status)}</strong>
+
+                  <button
+                    type="button"
+                    className="workspace-auth-action"
+                    disabled={Boolean(downloadingExportPackageId)}
+                    onClick={() => {
+                      void downloadExportPackage(item);
+                    }}
+                  >
+                    <Download size={16} />
+                    {downloadingExportPackageId === item.id ? "Loading" : "JSON"}
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>No export package has been prepared yet.</span>
+              </div>
+
+              <strong>Empty</strong>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="privacy-retention">
@@ -1196,8 +1974,9 @@ export default function WorkspacePrivacyPage() {
           <h3>Database-backed controls</h3>
           <p>
             Workspace settings persist through public.workspace_settings. Privacy
-            requests persist through public.workspace_privacy_requests and now
-            support a review/status workflow.
+            requests persist through public.workspace_privacy_requests. Export
+            packages persist through public.workspace_export_packages. Retention
+            preview reads existing workspace records without deleting anything.
           </p>
         </div>
 
@@ -1205,9 +1984,10 @@ export default function WorkspacePrivacyPage() {
           <ShieldCheck size={24} />
           <h3>Safety boundary</h3>
           <p>
-            Retention settings and privacy requests define product behavior inside
-            Invoice Lantern. They do not decide statutory retention duties,
-            accounting obligations, or authority-facing recordkeeping requirements.
+            Retention settings, privacy requests, export packages, and retention
+            previews define product behavior inside Invoice Lantern. They do not
+            decide statutory retention duties, accounting obligations, or
+            authority-facing recordkeeping requirements.
           </p>
         </div>
       </section>

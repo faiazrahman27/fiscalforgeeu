@@ -4,7 +4,9 @@ import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { validateInvoiceRoutes } from "./validate-invoice.js";
 import { validationRunRoutes } from "./validation-runs.js";
 import { workspaceActivityRoutes } from "./workspace-activity.js";
+import { workspaceExportPackageRoutes } from "./workspace-export-packages.js";
 import { workspacePrivacyRequestRoutes } from "./workspace-privacy-requests.js";
+import { workspaceRetentionPreviewRoutes } from "./workspace-retention-preview.js";
 import { workspaceSettingsRoutes } from "./workspace-settings.js";
 import { xmlRoutes } from "./xml.js";
 
@@ -38,6 +40,14 @@ export async function v1Routes(app: FastifyInstance) {
   });
 
   await app.register(workspacePrivacyRequestRoutes, {
+    prefix: "/workspace"
+  });
+
+  await app.register(workspaceExportPackageRoutes, {
+    prefix: "/workspace"
+  });
+
+  await app.register(workspaceRetentionPreviewRoutes, {
     prefix: "/workspace"
   });
 }
