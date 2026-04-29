@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     const apiResponse = await fetch(`${apiBaseUrl}/api/v1/workspace/deletion-runs`, {
       method: "POST",
       headers: await buildLocalApiHeaders({
-        "content-type": "application/json"
+        contentType: "application/json"
       }),
       cache: "no-store",
       body

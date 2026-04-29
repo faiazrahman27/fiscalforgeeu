@@ -73,6 +73,31 @@ type WorkspaceRetentionRun = {
   updatedAt: string;
 };
 
+type WorkspaceDeletionRunStatus = "prepared" | "executed" | "failed";
+
+type WorkspaceDeletionRunRecordCounts = {
+  invoiceDrafts: number;
+  validationRuns: number;
+  xmlReadinessReports: number;
+  workspaceExportPackages: number;
+  activityEvents: number;
+};
+
+type WorkspaceDeletionRun = {
+  id: string;
+  runType: "privacy_request_deletion";
+  status: WorkspaceDeletionRunStatus;
+  sourcePrivacyRequestId: string;
+  affectedCounts: WorkspaceDeletionRunRecordCounts;
+  executedCounts: WorkspaceDeletionRunRecordCounts;
+  totalAffectedCount: number;
+  totalExecutedCount: number;
+  errorMessage: string;
+  executedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type PrivacyRequestType = "data_export" | "deletion" | "retention_review";
 
 type PrivacyRequestStatus = "submitted" | "in_review" | "completed" | "rejected";
@@ -149,6 +174,14 @@ const emptyRetentionRunBucket: WorkspaceRetentionRunBucket = {
   cutoffDate: "",
   affectedCount: 0,
   executedCount: 0
+};
+
+const emptyDeletionRunRecordCounts: WorkspaceDeletionRunRecordCounts = {
+  invoiceDrafts: 0,
+  validationRuns: 0,
+  xmlReadinessReports: 0,
+  workspaceExportPackages: 0,
+  activityEvents: 0
 };
 
 const emptyExportRecordCounts: WorkspaceExportPackageRecordCounts = {
@@ -274,6 +307,14 @@ function normalizeExportPackageStatus(value: string): WorkspaceExportPackageStat
 }
 
 function normalizeRetentionRunStatus(value: string): WorkspaceRetentionRunStatus {
+  if (value === "executed" || value === "failed") {
+    return value;
+  }
+
+  return "prepared";
+}
+
+function normalizeDeletionRunStatus(value: string): WorkspaceDeletionRunStatus {
   if (value === "executed" || value === "failed") {
     return value;
   }
@@ -491,6 +532,85 @@ function normalizeWorkspaceRetentionRun(
   };
 }
 
+function normalizeDeletionRunRecordCounts(
+  value: unknown
+): WorkspaceDeletionRunRecordCounts {
+  if (!isPlainObject(value)) {
+    return emptyDeletionRunRecordCounts;
+  }
+
+  return {
+    invoiceDrafts: Math.max(0, readNumberField(value, "invoiceDrafts", 0)),
+    validationRuns: Math.max(0, readNumberField(value, "validationRuns", 0)),
+    xmlReadinessReports: Math.max(
+      0,
+      readNumberField(value, "xmlReadinessReports", 0)
+    ),
+    workspaceExportPackages: Math.max(
+      0,
+      readNumberField(value, "workspaceExportPackages", 0)
+    ),
+    activityEvents: Math.max(0, readNumberField(value, "activityEvents", 0))
+  };
+}
+
+function sumDeletionRunRecordCounts(counts: WorkspaceDeletionRunRecordCounts) {
+  return (
+    counts.invoiceDrafts +
+    counts.validationRuns +
+    counts.xmlReadinessReports +
+    counts.workspaceExportPackages +
+    counts.activityEvents
+  );
+}
+
+function normalizeWorkspaceDeletionRun(
+  value: unknown
+): WorkspaceDeletionRun | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id");
+  const createdAt = readStringField(value, "createdAt");
+
+  if (!id || !createdAt) {
+    return null;
+  }
+
+  const affectedCounts = normalizeDeletionRunRecordCounts(value.affectedCounts);
+  const executedCounts = normalizeDeletionRunRecordCounts(value.executedCounts);
+
+  return {
+    id,
+    runType: "privacy_request_deletion",
+    status: normalizeDeletionRunStatus(readStringField(value, "status")),
+    sourcePrivacyRequestId: readStringField(value, "sourcePrivacyRequestId"),
+    affectedCounts,
+    executedCounts,
+    totalAffectedCount: Math.max(
+      0,
+      readNumberField(
+        value,
+        "totalAffectedCount",
+        sumDeletionRunRecordCounts(affectedCounts)
+      )
+    ),
+    totalExecutedCount: Math.max(
+      0,
+      readNumberField(
+        value,
+        "totalExecutedCount",
+        sumDeletionRunRecordCounts(executedCounts)
+      )
+    ),
+    errorMessage: readStringField(value, "errorMessage"),
+    executedAt: readStringField(value, "executedAt"),
+    createdAt,
+    updatedAt: readStringField(value, "updatedAt")
+  };
+}
+
 function normalizeWorkspacePrivacyRequest(
   value: unknown
 ): WorkspacePrivacyRequest | null {
@@ -693,6 +813,18 @@ function formatRetentionRunStatus(value: WorkspaceRetentionRunStatus) {
   return "Prepared";
 }
 
+function formatDeletionRunStatus(value: WorkspaceDeletionRunStatus) {
+  if (value === "executed") {
+    return "Executed";
+  }
+
+  if (value === "failed") {
+    return "Failed";
+  }
+
+  return "Prepared";
+}
+
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
     return "0 B";
@@ -737,6 +869,16 @@ function formatRetentionRunExecutedCounts(record: WorkspaceRetentionRun) {
   ].join(" · ");
 }
 
+function formatDeletionRunRecordCounts(counts: WorkspaceDeletionRunRecordCounts) {
+  return [
+    `${counts.invoiceDrafts} draft(s)`,
+    `${counts.validationRuns} validation run(s)`,
+    `${counts.xmlReadinessReports} XML report(s)`,
+    `${counts.workspaceExportPackages} export package(s)`,
+    `${counts.activityEvents} activity event(s)`
+  ].join(" · ");
+}
+
 function downloadJsonFile(fileName: string, payload: unknown) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json"
@@ -759,6 +901,7 @@ export default function WorkspacePrivacyPage() {
   const [retentionPreview, setRetentionPreview] =
     useState<WorkspaceRetentionPreview | null>(null);
   const [retentionRuns, setRetentionRuns] = useState<WorkspaceRetentionRun[]>([]);
+  const [deletionRuns, setDeletionRuns] = useState<WorkspaceDeletionRun[]>([]);
   const [privacyRequests, setPrivacyRequests] = useState<
     WorkspacePrivacyRequest[]
   >([]);
@@ -771,6 +914,8 @@ export default function WorkspacePrivacyPage() {
   );
   const [exportName, setExportName] = useState(buildDefaultExportName);
   const [sourcePrivacyRequestId, setSourcePrivacyRequestId] = useState("");
+  const [sourceDeletionPrivacyRequestId, setSourceDeletionPrivacyRequestId] =
+    useState("");
 
   const [requestType, setRequestType] =
     useState<PrivacyRequestType>("data_export");
@@ -781,10 +926,12 @@ export default function WorkspacePrivacyPage() {
   const [isLoadingRetentionPreview, setIsLoadingRetentionPreview] =
     useState(true);
   const [isLoadingRetentionRuns, setIsLoadingRetentionRuns] = useState(true);
+  const [isLoadingDeletionRuns, setIsLoadingDeletionRuns] = useState(true);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const [isLoadingExportPackages, setIsLoadingExportPackages] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPreparingRetentionRun, setIsPreparingRetentionRun] = useState(false);
+  const [isPreparingDeletionRun, setIsPreparingDeletionRun] = useState(false);
   const [executingRetentionRunId, setExecutingRetentionRunId] = useState("");
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [isCreatingExportPackage, setIsCreatingExportPackage] = useState(false);
@@ -799,6 +946,8 @@ export default function WorkspacePrivacyPage() {
     useState("");
   const [retentionRunStatusMessage, setRetentionRunStatusMessage] = useState("");
   const [retentionRunErrorMessage, setRetentionRunErrorMessage] = useState("");
+  const [deletionRunStatusMessage, setDeletionRunStatusMessage] = useState("");
+  const [deletionRunErrorMessage, setDeletionRunErrorMessage] = useState("");
   const [requestStatusMessage, setRequestStatusMessage] = useState("");
   const [requestErrorMessage, setRequestErrorMessage] = useState("");
   const [exportStatusMessage, setExportStatusMessage] = useState("");
@@ -907,6 +1056,44 @@ export default function WorkspacePrivacyPage() {
         "Retention runs are not connected yet. The run history UI is ready for the API route."
       );
       setIsLoadingRetentionRuns(false);
+    }
+  }
+
+  async function loadDeletionRuns() {
+    setIsLoadingDeletionRuns(true);
+    setDeletionRunStatusMessage("");
+    setDeletionRunErrorMessage("");
+
+    try {
+      const response = await fetch("/api/local/workspace/deletion-runs", {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setDeletionRuns([]);
+        setDeletionRunErrorMessage(
+          "Deletion runs are not connected yet. The deletion review UI is ready for the API route."
+        );
+        setIsLoadingDeletionRuns(false);
+        return;
+      }
+
+      const records = getRecordsFromResponse(responseData)
+        .map((record) => normalizeWorkspaceDeletionRun(record))
+        .filter((record): record is WorkspaceDeletionRun => record !== null);
+
+      setDeletionRuns(records);
+      setDeletionRunStatusMessage("Deletion run history loaded.");
+      setIsLoadingDeletionRuns(false);
+    } catch {
+      setDeletionRuns([]);
+      setDeletionRunErrorMessage(
+        "Deletion runs are not connected yet. The deletion review UI is ready for the API route."
+      );
+      setIsLoadingDeletionRuns(false);
     }
   }
 
@@ -1057,6 +1244,63 @@ export default function WorkspacePrivacyPage() {
     }
   }
 
+  async function prepareDeletionRun() {
+    if (!sourceDeletionPrivacyRequestId) {
+      setDeletionRunErrorMessage("Choose a deletion privacy request first.");
+      return;
+    }
+
+    if (!settings.allowDeletionRequests) {
+      setDeletionRunErrorMessage("Deletion requests are disabled in workspace settings.");
+      return;
+    }
+
+    setIsPreparingDeletionRun(true);
+    setDeletionRunStatusMessage("");
+    setDeletionRunErrorMessage("");
+
+    try {
+      const response = await fetch("/api/local/workspace/deletion-runs", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          sourcePrivacyRequestId: sourceDeletionPrivacyRequestId
+        })
+      });
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setDeletionRunErrorMessage(
+          readErrorMessage(responseData, "Could not prepare deletion run.")
+        );
+        setIsPreparingDeletionRun(false);
+        return;
+      }
+
+      const recordSource = getSingleRecordFromResponse(responseData);
+      const createdRecord = normalizeWorkspaceDeletionRun(recordSource);
+
+      if (createdRecord) {
+        setDeletionRuns((currentRuns) => [
+          createdRecord,
+          ...currentRuns.filter((run) => run.id !== createdRecord.id)
+        ]);
+      }
+
+      setDeletionRunStatusMessage(
+        "Deletion run prepared. No records were deleted."
+      );
+      setIsPreparingDeletionRun(false);
+    } catch {
+      setDeletionRunErrorMessage("Could not prepare deletion run.");
+      setIsPreparingDeletionRun(false);
+    }
+  }
+
   async function executeRetentionRun(retentionRunId: string) {
     const confirmed = window.confirm(
       "Execute this retention run? This can permanently delete expired workspace records based on this run's saved cutoff dates."
@@ -1177,6 +1421,10 @@ export default function WorkspacePrivacyPage() {
 
         if (createdRecord.requestType === "data_export") {
           setSourcePrivacyRequestId(createdRecord.id);
+        }
+
+        if (createdRecord.requestType === "deletion") {
+          setSourceDeletionPrivacyRequestId(createdRecord.id);
         }
       }
 
@@ -1358,6 +1606,7 @@ export default function WorkspacePrivacyPage() {
     void loadSettings();
     void loadRetentionPreview();
     void loadRetentionRuns();
+    void loadDeletionRuns();
     void loadPrivacyRequests();
     void loadExportPackages();
   }, []);
@@ -1433,6 +1682,10 @@ export default function WorkspacePrivacyPage() {
     return privacyRequests.filter((request) => request.requestType === "data_export");
   }, [privacyRequests]);
 
+  const deletionPrivacyRequests = useMemo(() => {
+    return privacyRequests.filter((request) => request.requestType === "deletion");
+  }, [privacyRequests]);
+
   const selectedRequestTypeAllowed =
     requestType === "data_export"
       ? settings.allowDataExportRequests
@@ -1449,6 +1702,11 @@ export default function WorkspacePrivacyPage() {
     settings.allowDataExportRequests &&
     exportName.trim().length >= 3 &&
     !isCreatingExportPackage;
+
+  const canPrepareDeletionRun =
+    settings.allowDeletionRequests &&
+    sourceDeletionPrivacyRequestId.length > 0 &&
+    !isPreparingDeletionRun;
 
   return (
     <div className="workspace-page">
@@ -2047,6 +2305,185 @@ export default function WorkspacePrivacyPage() {
       <section className="privacy-retention">
         <div className="privacy-retention-head">
           <div>
+            <p>Deletion runs</p>
+            <h3>Prepare workspace deletion review from a deletion request</h3>
+          </div>
+
+          <Trash2 size={26} />
+        </div>
+
+        <div className="workspace-history-filters">
+          <label>
+            <span>Linked deletion request</span>
+            <select
+              value={sourceDeletionPrivacyRequestId}
+              disabled={isPreparingDeletionRun}
+              onChange={(event) => {
+                setSourceDeletionPrivacyRequestId(event.target.value);
+              }}
+            >
+              <option value="">Choose a deletion request</option>
+              {deletionPrivacyRequests.map((request) => (
+                <option value={request.id} key={request.id}>
+                  {request.subject} · {formatPrivacyRequestStatus(request.status)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={!canPrepareDeletionRun}
+            onClick={() => {
+              void prepareDeletionRun();
+            }}
+          >
+            <Trash2 size={16} />
+            {isPreparingDeletionRun ? "Preparing" : "Prepare deletion review"}
+          </button>
+
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={isLoadingDeletionRuns}
+            onClick={() => {
+              void loadDeletionRuns();
+            }}
+          >
+            <RefreshCcw size={16} />
+            Reload
+          </button>
+        </div>
+
+        {!settings.allowDeletionRequests ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>
+                  Deletion run preparation is disabled because deletion requests are
+                  disabled in workspace settings.
+                </span>
+              </div>
+
+              <strong>Disabled</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {settings.allowDeletionRequests && deletionPrivacyRequests.length === 0 ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>
+                  No deletion privacy request is available. Submit a deletion request
+                  first, then prepare a deletion review from that request.
+                </span>
+              </div>
+
+              <strong>Waiting</strong>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="retention-list">
+          {isLoadingDeletionRuns ? (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>Loading deletion runs</span>
+              </div>
+
+              <strong>Loading</strong>
+            </div>
+          ) : deletionRuns.length > 0 ? (
+            deletionRuns.map((run) => (
+              <div className="retention-row" key={run.id}>
+                <div>
+                  <FileClock size={16} />
+                  <span>
+                    Deletion review prepared {formatUpdatedAt(run.createdAt)}
+                    <br />
+                    Linked request: {run.sourcePrivacyRequestId || "Not linked"}
+                    <br />
+                    Affected: {formatDeletionRunRecordCounts(run.affectedCounts)}
+                    <br />
+                    Executed: {formatDeletionRunRecordCounts(run.executedCounts)}
+                    <br />
+                    Total affected: {run.totalAffectedCount} · Total executed:{" "}
+                    {run.totalExecutedCount}
+                    <br />
+                    This review stores a deletion-impact snapshot only. Execution is
+                    intentionally not exposed here yet.
+                    {run.executedAt ? (
+                      <>
+                        <br />
+                        Executed at: {formatUpdatedAt(run.executedAt)}
+                      </>
+                    ) : null}
+                    {run.errorMessage ? (
+                      <>
+                        <br />
+                        Error: {run.errorMessage}
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+
+                <strong>{formatDeletionRunStatus(run.status)}</strong>
+              </div>
+            ))
+          ) : (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>
+                  No deletion run has been prepared yet. Preparing a deletion review
+                  stores affected workspace counts without deleting data.
+                </span>
+              </div>
+
+              <strong>Empty</strong>
+            </div>
+          )}
+        </div>
+
+        {deletionRunStatusMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <CheckCircle2 size={16} />
+                <span>{deletionRunStatusMessage}</span>
+              </div>
+
+              <strong>OK</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {deletionRunErrorMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>{deletionRunErrorMessage}</span>
+              </div>
+
+              <strong>
+                {deletionRunErrorMessage.includes("not connected")
+                  ? "Pending API"
+                  : "Review"}
+              </strong>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="privacy-retention">
+        <div className="privacy-retention-head">
+          <div>
             <p>Workspace export packages</p>
             <h3>Prepare downloadable JSON exports from real workspace records</h3>
           </div>
@@ -2389,8 +2826,9 @@ export default function WorkspacePrivacyPage() {
             Workspace settings persist through public.workspace_settings. Privacy
             requests persist through public.workspace_privacy_requests. Export
             packages persist through public.workspace_export_packages. Retention
-            previews read existing records without deleting anything, and retention
-            runs store auditable cleanup-review snapshots before execution.
+            previews read existing records without deleting anything. Retention runs
+            store auditable cleanup-review snapshots before execution, and deletion
+            runs store deletion-impact snapshots linked to deletion privacy requests.
           </p>
         </div>
 
@@ -2399,9 +2837,9 @@ export default function WorkspacePrivacyPage() {
           <h3>Safety boundary</h3>
           <p>
             Retention settings, privacy requests, export packages, retention
-            previews, and retention runs define product behavior inside Invoice
-            Lantern. They do not decide statutory retention duties, accounting
-            obligations, or authority-facing recordkeeping requirements.
+            previews, retention runs, and deletion runs define product behavior
+            inside Invoice Lantern. They do not decide statutory retention duties,
+            accounting obligations, or authority-facing recordkeeping requirements.
           </p>
         </div>
       </section>
