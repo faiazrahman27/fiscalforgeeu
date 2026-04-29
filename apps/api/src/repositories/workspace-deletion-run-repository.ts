@@ -192,6 +192,34 @@ function normalizeDeletionRunRow(
   };
 }
 
+function normalizeRpcDeletionRunResult(
+  value: unknown
+): SupabaseWorkspaceDeletionRunRow | null {
+  if (Array.isArray(value)) {
+    const firstRecord = value[0];
+
+    return isPlainObject(firstRecord)
+      ? (firstRecord as SupabaseWorkspaceDeletionRunRow)
+      : null;
+  }
+
+  return isPlainObject(value) ? (value as SupabaseWorkspaceDeletionRunRow) : null;
+}
+
+function isDeletionRunNotFoundError(message: string) {
+  return message.toLowerCase().includes("deletion run was not found");
+}
+
+function isDeletionRunNotExecutableError(message: string) {
+  return message.toLowerCase().includes("only prepared deletion runs can be executed");
+}
+
+function isDeletionRunInvalidSourceError(message: string) {
+  return message
+    .toLowerCase()
+    .includes("deletion run source privacy request is invalid");
+}
+
 async function getWorkspaceForAuthenticatedUser(supabase: SupabaseClient) {
   const { data, error } = await supabase.rpc("bootstrap_personal_workspace");
 
@@ -454,4 +482,47 @@ export async function createAuthenticatedWorkspaceDeletionRun(
   }
 
   return record;
+}
+
+export async function executeAuthenticatedWorkspaceDeletionRun(
+  context: AuthenticatedWorkspaceDeletionRunContext,
+  id: string
+) {
+  const supabase = createAuthenticatedSupabaseClient(context);
+
+  /*
+   * Destructive workspace deletion is intentionally executed through a Postgres
+   * RPC. The RPC performs the delete/update/activity-log sequence inside the
+   * database so the operation is atomic and does not partially delete records if
+   * a later step fails.
+   */
+  const { data, error } = await supabase.rpc("execute_workspace_deletion_run", {
+    deletion_run_id: id
+  });
+
+  if (error) {
+    const message = error.message || "Could not execute deletion run.";
+
+    if (isDeletionRunNotFoundError(message)) {
+      return null;
+    }
+
+    if (isDeletionRunNotExecutableError(message)) {
+      throw new Error("Only prepared deletion runs can be executed.");
+    }
+
+    if (isDeletionRunInvalidSourceError(message)) {
+      throw new Error("Deletion run source privacy request is invalid.");
+    }
+
+    throw new Error(`Could not execute deletion run: ${message}`);
+  }
+
+  const row = normalizeRpcDeletionRunResult(data);
+
+  if (!row) {
+    return null;
+  }
+
+  return normalizeDeletionRunRow(row);
 }
