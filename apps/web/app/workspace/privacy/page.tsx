@@ -933,6 +933,7 @@ export default function WorkspacePrivacyPage() {
   const [isPreparingRetentionRun, setIsPreparingRetentionRun] = useState(false);
   const [isPreparingDeletionRun, setIsPreparingDeletionRun] = useState(false);
   const [executingRetentionRunId, setExecutingRetentionRunId] = useState("");
+  const [executingDeletionRunId, setExecutingDeletionRunId] = useState("");
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [isCreatingExportPackage, setIsCreatingExportPackage] = useState(false);
   const [downloadingExportPackageId, setDownloadingExportPackageId] = useState("");
@@ -1354,6 +1355,67 @@ export default function WorkspacePrivacyPage() {
     } catch {
       setRetentionRunErrorMessage("Could not execute retention run.");
       setExecutingRetentionRunId("");
+    }
+  }
+
+  async function executeDeletionRun(deletionRunId: string) {
+    const confirmed = window.confirm(
+      "Execute this deletion run? This can permanently delete workspace records connected to the selected deletion review. Continue only if the deletion request has been properly reviewed."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setExecutingDeletionRunId(deletionRunId);
+    setDeletionRunStatusMessage("");
+    setDeletionRunErrorMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/workspace/deletion-runs/${encodeURIComponent(
+          deletionRunId
+        )}/execute`,
+        {
+          method: "POST",
+          cache: "no-store"
+        }
+      );
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setDeletionRunErrorMessage(
+          readErrorMessage(responseData, "Could not execute deletion run.")
+        );
+        setExecutingDeletionRunId("");
+        return;
+      }
+
+      const recordSource = getSingleRecordFromResponse(responseData);
+      const executedRecord = normalizeWorkspaceDeletionRun(recordSource);
+
+      if (executedRecord) {
+        setDeletionRuns((currentRuns) =>
+          currentRuns.map((run) =>
+            run.id === executedRecord.id ? executedRecord : run
+          )
+        );
+      }
+
+      setDeletionRunStatusMessage(
+        "Deletion run executed. Workspace records were deleted according to the prepared deletion review."
+      );
+      setExecutingDeletionRunId("");
+
+      void loadDeletionRuns();
+      void loadPrivacyRequests();
+      void loadExportPackages();
+      void loadRetentionPreview();
+      void loadRetentionRuns();
+    } catch {
+      setDeletionRunErrorMessage("Could not execute deletion run.");
+      setExecutingDeletionRunId("");
     }
   }
 
@@ -2306,7 +2368,7 @@ export default function WorkspacePrivacyPage() {
         <div className="privacy-retention-head">
           <div>
             <p>Deletion runs</p>
-            <h3>Prepare workspace deletion review from a deletion request</h3>
+            <h3>Prepare and execute workspace deletion reviews</h3>
           </div>
 
           <Trash2 size={26} />
@@ -2415,8 +2477,8 @@ export default function WorkspacePrivacyPage() {
                     Total affected: {run.totalAffectedCount} · Total executed:{" "}
                     {run.totalExecutedCount}
                     <br />
-                    This review stores a deletion-impact snapshot only. Execution is
-                    intentionally not exposed here yet.
+                    Prepared deletion reviews are non-destructive until executed.
+                    Execution is destructive and should only be used after review.
                     {run.executedAt ? (
                       <>
                         <br />
@@ -2432,7 +2494,25 @@ export default function WorkspacePrivacyPage() {
                   </span>
                 </div>
 
-                <strong>{formatDeletionRunStatus(run.status)}</strong>
+                <div className="workspace-row-actions">
+                  <strong>{formatDeletionRunStatus(run.status)}</strong>
+
+                  {run.status === "prepared" ? (
+                    <button
+                      type="button"
+                      className="workspace-auth-action"
+                      disabled={Boolean(executingDeletionRunId)}
+                      onClick={() => {
+                        void executeDeletionRun(run.id);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      {executingDeletionRunId === run.id
+                        ? "Executing"
+                        : "Execute deletion"}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ))
           ) : (
@@ -2828,7 +2908,8 @@ export default function WorkspacePrivacyPage() {
             packages persist through public.workspace_export_packages. Retention
             previews read existing records without deleting anything. Retention runs
             store auditable cleanup-review snapshots before execution, and deletion
-            runs store deletion-impact snapshots linked to deletion privacy requests.
+            runs store deletion-impact snapshots linked to deletion privacy requests
+            before execution.
           </p>
         </div>
 
