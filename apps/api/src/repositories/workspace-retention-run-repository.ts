@@ -361,35 +361,6 @@ async function countRowsOlderThan({
   return count ?? 0;
 }
 
-async function deleteRowsOlderThan({
-  supabase,
-  tableName,
-  organizationId,
-  dateColumn,
-  cutoffDate
-}: {
-  supabase: SupabaseClient;
-  tableName: string;
-  organizationId: string;
-  dateColumn: string;
-  cutoffDate: string;
-}) {
-  const { data, count, error } = await supabase
-    .from(tableName)
-    .delete({
-      count: "exact"
-    })
-    .eq("organization_id", organizationId)
-    .lt(dateColumn, cutoffDate)
-    .select("id");
-
-  if (error) {
-    throw new Error(`Could not delete expired ${tableName}: ${error.message}`);
-  }
-
-  return count ?? data?.length ?? 0;
-}
-
 async function recordWorkspaceActivityEvent(
   supabase: SupabaseClient,
   input: WorkspaceActivityEventInput
@@ -408,7 +379,7 @@ async function recordWorkspaceActivityEvent(
 
   if (error) {
     /*
-     * Activity logging must not break retention-run creation or execution.
+     * Activity logging must not break retention-run preparation.
      * The retention-run row remains the authoritative record.
      */
     console.warn(`Workspace activity event was not recorded: ${error.message}`);
@@ -445,66 +416,26 @@ async function insertRetentionRunPreparedActivityEvent({
   });
 }
 
-async function insertRetentionRunExecutedActivityEvent({
-  supabase,
-  organizationId,
-  userId,
-  record
-}: {
-  supabase: SupabaseClient;
-  organizationId: string;
-  userId: string;
-  record: WorkspaceRetentionRunRecord;
-}) {
-  await recordWorkspaceActivityEvent(supabase, {
-    organizationId,
-    actorUserId: userId,
-    eventType: "retention_run.executed",
-    entityType: "workspace_retention_run",
-    entityId: record.id,
-    entityLabel: `Retention review executed ${record.executedAt}`,
-    severity: record.totalExecutedCount > 0 ? "warning" : "info",
-    metadata: {
-      retentionMode: record.retentionMode,
-      totalAffectedCount: record.totalAffectedCount,
-      totalExecutedCount: record.totalExecutedCount,
-      invoiceDrafts: record.invoiceDrafts,
-      validationRuns: record.validationRuns,
-      xmlReadinessReports: record.xmlReadinessReports,
-      activityEvents: record.activityEvents
-    }
-  });
-}
+function normalizeRpcRetentionRunResult(
+  value: unknown
+): SupabaseWorkspaceRetentionRunRow | null {
+  if (Array.isArray(value)) {
+    const firstRecord = value[0];
 
-async function markRetentionRunAsFailed({
-  supabase,
-  organizationId,
-  retentionRunId,
-  errorMessage
-}: {
-  supabase: SupabaseClient;
-  organizationId: string;
-  retentionRunId: string;
-  errorMessage: string;
-}) {
-  const { data, error } = await supabase
-    .from("workspace_retention_runs")
-    .update({
-      status: "failed",
-      error_message: errorMessage
-    })
-    .eq("id", retentionRunId)
-    .eq("organization_id", organizationId)
-    .select(WORKSPACE_RETENTION_RUN_SELECT_FIELDS)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`Could not mark retention run as failed: ${error.message}`);
+    return isPlainObject(firstRecord)
+      ? (firstRecord as SupabaseWorkspaceRetentionRunRow)
+      : null;
   }
 
-  return data
-    ? normalizeRetentionRunRow(data as SupabaseWorkspaceRetentionRunRow)
-    : null;
+  return isPlainObject(value) ? (value as SupabaseWorkspaceRetentionRunRow) : null;
+}
+
+function isRetentionRunNotFoundError(message: string) {
+  return message.toLowerCase().includes("retention run was not found");
+}
+
+function isRetentionRunNotExecutableError(message: string) {
+  return message.toLowerCase().includes("only prepared retention runs can be executed");
 }
 
 export function hasAuthenticatedWorkspaceRetentionRunContext(
@@ -645,143 +576,36 @@ export async function executeAuthenticatedWorkspaceRetentionRun(
   id: string
 ) {
   const supabase = createAuthenticatedSupabaseClient(context);
-  const workspace = await getWorkspaceForAuthenticatedUser(supabase);
 
-  const { data: existingData, error: existingError } = await supabase
-    .from("workspace_retention_runs")
-    .select(WORKSPACE_RETENTION_RUN_SELECT_FIELDS)
-    .eq("id", id)
-    .eq("organization_id", workspace.organizationId)
-    .maybeSingle();
+  /*
+   * Destructive cleanup is intentionally executed through a Postgres RPC.
+   * The RPC performs the delete/update/activity-log sequence inside the database
+   * so the operation is atomic and does not partially delete records if a later
+   * step fails.
+   */
+  const { data, error } = await supabase.rpc("execute_workspace_retention_run", {
+    retention_run_id: id
+  });
 
-  if (existingError) {
-    throw new Error(`Could not read retention run: ${existingError.message}`);
+  if (error) {
+    const message = error.message || "Could not execute retention run.";
+
+    if (isRetentionRunNotFoundError(message)) {
+      return null;
+    }
+
+    if (isRetentionRunNotExecutableError(message)) {
+      throw new Error("Only prepared retention runs can be executed.");
+    }
+
+    throw new Error(`Could not execute retention run: ${message}`);
   }
 
-  if (!existingData) {
+  const row = normalizeRpcRetentionRunResult(data);
+
+  if (!row) {
     return null;
   }
 
-  const existingRecord = normalizeRetentionRunRow(
-    existingData as SupabaseWorkspaceRetentionRunRow
-  );
-
-  if (existingRecord.status !== "prepared") {
-    throw new Error("Only prepared retention runs can be executed.");
-  }
-
-  try {
-    /*
-     * Execution uses the saved cutoff dates from the prepared run, not current
-     * workspace settings. This prevents changed settings or stale browser state
-     * from changing the delete scope.
-     *
-     * Parent tables are deleted only through organization-scoped predicates.
-     * Existing ON DELETE CASCADE constraints remove child rows for invoice
-     * drafts, validation runs, and XML readiness reports.
-     */
-    const invoiceDraftExecutedCount = await deleteRowsOlderThan({
-      supabase,
-      tableName: "invoice_drafts",
-      organizationId: workspace.organizationId,
-      dateColumn: "updated_at",
-      cutoffDate: existingRecord.invoiceDrafts.cutoffDate
-    });
-
-    const validationRunExecutedCount = await deleteRowsOlderThan({
-      supabase,
-      tableName: "validation_runs",
-      organizationId: workspace.organizationId,
-      dateColumn: "created_at",
-      cutoffDate: existingRecord.validationRuns.cutoffDate
-    });
-
-    const xmlReportExecutedCount = await deleteRowsOlderThan({
-      supabase,
-      tableName: "xml_readiness_reports",
-      organizationId: workspace.organizationId,
-      dateColumn: "uploaded_at",
-      cutoffDate: existingRecord.xmlReadinessReports.cutoffDate
-    });
-
-    const activityEventExecutedCount = await deleteRowsOlderThan({
-      supabase,
-      tableName: "workspace_activity_events",
-      organizationId: workspace.organizationId,
-      dateColumn: "created_at",
-      cutoffDate: existingRecord.activityEvents.cutoffDate
-    });
-
-    const executedAt = new Date().toISOString();
-
-    const { data, error } = await supabase
-      .from("workspace_retention_runs")
-      .update({
-        status: "executed",
-        invoice_draft_executed_count: invoiceDraftExecutedCount,
-        validation_run_executed_count: validationRunExecutedCount,
-        xml_report_executed_count: xmlReportExecutedCount,
-        activity_event_executed_count: activityEventExecutedCount,
-        error_message: "",
-        executed_at: executedAt
-      })
-      .eq("id", existingRecord.id)
-      .eq("organization_id", workspace.organizationId)
-      .eq("status", "prepared")
-      .select(WORKSPACE_RETENTION_RUN_SELECT_FIELDS)
-      .single();
-
-    if (error) {
-      throw new Error(`Could not update executed retention run: ${error.message}`);
-    }
-
-    const executedRecord = normalizeRetentionRunRow(
-      data as SupabaseWorkspaceRetentionRunRow
-    );
-
-    try {
-      await insertRetentionRunExecutedActivityEvent({
-        supabase,
-        organizationId: workspace.organizationId,
-        userId: context.userId,
-        record: executedRecord
-      });
-    } catch {
-      /*
-       * Retention execution should not fail only because activity logging failed.
-       */
-    }
-
-    return executedRecord;
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Retention execution failed.";
-
-    const failedRecord = await markRetentionRunAsFailed({
-      supabase,
-      organizationId: workspace.organizationId,
-      retentionRunId: existingRecord.id,
-      errorMessage
-    });
-
-    if (failedRecord) {
-      await recordWorkspaceActivityEvent(supabase, {
-        organizationId: workspace.organizationId,
-        actorUserId: context.userId,
-        eventType: "retention_run.failed",
-        entityType: "workspace_retention_run",
-        entityId: failedRecord.id,
-        entityLabel: `Retention review failed ${failedRecord.updatedAt}`,
-        severity: "error",
-        metadata: {
-          errorMessage,
-          retentionMode: failedRecord.retentionMode,
-          totalAffectedCount: failedRecord.totalAffectedCount,
-          totalExecutedCount: failedRecord.totalExecutedCount
-        }
-      });
-    }
-
-    throw error;
-  }
+  return normalizeRetentionRunRow(row);
 }
