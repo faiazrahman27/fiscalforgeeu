@@ -7,6 +7,7 @@ import { workspaceActivityRoutes } from "./workspace-activity.js";
 import { workspaceExportPackageRoutes } from "./workspace-export-packages.js";
 import { workspacePrivacyRequestRoutes } from "./workspace-privacy-requests.js";
 import { workspaceRetentionPreviewRoutes } from "./workspace-retention-preview.js";
+import { workspaceRetentionRunRoutes } from "./workspace-retention-runs.js";
 import { workspaceSettingsRoutes } from "./workspace-settings.js";
 import { xmlRoutes } from "./xml.js";
 
@@ -48,6 +49,10 @@ export async function v1Routes(app: FastifyInstance) {
   });
 
   await app.register(workspaceRetentionPreviewRoutes, {
+    prefix: "/workspace"
+  });
+
+  await app.register(workspaceRetentionRunRoutes, {
     prefix: "/workspace"
   });
 }

@@ -47,6 +47,32 @@ type WorkspaceRetentionPreview = {
   activityEvents: RetentionPreviewBucket;
 };
 
+type WorkspaceRetentionRunStatus = "prepared" | "executed" | "failed";
+
+type WorkspaceRetentionRunBucket = {
+  retentionDays: number;
+  cutoffDate: string;
+  affectedCount: number;
+  executedCount: number;
+};
+
+type WorkspaceRetentionRun = {
+  id: string;
+  runType: "manual_retention_review";
+  status: WorkspaceRetentionRunStatus;
+  retentionMode: RetentionMode;
+  invoiceDrafts: WorkspaceRetentionRunBucket;
+  validationRuns: WorkspaceRetentionRunBucket;
+  xmlReadinessReports: WorkspaceRetentionRunBucket;
+  activityEvents: WorkspaceRetentionRunBucket;
+  totalAffectedCount: number;
+  totalExecutedCount: number;
+  errorMessage: string;
+  executedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type PrivacyRequestType = "data_export" | "deletion" | "retention_review";
 
 type PrivacyRequestStatus = "submitted" | "in_review" | "completed" | "rejected";
@@ -116,6 +142,13 @@ const emptyRetentionPreviewBucket: RetentionPreviewBucket = {
   retentionDays: 0,
   cutoffDate: "",
   affectedCount: 0
+};
+
+const emptyRetentionRunBucket: WorkspaceRetentionRunBucket = {
+  retentionDays: 0,
+  cutoffDate: "",
+  affectedCount: 0,
+  executedCount: 0
 };
 
 const emptyExportRecordCounts: WorkspaceExportPackageRecordCounts = {
@@ -240,6 +273,14 @@ function normalizeExportPackageStatus(value: string): WorkspaceExportPackageStat
   return value === "failed" ? "failed" : "prepared";
 }
 
+function normalizeRetentionRunStatus(value: string): WorkspaceRetentionRunStatus {
+  if (value === "executed" || value === "failed") {
+    return value;
+  }
+
+  return "prepared";
+}
+
 function clampRetentionDays(value: number) {
   if (!Number.isFinite(value)) {
     return 0;
@@ -282,6 +323,14 @@ function getRecordsFromResponse(data: unknown) {
   }
 
   return data.records;
+}
+
+function readErrorMessage(data: unknown, fallback: string) {
+  if (!isPlainObject(data) || !isPlainObject(data.error)) {
+    return fallback;
+  }
+
+  return readStringField(data.error, "message", fallback);
 }
 
 function normalizeWorkspaceSettings(data: unknown): WorkspaceSettings {
@@ -388,6 +437,57 @@ function normalizeWorkspaceRetentionPreview(
       record.activityEvents,
       settings.activityLogRetentionDays
     )
+  };
+}
+
+function normalizeRetentionRunBucket(value: unknown): WorkspaceRetentionRunBucket {
+  if (!isPlainObject(value)) {
+    return emptyRetentionRunBucket;
+  }
+
+  return {
+    retentionDays: clampRetentionDays(readNumberField(value, "retentionDays", 0)),
+    cutoffDate: readStringField(value, "cutoffDate"),
+    affectedCount: Math.max(0, readNumberField(value, "affectedCount", 0)),
+    executedCount: Math.max(0, readNumberField(value, "executedCount", 0))
+  };
+}
+
+function normalizeWorkspaceRetentionRun(
+  value: unknown
+): WorkspaceRetentionRun | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id");
+  const createdAt = readStringField(value, "createdAt");
+
+  if (!id || !createdAt) {
+    return null;
+  }
+
+  return {
+    id,
+    runType: "manual_retention_review",
+    status: normalizeRetentionRunStatus(readStringField(value, "status")),
+    retentionMode: normalizeRetentionMode(readStringField(value, "retentionMode")),
+    invoiceDrafts: normalizeRetentionRunBucket(value.invoiceDrafts),
+    validationRuns: normalizeRetentionRunBucket(value.validationRuns),
+    xmlReadinessReports: normalizeRetentionRunBucket(value.xmlReadinessReports),
+    activityEvents: normalizeRetentionRunBucket(value.activityEvents),
+    totalAffectedCount: Math.max(
+      0,
+      readNumberField(value, "totalAffectedCount", 0)
+    ),
+    totalExecutedCount: Math.max(
+      0,
+      readNumberField(value, "totalExecutedCount", 0)
+    ),
+    errorMessage: readStringField(value, "errorMessage"),
+    executedAt: readStringField(value, "executedAt"),
+    createdAt,
+    updatedAt: readStringField(value, "updatedAt")
   };
 }
 
@@ -581,6 +681,18 @@ function formatExportPackageStatus(value: WorkspaceExportPackageStatus) {
   return value === "failed" ? "Failed" : "Prepared";
 }
 
+function formatRetentionRunStatus(value: WorkspaceRetentionRunStatus) {
+  if (value === "executed") {
+    return "Executed";
+  }
+
+  if (value === "failed") {
+    return "Failed";
+  }
+
+  return "Prepared";
+}
+
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
     return "0 B";
@@ -607,6 +719,24 @@ function formatRecordCounts(counts: WorkspaceExportPackageRecordCounts) {
   ].join(" · ");
 }
 
+function formatRetentionRunCounts(record: WorkspaceRetentionRun) {
+  return [
+    `${record.invoiceDrafts.affectedCount} draft(s)`,
+    `${record.validationRuns.affectedCount} validation run(s)`,
+    `${record.xmlReadinessReports.affectedCount} XML report(s)`,
+    `${record.activityEvents.affectedCount} activity event(s)`
+  ].join(" · ");
+}
+
+function formatRetentionRunExecutedCounts(record: WorkspaceRetentionRun) {
+  return [
+    `${record.invoiceDrafts.executedCount} draft(s)`,
+    `${record.validationRuns.executedCount} validation run(s)`,
+    `${record.xmlReadinessReports.executedCount} XML report(s)`,
+    `${record.activityEvents.executedCount} activity event(s)`
+  ].join(" · ");
+}
+
 function downloadJsonFile(fileName: string, payload: unknown) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json"
@@ -628,6 +758,7 @@ export default function WorkspacePrivacyPage() {
   );
   const [retentionPreview, setRetentionPreview] =
     useState<WorkspaceRetentionPreview | null>(null);
+  const [retentionRuns, setRetentionRuns] = useState<WorkspaceRetentionRun[]>([]);
   const [privacyRequests, setPrivacyRequests] = useState<
     WorkspacePrivacyRequest[]
   >([]);
@@ -649,9 +780,12 @@ export default function WorkspacePrivacyPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingRetentionPreview, setIsLoadingRetentionPreview] =
     useState(true);
+  const [isLoadingRetentionRuns, setIsLoadingRetentionRuns] = useState(true);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const [isLoadingExportPackages, setIsLoadingExportPackages] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isPreparingRetentionRun, setIsPreparingRetentionRun] = useState(false);
+  const [executingRetentionRunId, setExecutingRetentionRunId] = useState("");
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [isCreatingExportPackage, setIsCreatingExportPackage] = useState(false);
   const [downloadingExportPackageId, setDownloadingExportPackageId] = useState("");
@@ -663,6 +797,8 @@ export default function WorkspacePrivacyPage() {
     useState("");
   const [retentionPreviewErrorMessage, setRetentionPreviewErrorMessage] =
     useState("");
+  const [retentionRunStatusMessage, setRetentionRunStatusMessage] = useState("");
+  const [retentionRunErrorMessage, setRetentionRunErrorMessage] = useState("");
   const [requestStatusMessage, setRequestStatusMessage] = useState("");
   const [requestErrorMessage, setRequestErrorMessage] = useState("");
   const [exportStatusMessage, setExportStatusMessage] = useState("");
@@ -733,6 +869,44 @@ export default function WorkspacePrivacyPage() {
         "Retention preview is not connected yet. The preview UI is ready for the API route."
       );
       setIsLoadingRetentionPreview(false);
+    }
+  }
+
+  async function loadRetentionRuns() {
+    setIsLoadingRetentionRuns(true);
+    setRetentionRunStatusMessage("");
+    setRetentionRunErrorMessage("");
+
+    try {
+      const response = await fetch("/api/local/workspace/retention-runs", {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setRetentionRuns([]);
+        setRetentionRunErrorMessage(
+          "Retention runs are not connected yet. The run history UI is ready for the API route."
+        );
+        setIsLoadingRetentionRuns(false);
+        return;
+      }
+
+      const records = getRecordsFromResponse(responseData)
+        .map((record) => normalizeWorkspaceRetentionRun(record))
+        .filter((record): record is WorkspaceRetentionRun => record !== null);
+
+      setRetentionRuns(records);
+      setRetentionRunStatusMessage("Retention run history loaded.");
+      setIsLoadingRetentionRuns(false);
+    } catch {
+      setRetentionRuns([]);
+      setRetentionRunErrorMessage(
+        "Retention runs are not connected yet. The run history UI is ready for the API route."
+      );
+      setIsLoadingRetentionRuns(false);
     }
   }
 
@@ -843,6 +1017,99 @@ export default function WorkspacePrivacyPage() {
     } catch {
       setErrorMessage("Could not save workspace privacy settings.");
       setIsSaving(false);
+    }
+  }
+
+  async function prepareRetentionRun() {
+    setIsPreparingRetentionRun(true);
+    setRetentionRunStatusMessage("");
+    setRetentionRunErrorMessage("");
+
+    try {
+      const response = await fetch("/api/local/workspace/retention-runs", {
+        method: "POST",
+        cache: "no-store"
+      });
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setRetentionRunErrorMessage("Could not prepare retention run.");
+        setIsPreparingRetentionRun(false);
+        return;
+      }
+
+      const recordSource = getSingleRecordFromResponse(responseData);
+      const createdRecord = normalizeWorkspaceRetentionRun(recordSource);
+
+      if (createdRecord) {
+        setRetentionRuns((currentRuns) => [
+          createdRecord,
+          ...currentRuns.filter((run) => run.id !== createdRecord.id)
+        ]);
+      }
+
+      setRetentionRunStatusMessage("Retention run prepared. No records were deleted.");
+      setIsPreparingRetentionRun(false);
+    } catch {
+      setRetentionRunErrorMessage("Could not prepare retention run.");
+      setIsPreparingRetentionRun(false);
+    }
+  }
+
+  async function executeRetentionRun(retentionRunId: string) {
+    const confirmed = window.confirm(
+      "Execute this retention run? This can permanently delete expired workspace records based on this run's saved cutoff dates."
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setExecutingRetentionRunId(retentionRunId);
+    setRetentionRunStatusMessage("");
+    setRetentionRunErrorMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/workspace/retention-runs/${encodeURIComponent(
+          retentionRunId
+        )}/execute`,
+        {
+          method: "POST",
+          cache: "no-store"
+        }
+      );
+
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setRetentionRunErrorMessage(
+          readErrorMessage(responseData, "Could not execute retention run.")
+        );
+        setExecutingRetentionRunId("");
+        return;
+      }
+
+      const recordSource = getSingleRecordFromResponse(responseData);
+      const executedRecord = normalizeWorkspaceRetentionRun(recordSource);
+
+      if (executedRecord) {
+        setRetentionRuns((currentRuns) =>
+          currentRuns.map((run) =>
+            run.id === executedRecord.id ? executedRecord : run
+          )
+        );
+      }
+
+      setRetentionRunStatusMessage(
+        "Retention run executed. Expired records were deleted according to the saved cutoff dates."
+      );
+      setExecutingRetentionRunId("");
+      void loadRetentionPreview();
+    } catch {
+      setRetentionRunErrorMessage("Could not execute retention run.");
+      setExecutingRetentionRunId("");
     }
   }
 
@@ -1090,6 +1357,7 @@ export default function WorkspacePrivacyPage() {
   useEffect(() => {
     void loadSettings();
     void loadRetentionPreview();
+    void loadRetentionRuns();
     void loadPrivacyRequests();
     void loadExportPackages();
   }, []);
@@ -1509,6 +1777,151 @@ export default function WorkspacePrivacyPage() {
 
               <strong>
                 {retentionPreviewErrorMessage.includes("not connected")
+                  ? "Pending API"
+                  : "Review"}
+              </strong>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="privacy-retention">
+        <div className="privacy-retention-head">
+          <div>
+            <p>Retention runs</p>
+            <h3>Prepared cleanup review history</h3>
+          </div>
+
+          <Archive size={26} />
+        </div>
+
+        <div className="workspace-row-actions">
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={isPreparingRetentionRun}
+            onClick={() => {
+              void prepareRetentionRun();
+            }}
+          >
+            <Archive size={16} />
+            {isPreparingRetentionRun ? "Preparing" : "Prepare retention run"}
+          </button>
+
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={isLoadingRetentionRuns}
+            onClick={() => {
+              void loadRetentionRuns();
+            }}
+          >
+            <RefreshCcw size={16} />
+            Reload
+          </button>
+        </div>
+
+        <div className="retention-list">
+          {isLoadingRetentionRuns ? (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>Loading retention runs</span>
+              </div>
+
+              <strong>Loading</strong>
+            </div>
+          ) : retentionRuns.length > 0 ? (
+            retentionRuns.map((run) => (
+              <div className="retention-row" key={run.id}>
+                <div>
+                  <FileClock size={16} />
+                  <span>
+                    Retention review prepared {formatUpdatedAt(run.createdAt)}
+                    <br />
+                    Mode: {formatRetentionMode(run.retentionMode)}
+                    <br />
+                    Affected: {formatRetentionRunCounts(run)}
+                    <br />
+                    Executed: {formatRetentionRunExecutedCounts(run)}
+                    <br />
+                    Total affected: {run.totalAffectedCount} · Total executed:{" "}
+                    {run.totalExecutedCount}
+                    {run.executedAt ? (
+                      <>
+                        <br />
+                        Executed at: {formatUpdatedAt(run.executedAt)}
+                      </>
+                    ) : null}
+                    {run.errorMessage ? (
+                      <>
+                        <br />
+                        Error: {run.errorMessage}
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+
+                <div className="workspace-row-actions">
+                  <strong>{formatRetentionRunStatus(run.status)}</strong>
+
+                  {run.status === "prepared" ? (
+                    <button
+                      type="button"
+                      className="workspace-auth-action"
+                      disabled={Boolean(executingRetentionRunId)}
+                      onClick={() => {
+                        void executeRetentionRun(run.id);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      {executingRetentionRunId === run.id
+                        ? "Executing"
+                        : "Execute cleanup"}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>
+                  No retention run has been prepared yet. Preparing a run stores
+                  the current cleanup estimate as an auditable record and does not
+                  delete data.
+                </span>
+              </div>
+
+              <strong>Empty</strong>
+            </div>
+          )}
+        </div>
+
+        {retentionRunStatusMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <CheckCircle2 size={16} />
+                <span>{retentionRunStatusMessage}</span>
+              </div>
+
+              <strong>OK</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {retentionRunErrorMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>{retentionRunErrorMessage}</span>
+              </div>
+
+              <strong>
+                {retentionRunErrorMessage.includes("not connected")
                   ? "Pending API"
                   : "Review"}
               </strong>
@@ -1976,7 +2389,8 @@ export default function WorkspacePrivacyPage() {
             Workspace settings persist through public.workspace_settings. Privacy
             requests persist through public.workspace_privacy_requests. Export
             packages persist through public.workspace_export_packages. Retention
-            preview reads existing workspace records without deleting anything.
+            previews read existing records without deleting anything, and retention
+            runs store auditable cleanup-review snapshots before execution.
           </p>
         </div>
 
@@ -1984,10 +2398,10 @@ export default function WorkspacePrivacyPage() {
           <ShieldCheck size={24} />
           <h3>Safety boundary</h3>
           <p>
-            Retention settings, privacy requests, export packages, and retention
-            previews define product behavior inside Invoice Lantern. They do not
-            decide statutory retention duties, accounting obligations, or
-            authority-facing recordkeeping requirements.
+            Retention settings, privacy requests, export packages, retention
+            previews, and retention runs define product behavior inside Invoice
+            Lantern. They do not decide statutory retention duties, accounting
+            obligations, or authority-facing recordkeeping requirements.
           </p>
         </div>
       </section>
