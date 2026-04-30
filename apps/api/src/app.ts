@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { env } from "./config/env.js";
+import { registerApiKeyRequestLogging } from "./plugins/api-key-request-logging.js";
 import { registerSecurityPlugins } from "./plugins/security.js";
 import { healthRoutes } from "./routes/health.js";
 import { v1Routes } from "./routes/v1/index.js";
@@ -25,6 +26,7 @@ export async function buildApp() {
   );
 
   await registerSecurityPlugins(app);
+  await registerApiKeyRequestLogging(app);
 
   app.get("/", async () => {
     return {

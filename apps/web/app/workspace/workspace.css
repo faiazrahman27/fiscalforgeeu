@@ -665,7 +665,8 @@
   align-items: start;
 }
 
-.workspace-step > div,
+.workspace-step > div:first-child,
+.workspace-step-icon,
 .validation-layer-icon {
   display: inline-flex;
   height: 3rem;
@@ -706,22 +707,26 @@
   text-overflow: ellipsis;
 }
 
-.workspace-step:nth-child(4n + 1) > div,
+.workspace-step:nth-child(4n + 1) > div:first-child,
+.workspace-step:nth-child(4n + 1) .workspace-step-icon,
 .validation-run-layer:nth-child(4n + 1) .validation-layer-icon {
   color: var(--ff-blue, #0a84ff);
 }
 
-.workspace-step:nth-child(4n + 2) > div,
+.workspace-step:nth-child(4n + 2) > div:first-child,
+.workspace-step:nth-child(4n + 2) .workspace-step-icon,
 .validation-run-layer:nth-child(4n + 2) .validation-layer-icon {
   color: var(--ff-orange, #ff9f0a);
 }
 
-.workspace-step:nth-child(4n + 3) > div,
+.workspace-step:nth-child(4n + 3) > div:first-child,
+.workspace-step:nth-child(4n + 3) .workspace-step-icon,
 .validation-run-layer:nth-child(4n + 3) .validation-layer-icon {
   color: var(--ff-purple, #bf5af2);
 }
 
-.workspace-step:nth-child(4n + 4) > div,
+.workspace-step:nth-child(4n + 4) > div:first-child,
+.workspace-step:nth-child(4n + 4) .workspace-step-icon,
 .validation-run-layer:nth-child(4n + 4) .validation-layer-icon {
   color: var(--ff-green, #30d158);
 }
@@ -939,6 +944,125 @@
   color: rgba(255,255,255,0.68);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: 1.8;
+}
+
+.workspace-muted-copy {
+  margin: 0.9rem 0 0;
+  color: rgba(255,255,255,0.56);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.api-key-form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.35rem;
+}
+
+.api-key-form > label,
+.api-key-form fieldset {
+  min-width: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.api-key-form label > span,
+.api-key-form legend {
+  color: rgba(255,255,255,0.42);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.api-key-form input,
+.api-key-form select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 1rem;
+  background: rgba(0,0,0,0.34);
+  color: rgba(255,255,255,0.84);
+  padding: 0.85rem 0.95rem;
+  font: inherit;
+  outline: none;
+}
+
+.api-key-form input:focus,
+.api-key-form select:focus {
+  border-color: rgba(100,210,255,0.34);
+  box-shadow: 0 0 0 3px rgba(100,210,255,0.08);
+}
+
+.api-key-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.api-key-scope-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.api-key-scope-grid label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1rem;
+  background: rgba(0,0,0,0.26);
+  padding: 0.9rem;
+}
+
+.api-key-scope-grid input {
+  width: 1rem;
+  margin-top: 0.2rem;
+  accent-color: var(--ff-teal, #64d2ff);
+}
+
+.api-key-scope-grid span {
+  display: grid;
+  gap: 0.3rem;
+  color: rgba(255,255,255,0.58);
+  font-size: 0.82rem;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.api-key-scope-grid strong {
+  color: white;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.api-key-scope-grid em {
+  color: rgba(255,255,255,0.46);
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
+.api-key-form button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  background: white;
+  color: black;
+  padding: 0.75rem 1rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.api-key-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .workspace-xml-input-shell {
@@ -1325,6 +1449,108 @@
   margin-top: 0.75rem;
 }
 
+.developer-module-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  align-items: stretch;
+}
+
+.developer-module-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 17rem;
+}
+
+.developer-module-card.is-planned {
+  border-color: rgba(255,255,255,0.08);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.045), rgba(255,255,255,0.014)),
+    rgba(255,255,255,0.018);
+}
+
+.developer-module-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.developer-module-badge {
+  display: inline-flex;
+  flex: 0 1 auto;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.045);
+  padding: 0.45rem 0.68rem;
+  color: rgba(255,255,255,0.74);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.developer-module-badge.is-active {
+  border-color: rgba(48,209,88,0.22);
+  background: rgba(48,209,88,0.09);
+  color: #d4ffe6;
+}
+
+.developer-module-badge.is-planned {
+  border-color: rgba(255,159,10,0.2);
+  background: rgba(255,159,10,0.08);
+  color: #ffedd5;
+}
+
+.developer-module-card h3,
+.developer-module-card p {
+  min-width: 0;
+}
+
+.developer-module-card p {
+  flex: 1 1 auto;
+}
+
+.developer-module-card .workspace-row-actions {
+  width: auto;
+  height: auto;
+  margin-top: auto;
+  padding-top: 1.1rem;
+  background: transparent;
+  color: inherit;
+  box-shadow: none;
+}
+
+.developer-module-action {
+  max-width: 100%;
+  min-width: 0;
+  justify-content: center;
+  padding: 0.72rem 0.9rem;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.developer-module-action svg {
+  flex: 0 0 auto;
+}
+
+.developer-module-action.is-active {
+  border-color: rgba(100,210,255,0.22);
+  background: rgba(100,210,255,0.07);
+  color: rgba(235,250,255,0.9);
+}
+
+.developer-module-action.is-planned {
+  border-color: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.034);
+  color: rgba(255,255,255,0.66);
+}
+
 .workspace-line-grid {
   display: grid;
   gap: 0;
@@ -1391,6 +1617,10 @@
   .workspace-data-card.is-wide,
   .workspace-data-card.is-full {
     grid-column: auto;
+  }
+
+  .api-key-scope-grid {
+    grid-template-columns: 1fr;
   }
 }
 

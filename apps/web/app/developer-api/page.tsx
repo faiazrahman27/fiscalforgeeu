@@ -28,13 +28,13 @@ const apiModules = [
     icon: <KeyRound size={22} />,
     title: "API key management",
     description:
-      "Keys should be scoped, hashed at rest, shown only once, revocable, rotatable, rate-limited, and connected to organizations."
+      "Organization owners and admins can create scoped keys that are shown once, stored hashed, revocable, expirable, and tracked by last use."
   },
   {
     icon: <RadioTower size={22} />,
     title: "Webhook simulator",
     description:
-      "Developers should be able to test webhook delivery for validation results, XML generation events, and report availability without official filing."
+      "Planned. Sandbox webhook testing is planned for a later step. No webhook events are sent yet. This is not an official filing, reporting, or authority-submission feature."
   },
   {
     icon: <ShieldCheck size={22} />,
@@ -64,9 +64,10 @@ export default function DeveloperApiPage() {
             </h1>
 
             <p className="subpage-lead">
-              The Developer API is being built to expose validation, UBL export,
-              XML parsing, published technical rule sets, validation runs, and
-              webhook testing through secure organization-aware endpoints.
+              The Developer API exposes selected sandbox technical validation
+              tools through organization-owned API keys. It is not official
+              filing, not authority submission, and not tax, legal, or
+              accounting advice.
             </p>
           </Reveal>
 
@@ -88,10 +89,18 @@ export default function DeveloperApiPage() {
                 <span />
                 <span />
                 <span />
-                <p>POST /api/v1/invoices/validate</p>
+                <p>X-API-Key: il_test_...</p>
               </div>
 
-              <pre>{`{
+              <pre>{`# Create a key in Workspace > Developer > API keys.
+# Send it with X-API-Key.
+
+curl -X POST http://localhost:4000/api/v1/invoices/validate \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_..." \\
+  -d @invoice.json
+
+{
   "validationRunId": "<generated-validation-run-id>",
   "technicalStatus": "passed_or_failed",
   "standardStatus": "ready_or_warning",
@@ -111,6 +120,27 @@ export default function DeveloperApiPage() {
   ],
   "disclaimer": "This result is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
 }`}</pre>
+            </div>
+          </Reveal>
+
+          <Reveal>
+            <div className="terminal-shell subpage-terminal">
+              <div className="terminal-top">
+                <span />
+                <span />
+                <span />
+                <p>Scopes</p>
+              </div>
+
+              <pre>{`invoices:validate        POST /api/v1/invoices/validate
+invoices:export_ubl      POST /api/v1/invoices/export/ubl
+invoices:parse_ubl       POST /api/v1/invoices/parse/ubl
+vat:validate_format      POST /api/v1/vat/validate-format
+rules:read               GET  /api/v1/validation/rules
+validation_runs:read     GET  /api/v1/validation-runs/:id
+
+Invoice Lantern API keys provide access to sandbox technical validation tools only.
+They are not official filing credentials and do not provide tax authority submission capability.`}</pre>
             </div>
           </Reveal>
 

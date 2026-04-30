@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { healthRoutes } from "../health.js";
+import { apiKeyRoutes } from "./api-keys.js";
 import { importUblRoutes } from "./import-ubl.js";
 import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { invoiceExportRoutes } from "./invoice-exports.js";
@@ -20,6 +21,10 @@ import { xmlRoutes } from "./xml.js";
 export async function v1Routes(app: FastifyInstance) {
   await app.register(healthRoutes, {
     prefix: "/health"
+  });
+
+  await app.register(apiKeyRoutes, {
+    prefix: "/api-keys"
   });
 
   await app.register(validateInvoiceRoutes, {

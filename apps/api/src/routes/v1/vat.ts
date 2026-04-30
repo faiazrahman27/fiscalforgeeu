@@ -4,7 +4,10 @@ import {
   type VatFormatResult
 } from "@invoice-lantern/tax-engine";
 import { z } from "zod";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import {
+  requireApiKey,
+  requireApiKeyScopes
+} from "../../middleware/require-api-key.js";
 import {
   hasAuthenticatedVatNumberCheckContext,
   listAuthenticatedVatNumberCheckRecords,
@@ -104,7 +107,7 @@ export async function vatRoutes(app: FastifyInstance) {
   app.post(
     "/validate-format",
     {
-      preHandler: requireApiKey
+      preHandler: requireApiKeyScopes(["vat:validate_format"])
     },
     async (request, reply) => {
       const parsedBody = vatFormatRequestSchema.safeParse(request.body);
@@ -115,6 +118,17 @@ export async function vatRoutes(app: FastifyInstance) {
             code: "VAT_FORMAT_REQUEST_INVALID",
             message: "Request body failed VAT format request validation.",
             details: formatZodError(parsedBody.error)
+          }
+        });
+      }
+
+      if (request.authenticatedApiKey && parsedBody.data.persist) {
+        return reply.status(403).send({
+          error: {
+            code: "API_KEY_VAT_PERSIST_UNSUPPORTED",
+            message:
+              "API-key VAT format requests can run technical checks, but cannot persist workspace evidence records in this step.",
+            details: null
           }
         });
       }

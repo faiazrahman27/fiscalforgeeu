@@ -7,7 +7,7 @@ import {
   type ValidationFindingSeverity
 } from "@invoice-lantern/invoice-core";
 import { canonicalToUblInvoiceXml } from "@invoice-lantern/ubl";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
 import {
   getAuthenticatedInvoiceDraftById,
   getInvoiceDraftById,
@@ -180,6 +180,23 @@ function getWrappedInvoiceInput(value: Record<string, unknown>) {
   return undefined;
 }
 
+function isDraftOnlyUblExportRequest(request: FastifyRequest) {
+  if (!isPlainObject(request.body)) {
+    return false;
+  }
+
+  const invoiceDraftId =
+    readOptionalStringField(request.body, "invoiceDraftId") ??
+    readOptionalStringField(request.body, "draftId");
+  const wrappedInvoiceInput = getWrappedInvoiceInput(request.body);
+
+  return Boolean(
+    invoiceDraftId &&
+      wrappedInvoiceInput === undefined &&
+      !hasCanonicalInvoiceShape(request.body)
+  );
+}
+
 async function readInvoicePayloadForUblExport(
   request: FastifyRequest
 ): Promise<UblExportRequestPayload> {
@@ -241,7 +258,7 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
     "/validate",
     {
-      preHandler: requireApiKey
+      preHandler: requireApiKeyScopes(["invoices:export_ubl"])
     },
     async (request, reply) => {
       const parsedBody = validateCanonicalInvoice(request.body);
@@ -344,10 +361,21 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
     "/export/ubl",
     {
-      preHandler: requireApiKey
+      preHandler: requireApiKeyScopes(["invoices:validate"])
     },
     async (request, reply) => {
       let exportRequest: UblExportRequestPayload;
+
+      if (request.authenticatedApiKey && isDraftOnlyUblExportRequest(request)) {
+        return reply.status(403).send({
+          error: {
+            code: "API_KEY_DRAFT_EXPORT_UNSUPPORTED",
+            message:
+              "API-key UBL export requests must include invoice payload data. Draft lookup stays limited to signed-in workspace users in this step.",
+            details: null
+          }
+        });
+      }
 
       try {
         exportRequest = await readInvoicePayloadForUblExport(request);

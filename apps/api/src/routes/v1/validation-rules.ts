@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
 import { listPublishedValidationRules } from "../../repositories/validation-rule-repository.js";
 
 function sendRuleCatalogError(reply: FastifyReply, error: unknown) {
@@ -18,7 +18,7 @@ export async function validationRuleRoutes(app: FastifyInstance) {
   app.get(
     "/rules",
     {
-      preHandler: requireApiKey
+      preHandler: requireApiKeyScopes(["rules:read"])
     },
     async (_request, reply) => {
       try {

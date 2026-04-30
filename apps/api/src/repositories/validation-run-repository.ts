@@ -7,7 +7,11 @@ import {
   type ValidationFindingSeverity
 } from "@invoice-lantern/invoice-core";
 import type { InvoiceValidationRequest } from "../schemas/invoice.js";
-import { getSupabaseUserClient } from "../lib/supabase/server-client.js";
+import {
+  getSupabaseServiceRoleClient,
+  getSupabaseUserClient,
+  hasSupabaseServerConfig
+} from "../lib/supabase/server-client.js";
 import { buildVatFormatValidationFindings } from "../services/vat-format-validation-findings.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
@@ -675,6 +679,35 @@ export async function getAuthenticatedValidationRunById(
 
   if (error) {
     throw new Error(`Could not read Supabase validation run: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return normalizeSupabaseValidationRunRow(data as SupabaseValidationRunRow);
+}
+
+export async function getOrganizationValidationRunById(
+  organizationId: string,
+  id: string
+) {
+  if (!hasSupabaseServerConfig()) {
+    throw new Error("Supabase server configuration is required.");
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("validation_runs")
+    .select(VALIDATION_RUN_SELECT_FIELDS)
+    .eq("id", id)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(
+      `Could not read organization validation run: ${error.message}`
+    );
   }
 
   if (!data) {

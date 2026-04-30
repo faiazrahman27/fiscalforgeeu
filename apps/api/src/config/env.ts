@@ -56,12 +56,21 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: optionalSecretSchema,
   SUPABASE_JWT_SECRET: optionalSecretSchema,
   VAT_FINGERPRINT_SECRET: optionalSecretSchema,
+  API_KEY_HASH_SECRET: optionalSecretSchema,
 
   /*
    * Server-side Postgres connection string.
    * Keep this out of browser-facing apps.
    */
   DATABASE_URL: optionalUrlSchema
+}).superRefine((value, context) => {
+  if (value.APP_ENV === "production" && !value.API_KEY_HASH_SECRET.trim()) {
+    context.addIssue({
+      code: "custom",
+      path: ["API_KEY_HASH_SECRET"],
+      message: "API_KEY_HASH_SECRET is required in production."
+    });
+  }
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

@@ -5,6 +5,12 @@ import {
   getSupabasePublicClient,
   hasSupabaseJwtConfig
 } from "../lib/supabase/server-client.js";
+import {
+  looksLikeInvoiceLanternApiKey,
+  verifyApiKey,
+  type ApiKeyMetadata,
+  type ApiKeyScope
+} from "../services/api-key-service.js";
 
 export type AuthenticatedRequestUser = {
   id: string;
@@ -16,7 +22,12 @@ declare module "fastify" {
   interface FastifyRequest {
     authenticatedUser?: AuthenticatedRequestUser;
     authenticatedAccessToken?: string;
-    authenticationMode?: "dev_api_key" | "supabase_user";
+    authenticatedApiKey?: ApiKeyMetadata;
+    authenticationMode?:
+      | "dev_api_key"
+      | "supabase_user"
+      | "organization_api_key";
+    apiKeyRequestStartedAt?: number;
   }
 }
 
@@ -50,6 +61,18 @@ function readBearerToken(request: FastifyRequest) {
   return trimmedHeader.slice("bearer ".length).trim();
 }
 
+function readHeaderString(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0]?.trim() ?? "";
+  }
+
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readXApiKey(request: FastifyRequest) {
+  return readHeaderString(request.headers["x-api-key"]);
+}
+
 function sendUnauthorized(
   reply: FastifyReply,
   code: string,
@@ -65,13 +88,29 @@ function sendUnauthorized(
   });
 }
 
+function sendAuthenticationError(
+  reply: FastifyReply,
+  statusCode: 401 | 403,
+  code: string,
+  message: string,
+  details: unknown = null
+) {
+  return reply.status(statusCode).send({
+    error: {
+      code,
+      message,
+      details
+    }
+  });
+}
+
 function authenticateWithDevApiKey(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
-  const rawApiKey = request.headers["x-api-key"];
+  const rawApiKey = readXApiKey(request);
 
-  if (Array.isArray(rawApiKey) || typeof rawApiKey !== "string") {
+  if (!rawApiKey) {
     return sendUnauthorized(
       reply,
       "API_KEY_REQUIRED",
@@ -84,6 +123,30 @@ function authenticateWithDevApiKey(
   }
 
   request.authenticationMode = "dev_api_key";
+}
+
+async function authenticateWithOrganizationApiKey(
+  rawApiKey: string,
+  requiredScopes: readonly ApiKeyScope[],
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const verification = await verifyApiKey(rawApiKey, requiredScopes, {
+    ipAddress: request.ip
+  });
+
+  if (!verification.ok) {
+    return sendAuthenticationError(
+      reply,
+      verification.statusCode,
+      verification.code,
+      verification.message
+    );
+  }
+
+  request.authenticatedApiKey = verification.apiKey;
+  request.authenticationMode = "organization_api_key";
+  request.apiKeyRequestStartedAt = Date.now();
 }
 
 async function authenticateWithSupabaseBearerToken(
@@ -136,4 +199,81 @@ export async function requireApiKey(
   }
 
   return authenticateWithDevApiKey(request, reply);
+}
+
+export function requireApiKeyScopes(requiredScopes: readonly ApiKeyScope[]) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const bearerToken = readBearerToken(request);
+    const xApiKey = readXApiKey(request);
+
+    if (
+      bearerToken &&
+      !looksLikeInvoiceLanternApiKey(bearerToken) &&
+      hasSupabaseJwtConfig()
+    ) {
+      return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
+    }
+
+    if (xApiKey) {
+      if (safeCompare(xApiKey, env.DEV_API_KEY)) {
+        request.authenticationMode = "dev_api_key";
+        return;
+      }
+
+      return authenticateWithOrganizationApiKey(
+        xApiKey,
+        requiredScopes,
+        request,
+        reply
+      );
+    }
+
+    if (bearerToken && looksLikeInvoiceLanternApiKey(bearerToken)) {
+      return authenticateWithOrganizationApiKey(
+        bearerToken,
+        requiredScopes,
+        request,
+        reply
+      );
+    }
+
+    return sendUnauthorized(
+      reply,
+      "API_KEY_REQUIRED",
+      "Missing x-api-key header."
+    );
+  };
+}
+
+export async function requireSupabaseUser(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const bearerToken = readBearerToken(request);
+
+  if (!bearerToken) {
+    return sendUnauthorized(
+      reply,
+      "AUTH_TOKEN_REQUIRED",
+      "Missing Supabase bearer token."
+    );
+  }
+
+  if (!hasSupabaseJwtConfig()) {
+    return sendUnauthorized(
+      reply,
+      "AUTH_NOT_CONFIGURED",
+      "Supabase authentication is not configured for this API service."
+    );
+  }
+
+  if (looksLikeInvoiceLanternApiKey(bearerToken)) {
+    return sendUnauthorized(
+      reply,
+      "AUTH_TOKEN_REQUIRED",
+      "API key authentication is not allowed for this endpoint."
+    );
+  }
+
+  return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
 }

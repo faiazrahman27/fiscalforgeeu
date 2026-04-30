@@ -1,10 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import {
+  requireApiKey,
+  requireApiKeyScopes
+} from "../../middleware/require-api-key.js";
 import {
   deleteAuthenticatedValidationRunById,
   deleteValidationRunById,
   getAuthenticatedValidationRunById,
+  getOrganizationValidationRunById,
   getValidationRunById,
   hasAuthenticatedValidationRunContext,
   listAuthenticatedValidationRuns,
@@ -224,7 +228,7 @@ export async function validationRunRoutes(app: FastifyInstance) {
   app.get(
     "/:id",
     {
-      preHandler: requireApiKey
+      preHandler: requireApiKeyScopes(["validation_runs:read"])
     },
     async (request, reply) => {
       const parsedParams = validationRunParamsSchema.safeParse(request.params);
@@ -242,10 +246,15 @@ export async function validationRunRoutes(app: FastifyInstance) {
       try {
         const authenticatedContext = getAuthenticatedValidationRunContext(request);
 
-        const run = authenticatedContext
-          ? await getAuthenticatedValidationRunById(
-              authenticatedContext,
+        const run = request.authenticatedApiKey
+          ? await getOrganizationValidationRunById(
+              request.authenticatedApiKey.organizationId,
               parsedParams.data.id
+            )
+          : authenticatedContext
+            ? await getAuthenticatedValidationRunById(
+                authenticatedContext,
+                parsedParams.data.id
             )
           : await getValidationRunById(parsedParams.data.id);
 
