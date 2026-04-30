@@ -74,6 +74,56 @@ export type RecordApiRequestInput = {
   errorCode?: string | null;
 };
 
+export type ApiRequestMetadata = {
+  id: string;
+  organizationId: string | null;
+  apiKeyId: string | null;
+  apiKeyName: string | null;
+  apiKeyPrefix: string | null;
+  requestMethod: string;
+  requestPath: string;
+  statusCode: number | null;
+  durationMs: number | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  errorCode: string | null;
+  createdAt: string;
+};
+
+export type ListApiRequestsInput = {
+  organizationId: string;
+  apiKeyId?: string;
+  limit?: number;
+  statusCode?: number;
+  pathPrefix?: string;
+};
+
+export type ApiUsageSummary = {
+  totalRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+  clientErrorCount: number;
+  serverErrorCount: number;
+  averageDurationMs: number;
+  lastRequestAt: string | null;
+  topPaths: {
+    path: string;
+    count: number;
+  }[];
+  statusBuckets: {
+    "2xx": number;
+    "3xx": number;
+    "4xx": number;
+    "5xx": number;
+  };
+};
+
+export type GetApiUsageSummaryInput = {
+  organizationId: string;
+  apiKeyId?: string;
+  sinceDays?: number;
+};
+
 export type VerifyApiKeyResult =
   | {
       ok: true;
@@ -387,6 +437,40 @@ export async function verifyApiKey(
 
 export async function recordApiRequest(input: RecordApiRequestInput) {
   await getRepository().recordApiRequest(input);
+}
+
+export async function listApiRequests(input: ListApiRequestsInput) {
+  const listInput: ListApiRequestsInput = {
+    organizationId: input.organizationId,
+    limit: input.limit ?? 50
+  };
+
+  if (input.apiKeyId) {
+    listInput.apiKeyId = input.apiKeyId;
+  }
+
+  if (typeof input.statusCode === "number") {
+    listInput.statusCode = input.statusCode;
+  }
+
+  if (input.pathPrefix) {
+    listInput.pathPrefix = input.pathPrefix;
+  }
+
+  return getRepository().listApiRequests(listInput);
+}
+
+export async function getApiUsageSummary(input: GetApiUsageSummaryInput) {
+  const summaryInput: GetApiUsageSummaryInput = {
+    organizationId: input.organizationId,
+    sinceDays: input.sinceDays ?? 30
+  };
+
+  if (input.apiKeyId) {
+    summaryInput.apiKeyId = input.apiKeyId;
+  }
+
+  return getRepository().getApiUsageSummary(summaryInput);
 }
 
 export async function updateLastUsed(apiKeyId: string, ipAddress: string | null) {

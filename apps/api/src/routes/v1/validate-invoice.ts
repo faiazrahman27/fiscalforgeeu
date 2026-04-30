@@ -258,7 +258,7 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
     "/validate",
     {
-      preHandler: requireApiKeyScopes(["invoices:export_ubl"])
+      preHandler: requireApiKeyScopes(["invoices:validate"])
     },
     async (request, reply) => {
       const parsedBody = validateCanonicalInvoice(request.body);
@@ -361,7 +361,7 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
     "/export/ubl",
     {
-      preHandler: requireApiKeyScopes(["invoices:validate"])
+      preHandler: requireApiKeyScopes(["invoices:export_ubl"])
     },
     async (request, reply) => {
       let exportRequest: UblExportRequestPayload;

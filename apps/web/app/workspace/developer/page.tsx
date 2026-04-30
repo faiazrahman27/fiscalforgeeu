@@ -16,7 +16,7 @@ const developerModules = [
     status: "active",
     actionLabel: "Manage",
     description:
-      "Create, list, scope, expire, and revoke organization-owned sandbox developer API keys.",
+      "Create, list, scope, expire, revoke, test, and review usage logs for organization-owned sandbox developer API keys.",
     href: "/workspace/developer/api-keys",
     icon: <KeyRound size={22} />
   },

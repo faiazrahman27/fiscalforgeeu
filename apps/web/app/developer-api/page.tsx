@@ -31,6 +31,12 @@ const apiModules = [
       "Organization owners and admins can create scoped keys that are shown once, stored hashed, revocable, expirable, and tracked by last use."
   },
   {
+    icon: <Braces size={22} />,
+    title: "Request log metadata",
+    description:
+      "Workspace admins can review API usage logs with method, path, status, duration, key prefix, IP, user agent, and timestamps. Request bodies, XML payloads, full API keys, and full VAT IDs are not stored."
+  },
+  {
     icon: <RadioTower size={22} />,
     title: "Webhook simulator",
     description:
@@ -67,7 +73,8 @@ export default function DeveloperApiPage() {
               The Developer API exposes selected sandbox technical validation
               tools through organization-owned API keys. It is not official
               filing, not authority submission, and not tax, legal, or
-              accounting advice.
+              accounting advice. API keys are shown once during creation and
+              are sent with the X-API-Key header.
             </p>
           </Reveal>
 
@@ -93,11 +100,11 @@ export default function DeveloperApiPage() {
               </div>
 
               <pre>{`# Create a key in Workspace > Developer > API keys.
-# Send it with X-API-Key.
+# Full keys are shown once only. Send the key with X-API-Key.
 
 curl -X POST http://localhost:4000/api/v1/invoices/validate \\
   -H "content-type: application/json" \\
-  -H "X-API-Key: il_test_..." \\
+  -H "X-API-Key: il_test_your_key_here" \\
   -d @invoice.json
 
 {
@@ -140,7 +147,10 @@ rules:read               GET  /api/v1/validation/rules
 validation_runs:read     GET  /api/v1/validation-runs/:id
 
 Invoice Lantern API keys provide access to sandbox technical validation tools only.
-They are not official filing credentials and do not provide tax authority submission capability.`}</pre>
+They are not official filing credentials and do not provide tax authority submission capability.
+
+API usage logs store metadata only: method, path, status, duration, key prefix, IP, user agent, and timestamps.
+They do not store request bodies, XML payloads, full API keys, full VAT IDs, or key hashes.`}</pre>
             </div>
           </Reveal>
 
