@@ -9,6 +9,7 @@ import {
   hasAuthenticatedValidationRunContext,
   listAuthenticatedValidationRuns,
   listValidationRuns,
+  recordAuthenticatedValidationReportPdfExported,
   type AuthenticatedValidationRunContext,
   type ValidationRunRecord
 } from "../../repositories/validation-run-repository.js";
@@ -17,6 +18,7 @@ import {
   type ValidationReportFindingCounts,
   type ValidationReportSummary
 } from "../../services/validation-report-summary.js";
+import { generateValidationReportPdf } from "../../services/validation-report-pdf.js";
 import { formatZodError } from "../../utils/zod-error.js";
 
 type ValidationRunSummary = {
@@ -112,6 +114,23 @@ function buildValidationRunDetailResponse(run: ValidationRunRecord): {
   };
 }
 
+function sanitizeFilenamePart(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 32);
+
+  return cleaned || "report";
+}
+
+function buildValidationReportPdfFilename(runId: string) {
+  const shortRunId = sanitizeFilenamePart(runId).slice(0, 12) || "report";
+
+  return `invoice-lantern-validation-report-${shortRunId}.pdf`;
+}
+
 export async function validationRunRoutes(app: FastifyInstance) {
   app.get(
     "/",
@@ -129,6 +148,73 @@ export async function validationRunRoutes(app: FastifyInstance) {
         return {
           records: runs.map(buildValidationRunSummary)
         };
+      } catch (error) {
+        return sendStorageError(reply, error);
+      }
+    }
+  );
+
+  app.get(
+    "/:id/report.pdf",
+    {
+      preHandler: requireApiKey
+    },
+    async (request, reply) => {
+      const parsedParams = validationRunParamsSchema.safeParse(request.params);
+
+      if (!parsedParams.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Validation run ID failed schema validation.",
+            details: formatZodError(parsedParams.error)
+          }
+        });
+      }
+
+      try {
+        const authenticatedContext = getAuthenticatedValidationRunContext(request);
+
+        const run = authenticatedContext
+          ? await getAuthenticatedValidationRunById(
+              authenticatedContext,
+              parsedParams.data.id
+            )
+          : await getValidationRunById(parsedParams.data.id);
+
+        if (!run) {
+          return reply.status(404).send({
+            error: {
+              code: "VALIDATION_RUN_NOT_FOUND",
+              message: "Validation run was not found.",
+              details: null
+            }
+          });
+        }
+
+        const reportSummary = buildValidationReportSummary(run);
+        const pdfBuffer = await generateValidationReportPdf({
+          run,
+          reportSummary
+        });
+        const filename = buildValidationReportPdfFilename(run.id);
+
+        if (authenticatedContext) {
+          await recordAuthenticatedValidationReportPdfExported(
+            authenticatedContext,
+            run,
+            filename
+          );
+        }
+
+        return reply
+          .header("Content-Type", "application/pdf")
+          .header(
+            "Content-Disposition",
+            `attachment; filename="${filename}"`
+          )
+          .header("Content-Length", String(pdfBuffer.length))
+          .send(pdfBuffer);
       } catch (error) {
         return sendStorageError(reply, error);
       }

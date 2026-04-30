@@ -3,6 +3,7 @@ import {
   type LegalConfidence,
   type ValidationFindingSeverity,
   type ValidationRuleCategory,
+  type ValidationRuleSetMetadata,
   type ValidationRuleSourceType,
   type ValidationRuleStatus
 } from "@invoice-lantern/invoice-core";
@@ -10,6 +11,7 @@ import {
   getSupabaseServiceRoleClient,
   hasSupabaseServerConfig
 } from "../lib/supabase/server-client.js";
+import { listVatFormatValidationRuleCatalog } from "../services/vat-format-validation-findings.js";
 
 export type ValidationRuleCatalogSource = {
   sourceName: string;
@@ -79,40 +81,61 @@ export type ValidationRuleSourceRow = {
   jurisdiction: string | null;
 };
 
+function toCatalogRuleSets(
+  ruleSets: ValidationRuleSetMetadata[]
+): ValidationRuleCatalogRuleSet[] {
+  return ruleSets
+    .filter((ruleSet) => ruleSet.status === "published")
+    .map((ruleSet) => ({
+      code: ruleSet.code,
+      name: ruleSet.name,
+      description: ruleSet.description,
+      version: ruleSet.version,
+      legalConfidence: ruleSet.legalConfidence,
+      rules: ruleSet.rules
+        .filter((rule) => rule.status === "published")
+        .map((rule) => ({
+          code: rule.code,
+          title: rule.title,
+          description: rule.description,
+          category: rule.category,
+          severity: rule.severity,
+          ...(rule.fieldPath ? { fieldPath: rule.fieldPath } : {}),
+          messageTemplate: rule.messageTemplate,
+          ...(rule.fixSuggestion ? { fixSuggestion: rule.fixSuggestion } : {}),
+          legalConfidence: rule.legalConfidence,
+          ruleSetCode: rule.ruleSetCode,
+          ruleVersion: rule.version,
+          sourceLabels: [...rule.sourceLabels],
+          sources: rule.sources.map((source) => ({
+            sourceName: source.sourceName,
+            sourceType: source.sourceType,
+            jurisdiction: source.jurisdiction
+          }))
+        }))
+    }));
+}
+
+function appendRuleCatalog(
+  catalog: ValidationRuleCatalog,
+  ruleSets: ValidationRuleSetMetadata[]
+): ValidationRuleCatalog {
+  const existingCodes = new Set(catalog.ruleSets.map((ruleSet) => ruleSet.code));
+  const staticRuleSets = toCatalogRuleSets(ruleSets).filter(
+    (ruleSet) => !existingCodes.has(ruleSet.code)
+  );
+
+  return {
+    ruleSets: [...catalog.ruleSets, ...staticRuleSets]
+  };
+}
+
 function toStaticRuleCatalog(): ValidationRuleCatalog {
   return {
-    ruleSets: listCoreValidationRuleCatalog()
-      .filter((ruleSet) => ruleSet.status === "published")
-      .map((ruleSet) => ({
-        code: ruleSet.code,
-        name: ruleSet.name,
-        description: ruleSet.description,
-        version: ruleSet.version,
-        legalConfidence: ruleSet.legalConfidence,
-        rules: ruleSet.rules
-          .filter((rule) => rule.status === "published")
-          .map((rule) => ({
-            code: rule.code,
-            title: rule.title,
-            description: rule.description,
-            category: rule.category,
-            severity: rule.severity,
-            ...(rule.fieldPath ? { fieldPath: rule.fieldPath } : {}),
-            messageTemplate: rule.messageTemplate,
-            ...(rule.fixSuggestion
-              ? { fixSuggestion: rule.fixSuggestion }
-              : {}),
-            legalConfidence: rule.legalConfidence,
-            ruleSetCode: rule.ruleSetCode,
-            ruleVersion: rule.version,
-            sourceLabels: [...rule.sourceLabels],
-            sources: rule.sources.map((source) => ({
-              sourceName: source.sourceName,
-              sourceType: source.sourceType,
-              jurisdiction: source.jurisdiction
-            }))
-          }))
-      }))
+    ruleSets: toCatalogRuleSets([
+      ...listCoreValidationRuleCatalog(),
+      ...listVatFormatValidationRuleCatalog()
+    ])
   };
 }
 
@@ -266,5 +289,8 @@ export async function listPublishedValidationRules() {
     return toStaticRuleCatalog();
   }
 
-  return listDatabasePublishedValidationRules();
+  return appendRuleCatalog(
+    await listDatabasePublishedValidationRules(),
+    listVatFormatValidationRuleCatalog()
+  );
 }

@@ -8,6 +8,7 @@ import {
 } from "@invoice-lantern/invoice-core";
 import type { InvoiceValidationRequest } from "../schemas/invoice.js";
 import { getSupabaseUserClient } from "../lib/supabase/server-client.js";
+import { buildVatFormatValidationFindings } from "../services/vat-format-validation-findings.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
 export type FindingSeverity = ValidationFindingSeverity;
@@ -28,7 +29,9 @@ export type ValidationRunRecord = {
   id: string;
   invoiceNumber: string;
   buyer: string;
+  buyerCountry?: string;
   seller: string;
+  sellerCountry?: string;
   issueDate?: string;
   createdAt: string;
   technicalStatus: "passed" | "failed";
@@ -342,7 +345,9 @@ function normalizeSupabaseValidationRunRow(
     id: row.id,
     invoiceNumber: row.invoice_number,
     buyer: row.buyer_name,
+    buyerCountry: row.buyer_country,
     seller: row.seller_name,
+    sellerCountry: row.seller_country,
     issueDate: row.issue_date,
     createdAt: row.created_at,
     technicalStatus: normalizeTechnicalStatus(row.technical_status),
@@ -405,8 +410,8 @@ function buildValidationRunActivityMetadata(
     invoiceNumber: record.invoiceNumber,
     sellerName: record.seller,
     buyerName: record.buyer,
-    sellerCountry: requestPayload?.seller.country ?? "",
-    buyerCountry: requestPayload?.buyer.country ?? "",
+    sellerCountry: requestPayload?.seller.country ?? record.sellerCountry ?? "",
+    buyerCountry: requestPayload?.buyer.country ?? record.buyerCountry ?? "",
     issueDate: requestPayload?.document.issueDate ?? "",
     currency: record.currency,
     technicalStatus: record.technicalStatus,
@@ -573,10 +578,13 @@ export function calculateValidationTotals(
 export function buildValidationFindings(
   payload: InvoiceValidationRequest
 ): Finding[] {
-  return buildCoreValidationFindings(payload).map((finding) => ({
-    ...finding,
-    field: finding.fieldPath
-  }));
+  return [
+    ...buildCoreValidationFindings(payload).map((finding) => ({
+      ...finding,
+      field: finding.fieldPath
+    })),
+    ...buildVatFormatValidationFindings(payload)
+  ];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -799,4 +807,32 @@ export async function deleteAuthenticatedValidationRunById(
   });
 
   return true;
+}
+
+export async function recordAuthenticatedValidationReportPdfExported(
+  context: AuthenticatedValidationRunContext,
+  record: ValidationRunRecord,
+  filename: string
+) {
+  try {
+    const supabase = createAuthenticatedSupabaseClient(context);
+    const workspace = await getWorkspaceForAuthenticatedUser(supabase);
+
+    await recordWorkspaceActivityEvent(supabase, {
+      organizationId: workspace.organizationId,
+      actorUserId: context.userId,
+      eventType: "validation_report.pdf_exported",
+      entityType: "validation_run",
+      entityId: record.id,
+      entityLabel: record.invoiceNumber || record.id,
+      metadata: {
+        ...buildValidationRunActivityMetadata(record),
+        exportFormat: "pdf",
+        filename
+      }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.warn(`Validation report PDF activity event was not recorded: ${message}`);
+  }
 }

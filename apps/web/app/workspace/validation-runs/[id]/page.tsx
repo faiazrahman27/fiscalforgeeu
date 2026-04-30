@@ -708,6 +708,26 @@ function buildExportFileName(run: SavedValidationRun) {
   )}-${datePart}.json`;
 }
 
+function buildPdfFallbackFileName(run: SavedValidationRun) {
+  const shortRunId = sanitizeFileNamePart(run.id).slice(0, 12) || "report";
+
+  return `invoice-lantern-validation-report-${shortRunId}.pdf`;
+}
+
+function readFilenameFromContentDisposition(
+  contentDisposition: string | null,
+  fallback: string
+) {
+  if (!contentDisposition) {
+    return fallback;
+  }
+
+  const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  const filename = filenameMatch?.[1]?.trim();
+
+  return filename && filename.endsWith(".pdf") ? filename : fallback;
+}
+
 function buildExportPayload(run: SavedValidationRun, sourceContext: EvidenceItem[]) {
   return {
     platform: {
@@ -788,7 +808,9 @@ export default function ValidationRunDetailPage() {
 
   const [run, setRun] = useState<SavedValidationRun | null>(null);
   const [isLoadingRun, setIsLoadingRun] = useState(true);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [runLoadMessage, setRunLoadMessage] = useState("");
+  const [pdfDownloadMessage, setPdfDownloadMessage] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -796,6 +818,7 @@ export default function ValidationRunDetailPage() {
     async function loadValidationReport() {
       setIsLoadingRun(true);
       setRunLoadMessage("");
+      setPdfDownloadMessage("");
 
       try {
         const response = await fetch(
@@ -864,6 +887,67 @@ export default function ValidationRunDetailPage() {
 
   const sourceContext = useMemo(() => (run ? buildSourceContext(run) : []), [run]);
 
+  async function downloadValidationReportPdf(currentRun: SavedValidationRun) {
+    setIsDownloadingPdf(true);
+    setPdfDownloadMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/validation-runs/${encodeURIComponent(
+          currentRun.id
+        )}/report.pdf`,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+
+      if (!response.ok) {
+        const responseData = await readResponseBody(response);
+
+        setPdfDownloadMessage(
+          getApiErrorMessage(
+            responseData,
+            "Could not generate the PDF validation report."
+          )
+        );
+        return;
+      }
+
+      const blob = await response.blob();
+
+      if (blob.size === 0) {
+        setPdfDownloadMessage("The PDF validation report response was empty.");
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const filename = readFilenameFromContentDisposition(
+        response.headers.get("content-disposition"),
+        buildPdfFallbackFileName(currentRun)
+      );
+
+      anchor.href = objectUrl;
+      anchor.download = filename;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+
+      setPdfDownloadMessage(
+        "PDF report generated as a technical sandbox report. Not official validation or certification."
+      );
+    } catch {
+      setPdfDownloadMessage(
+        "Could not download the PDF report. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  }
+
   return (
     <div className="workspace-page validation-report-page">
       <section className="workspace-page-head validation-report-head">
@@ -886,8 +970,18 @@ export default function ValidationRunDetailPage() {
           <div className="workspace-row-actions">
             <div className="confidence-label">
               <ShieldAlert size={17} />
-              non-official sandbox
+              Not official validation or certification
             </div>
+
+            <button
+              type="button"
+              className="text-link-button"
+              onClick={() => downloadValidationReportPdf(run)}
+              disabled={isDownloadingPdf}
+            >
+              <Download size={16} />
+              {isDownloadingPdf ? "Generating PDF..." : "Download PDF report"}
+            </button>
 
             <button
               type="button"
@@ -897,6 +991,13 @@ export default function ValidationRunDetailPage() {
               <Download size={16} />
               Download report JSON
             </button>
+          </div>
+        ) : null}
+
+        {pdfDownloadMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{pdfDownloadMessage}</p>
           </div>
         ) : null}
 

@@ -55,6 +55,7 @@ const envSchema = z.object({
   SUPABASE_PUBLISHABLE_KEY: optionalSecretSchema,
   SUPABASE_SERVICE_ROLE_KEY: optionalSecretSchema,
   SUPABASE_JWT_SECRET: optionalSecretSchema,
+  VAT_FINGERPRINT_SECRET: optionalSecretSchema,
 
   /*
    * Server-side Postgres connection string.

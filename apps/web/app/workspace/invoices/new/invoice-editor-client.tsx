@@ -212,6 +212,28 @@ type UblExportHistoryItem = {
   createdAt: string;
 };
 
+type PartyType = "seller" | "buyer";
+
+type VatFormatResult = {
+  input: string;
+  normalized: string;
+  countryCode?: string;
+  formatValid: boolean;
+  checkLevel: "local_format";
+  source: "invoice_lantern_vat_format_rules";
+  message: string;
+  warnings: string[];
+  disclaimer: string;
+  persisted: boolean;
+  checkRecordId?: string;
+};
+
+type VatFormatCheckState = {
+  result: VatFormatResult | null;
+  errorMessage: string;
+  checkedAt: string;
+};
+
 function createBlankParty(): InvoicePartyDraft {
   return {
     name: "",
@@ -278,6 +300,7 @@ export function InvoiceEditorClient({
   const [draft, setDraft] = useState<InvoiceEditorDraft>(
     initialDraft ?? createEmptyInvoiceDraft()
   );
+  const [persistedDraftId, setPersistedDraftId] = useState(draftId ?? "");
   const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -293,11 +316,27 @@ export function InvoiceEditorClient({
   const [isLoadingUblExportHistory, setIsLoadingUblExportHistory] =
     useState(false);
   const [ublExportHistoryMessage, setUblExportHistoryMessage] = useState("");
+  const [vatFormatChecks, setVatFormatChecks] = useState<
+    Record<PartyType, VatFormatCheckState | null>
+  >({
+    seller: null,
+    buyer: null
+  });
+  const [isCheckingVatFormat, setIsCheckingVatFormat] = useState<
+    Record<PartyType, boolean>
+  >({
+    seller: false,
+    buyer: false
+  });
 
   useEffect(() => {
     setDraft(initialDraft ?? createEmptyInvoiceDraft());
     setHasLoadedDraft(true);
   }, [initialDraft, loadStoredDraft]);
+
+  useEffect(() => {
+    setPersistedDraftId(draftId ?? "");
+  }, [draftId]);
 
   useEffect(() => {
     setUblExportResult(null);
@@ -384,7 +423,7 @@ export function InvoiceEditorClient({
   }
 
   function updateParty<K extends keyof InvoicePartyDraft>(
-    partyType: "seller" | "buyer",
+    partyType: PartyType,
     key: K,
     value: InvoicePartyDraft[K]
   ) {
@@ -395,6 +434,13 @@ export function InvoiceEditorClient({
         [key]: value
       }
     }));
+
+    if (key === "country" || key === "vatId") {
+      setVatFormatChecks((current) => ({
+        ...current,
+        [partyType]: null
+      }));
+    }
   }
 
   function updateLine<K extends keyof InvoiceLineEditorDraft>(
@@ -494,6 +540,12 @@ export function InvoiceEditorClient({
       }
 
       const savedDraft = responseData as ApiDraftSaveResponse;
+      const nextPersistedDraftId =
+        savedDraft.summary?.id ?? savedDraft.record?.id ?? "";
+
+      if (nextPersistedDraftId) {
+        setPersistedDraftId(nextPersistedDraftId);
+      }
 
       setSaveMessage(
         savedDraft.summary?.id
@@ -577,6 +629,97 @@ export function InvoiceEditorClient({
       );
     } finally {
       setIsRunningValidation(false);
+    }
+  }
+
+  async function runVatFormatCheck(partyType: PartyType) {
+    const party = draft[partyType];
+    const payload: {
+      vatId: string;
+      countryHint?: string;
+      persist: boolean;
+      invoiceDraftId?: string;
+      validationRunId?: string;
+      partyRole: PartyType;
+    } = {
+      vatId: party.vatId,
+      persist: true,
+      partyRole: partyType
+    };
+    const countryHint = party.country.trim().toUpperCase();
+    const currentDraftId = (persistedDraftId || draftId || "").trim();
+    const currentValidationRunId = getPersistedValidationRunId(validationReport);
+
+    if (countryHint) {
+      payload.countryHint = countryHint;
+    }
+
+    if (currentDraftId) {
+      payload.invoiceDraftId = currentDraftId;
+    }
+
+    if (currentValidationRunId) {
+      payload.validationRunId = currentValidationRunId;
+    }
+
+    setIsCheckingVatFormat((current) => ({
+      ...current,
+      [partyType]: true
+    }));
+
+    try {
+      const response = await fetch("/api/local/vat/validate-format", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const responseData: unknown = await response.json();
+
+      if (!response.ok) {
+        const apiError = extractApiError(responseData);
+
+        setVatFormatChecks((current) => ({
+          ...current,
+          [partyType]: {
+            result: null,
+            errorMessage: apiError.message,
+            checkedAt: new Date().toISOString()
+          }
+        }));
+
+        return;
+      }
+
+      const vatResult = normalizeVatFormatResult(responseData);
+
+      setVatFormatChecks((current) => ({
+        ...current,
+        [partyType]: {
+          result: vatResult,
+          errorMessage: vatResult
+            ? ""
+            : "The local VAT format API returned an unexpected response.",
+          checkedAt: new Date().toISOString()
+        }
+      }));
+    } catch {
+      setVatFormatChecks((current) => ({
+        ...current,
+        [partyType]: {
+          result: null,
+          errorMessage:
+            "The local VAT format API could not be reached. Make sure apps/api and apps/web are both running.",
+          checkedAt: new Date().toISOString()
+        }
+      }));
+    } finally {
+      setIsCheckingVatFormat((current) => ({
+        ...current,
+        [partyType]: false
+      }));
     }
   }
 
@@ -865,12 +1008,18 @@ export function InvoiceEditorClient({
             <PartyPanel
               title="Seller profile"
               party={draft.seller}
+              vatFormatCheck={vatFormatChecks.seller}
+              isCheckingVatFormat={isCheckingVatFormat.seller}
+              onCheckVatFormat={() => runVatFormatCheck("seller")}
               onChange={(key, value) => updateParty("seller", key, value)}
             />
 
             <PartyPanel
               title="Buyer profile"
               party={draft.buyer}
+              vatFormatCheck={vatFormatChecks.buyer}
+              isCheckingVatFormat={isCheckingVatFormat.buyer}
+              onCheckVatFormat={() => runVatFormatCheck("buyer")}
               onChange={(key, value) => updateParty("buyer", key, value)}
             />
           </div>
@@ -1273,10 +1422,16 @@ function SelectField({
 function PartyPanel({
   title,
   party,
+  vatFormatCheck,
+  isCheckingVatFormat,
+  onCheckVatFormat,
   onChange
 }: {
   title: string;
   party: InvoicePartyDraft;
+  vatFormatCheck: VatFormatCheckState | null;
+  isCheckingVatFormat: boolean;
+  onCheckVatFormat: () => void;
   onChange: <K extends keyof InvoicePartyDraft>(
     key: K,
     value: InvoicePartyDraft[K]
@@ -1313,6 +1468,26 @@ function PartyPanel({
           onChange={(value) => onChange("vatId", value.toUpperCase())}
         />
 
+        <div className={styles.vatCheckBlock}>
+          <button
+            type="button"
+            className={styles.vatCheckButton}
+            onClick={onCheckVatFormat}
+            disabled={isCheckingVatFormat}
+          >
+            <BadgeCheck size={16} />
+            {isCheckingVatFormat ? "Checking..." : "Check local VAT format"}
+          </button>
+
+          {vatFormatCheck ? (
+            <VatFormatCheckResult check={vatFormatCheck} />
+          ) : (
+            <p className={styles.vatCheckNote}>
+              Local format check only. Not VIES. Not proof of VAT registration.
+            </p>
+          )}
+        </div>
+
         <Field
           label="City"
           value={party.city}
@@ -1336,6 +1511,59 @@ function PartyPanel({
           value={party.electronicAddress}
           onChange={(value) => onChange("electronicAddress", value)}
         />
+      </div>
+    </div>
+  );
+}
+
+function VatFormatCheckResult({ check }: { check: VatFormatCheckState }) {
+  const result = check.result;
+
+  if (!result) {
+    return (
+      <div className={styles.vatCheckResult}>
+        <span className={styles.warn}>Local format check only</span>
+        <strong>Format check unavailable</strong>
+        <p>{check.errorMessage}</p>
+        <div className={styles.vatCheckTags}>
+          <span>Not VIES</span>
+          <span>Not proof of VAT registration</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.vatCheckResult}>
+      <span className={result.formatValid ? styles.good : styles.warn}>
+        {result.formatValid ? "Format appears valid" : "Format does not match"}
+      </span>
+      <strong>Local format check only</strong>
+      <p>{result.message}</p>
+
+      {result.countryCode ? (
+        <p>
+          Country pattern: {result.countryCode}. Normalized: {result.normalized}
+        </p>
+      ) : null}
+
+      {result.warnings.length > 0 ? (
+        <ul>
+          {result.warnings.map((warning) => (
+            <li key={warning}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      <p>
+        {result.persisted && result.checkRecordId
+          ? `Evidence record saved: ${shortHash(result.checkRecordId)}`
+          : "No evidence record was saved for this local format check."}
+      </p>
+      <p>{result.disclaimer}</p>
+      <div className={styles.vatCheckTags}>
+        <span>Not VIES</span>
+        <span>Not proof of VAT registration</span>
       </div>
     </div>
   );
@@ -2007,6 +2235,57 @@ function getStringField(source: Record<string, unknown>, key: string) {
   const value = source[key];
 
   return typeof value === "string" ? value : "";
+}
+
+function normalizeVatFormatResult(data: unknown): VatFormatResult | null {
+  if (!isPlainObject(data) || typeof data.formatValid !== "boolean") {
+    return null;
+  }
+
+  const input = getStringField(data, "input");
+  const normalized = getStringField(data, "normalized");
+  const checkLevel = getStringField(data, "checkLevel");
+  const source = getStringField(data, "source");
+  const message = getStringField(data, "message");
+  const disclaimer = getStringField(data, "disclaimer");
+
+  if (
+    checkLevel !== "local_format" ||
+    source !== "invoice_lantern_vat_format_rules" ||
+    !message ||
+    !disclaimer
+  ) {
+    return null;
+  }
+
+  const warnings = Array.isArray(data.warnings)
+    ? data.warnings.filter((warning): warning is string => typeof warning === "string")
+    : [];
+
+  const result: VatFormatResult = {
+    input,
+    normalized,
+    formatValid: data.formatValid,
+    checkLevel,
+    source,
+    message,
+    warnings,
+    disclaimer,
+    persisted: data.persisted === true
+  };
+
+  const countryCode = getStringField(data, "countryCode");
+  const checkRecordId = getStringField(data, "checkRecordId");
+
+  if (countryCode) {
+    result.countryCode = countryCode;
+  }
+
+  if (checkRecordId) {
+    result.checkRecordId = checkRecordId;
+  }
+
+  return result;
 }
 
 function extractApiError(data: unknown) {

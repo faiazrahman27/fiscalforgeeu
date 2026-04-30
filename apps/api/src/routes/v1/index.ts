@@ -4,6 +4,7 @@ import { importUblRoutes } from "./import-ubl.js";
 import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { invoiceExportRoutes } from "./invoice-exports.js";
 import { parseUblRoutes } from "./parse-ubl.js";
+import { vatRoutes } from "./vat.js";
 import { validateInvoiceRoutes } from "./validate-invoice.js";
 import { validationRuleRoutes } from "./validation-rules.js";
 import { validationRunRoutes } from "./validation-runs.js";
@@ -47,6 +48,10 @@ export async function v1Routes(app: FastifyInstance) {
 
   await app.register(validationRuleRoutes, {
     prefix: "/validation"
+  });
+
+  await app.register(vatRoutes, {
+    prefix: "/vat"
   });
 
   await app.register(xmlRoutes, {
