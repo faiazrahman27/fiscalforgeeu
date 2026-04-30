@@ -16,7 +16,13 @@ const apiModules = [
     icon: <Braces size={22} />,
     title: "Validation endpoint",
     description:
-      "POST structured invoice JSON and receive a validation run ID, status fields, findings, confidence labels, and safe disclaimers."
+      "POST structured invoice JSON and receive a validation run ID, status fields, rule-based findings, confidence labels, and safe disclaimers."
+  },
+  {
+    icon: <ShieldCheck size={22} />,
+    title: "Rule catalog endpoint",
+    description:
+      "Read published Invoice Lantern technical sandbox rules with versions, source labels, categories, severities, and legal-confidence labels."
   },
   {
     icon: <KeyRound size={22} />,
@@ -59,9 +65,8 @@ export default function DeveloperApiPage() {
 
             <p className="subpage-lead">
               The Developer API is being built to expose validation, UBL export,
-              XML parsing, VAT-number checks, ViDA simulation, country packs, rule
-              sets, validation runs, and webhook testing through secure
-              organization-aware endpoints.
+              XML parsing, published technical rule sets, validation runs, and
+              webhook testing through secure organization-aware endpoints.
             </p>
           </Reveal>
 
@@ -96,8 +101,12 @@ export default function DeveloperApiPage() {
     {
       "code": "<finding-code>",
       "severity": "info_warning_or_fatal",
-      "field": "<field-path>",
-      "confidence": "technical_or_simulation_or_review_required"
+      "category": "CANONICAL",
+      "fieldPath": "<field-path>",
+      "fixSuggestion": "<technical-fix-suggestion>",
+      "legalConfidence": "technical_or_simulation_or_review_required",
+      "ruleSetCode": "INVOICE_LANTERN_CORE",
+      "ruleVersion": "2026.04.1"
     }
   ],
   "disclaimer": "This result is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."

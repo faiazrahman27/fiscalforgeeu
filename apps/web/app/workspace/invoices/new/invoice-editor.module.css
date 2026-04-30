@@ -577,6 +577,7 @@
 .xmlPreview {
   width: 100%;
   max-width: 100%;
+  min-height: 14rem;
   overflow-x: auto;
   border-radius: 1.1rem;
   background: rgba(0,0,0,0.42);
@@ -585,6 +586,115 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.78rem;
   line-height: 1.75;
+}
+
+.ublExportMeta {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.ublExportMeta > span {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid rgba(110,231,183,0.2);
+  border-radius: 999px;
+  background: rgba(110,231,183,0.08);
+  padding: 0.35rem 0.6rem;
+  color: #d4ffe6;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ublExportMeta > p {
+  margin: 0;
+  color: rgba(255,255,255,0.58);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.ublExportRecordMeta,
+.exportHistoryItem {
+  min-width: 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  padding-top: 0.9rem;
+}
+
+.ublExportRecordMeta p,
+.exportHistoryNote {
+  margin: 0;
+  color: rgba(255,255,255,0.48);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.ublExportRecordMeta strong,
+.exportHistoryItem strong {
+  display: block;
+  margin-top: 0.45rem;
+  color: white;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.ublExportRecordMeta span,
+.exportHistoryItem span {
+  display: block;
+  margin-top: 0.35rem;
+  color: rgba(255,255,255,0.5);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.ublExportRecordMeta code {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 0.55rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 0.6rem;
+  background: rgba(0,0,0,0.32);
+  padding: 0.35rem 0.5rem;
+  color: rgba(255,255,255,0.76);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.exportHistoryList {
+  display: grid;
+  gap: 0.95rem;
+  margin-top: 1rem;
+}
+
+.exportHistoryMeta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.85rem 0 0;
+}
+
+.exportHistoryMeta div {
+  min-width: 0;
+}
+
+.exportHistoryMeta dt {
+  color: rgba(255,255,255,0.38);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.exportHistoryMeta dd {
+  margin: 0.3rem 0 0;
+  color: rgba(255,255,255,0.78);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1500px) {

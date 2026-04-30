@@ -8,25 +8,42 @@ import {
   ArrowLeft,
   BadgeCheck,
   Calculator,
-  Database,
+  ClipboardList,
   Download,
   FileCheck2,
   FileText,
-  Globe2,
   Layers3,
   ShieldAlert
 } from "lucide-react";
+import type {
+  ValidationReportFindingCounts,
+  ValidationReportRuleSetSummary,
+  ValidationReportSummary
+} from "../../../../lib/types";
 
-type FindingSeverity = "info" | "warning" | "fatal";
+type FindingSeverity = "info" | "warning" | "fatal" | "blocked";
+type LegalConfidence =
+  | "technical"
+  | "standard_based"
+  | "official_source_derived"
+  | "educational_simulation"
+  | "professional_review_required"
+  | "review_required";
 
 type ValidationRunSourceType = "invoice_validation" | "xml_readiness";
 
 type ValidationFinding = {
   code: string;
   severity: FindingSeverity;
+  category?: string;
   field?: string;
+  fieldPath?: string;
   message: string;
-  legalConfidence?: "technical" | "educational_simulation" | "review_required";
+  fixSuggestion?: string;
+  legalConfidence?: LegalConfidence;
+  ruleSetCode?: string;
+  ruleVersion?: string;
+  sourceLabels?: string[];
 };
 
 type ValidationTotals = {
@@ -42,6 +59,7 @@ type SavedValidationRun = {
   invoiceNumber: string;
   buyer: string;
   seller: string;
+  issueDate: string;
   createdAt: string;
   technicalStatus: string;
   standardStatus: string;
@@ -57,15 +75,27 @@ type SavedValidationRun = {
   sourceFileName?: string;
   sourceRootElement?: string;
   sourceDocumentType?: string;
+  reportSummary: ValidationReportSummary;
 };
 
 type ValidationRunDetailResponse = {
-  record?: SavedValidationRun;
+  record?: unknown;
+  reportSummary?: unknown;
 };
 
 type EvidenceItem = {
   label: string;
   value: string;
+};
+
+const VALIDATION_REPORT_DISCLAIMER =
+  "This validation report checks selected technical structure, calculation logic, canonical invoice rules, and sandbox rule metadata. It does not certify legal, tax, accounting, Peppol, EN 16931, or authority compliance. Before issuing real invoices or making VAT decisions, consult a qualified accountant, tax adviser, or competent authority.";
+
+const EMPTY_FINDING_COUNTS: ValidationReportFindingCounts = {
+  info: 0,
+  warning: 0,
+  fatal: 0,
+  blocked: 0
 };
 
 function getStatusTone(status: string) {
@@ -74,9 +104,19 @@ function getStatusTone(status: string) {
     status === "ready" ||
     status === "not_relevant" ||
     status === "technical_preview" ||
-    status === "technical"
+    status === "technical" ||
+    status === "no_selected_technical_issues_detected"
   ) {
     return "good";
+  }
+
+  if (
+    status === "failed" ||
+    status === "technical_issues_found" ||
+    status === "blocked" ||
+    status === "fatal"
+  ) {
+    return "danger";
   }
 
   return "warn";
@@ -86,13 +126,26 @@ function formatStatus(status: string) {
   return status.replaceAll("_", " ");
 }
 
+function formatLegalConfidence(value: LegalConfidence | undefined) {
+  const labels: Record<LegalConfidence, string> = {
+    technical: "Technical",
+    standard_based: "Standard-based",
+    official_source_derived: "Source-derived",
+    educational_simulation: "Educational simulation",
+    professional_review_required: "Professional review required",
+    review_required: "Professional review required"
+  };
+
+  return value ? labels[value] : "Not labelled";
+}
+
 function formatSourceType(sourceType: ValidationRunSourceType) {
   return sourceType === "xml_readiness"
     ? "XML readiness report"
     : "Invoice validation report";
 }
 
-function formatSourceValue(value: string | undefined, fallback = "Not detected") {
+function formatOptionalValue(value: string | undefined, fallback = "Not detected") {
   if (!value || value === "not_detected") {
     return fallback;
   }
@@ -104,7 +157,7 @@ function formatDateTime(value: string) {
   const parsedDate = new Date(value);
 
   if (Number.isNaN(parsedDate.getTime())) {
-    return value;
+    return formatOptionalValue(value, "Not recorded");
   }
 
   return parsedDate
@@ -126,7 +179,7 @@ function formatTotalAmount(currency: string, value: number | string) {
   }
 
   if (typeof value === "string" && value.trim().length > 0) {
-    return `${safeCurrency} ${value.trim().replace(/^EUR\s*/i, "")}`;
+    return `${safeCurrency} ${value.trim().replace(/^[A-Z]{3}\s*/u, "")}`;
   }
 
   return `${safeCurrency} 0.00`;
@@ -158,6 +211,15 @@ function readAmountField(record: Record<string, unknown>, key: string) {
   }
 
   return 0;
+}
+
+function readStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -201,6 +263,389 @@ function normalizeSourceType(value: unknown): ValidationRunSourceType {
   return value === "xml_readiness" ? "xml_readiness" : "invoice_validation";
 }
 
+function normalizeFinding(value: unknown): ValidationFinding | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const code = readStringField(value, "code", "");
+
+  if (!code) {
+    return null;
+  }
+
+  const severity =
+    value.severity === "info" ||
+    value.severity === "warning" ||
+    value.severity === "fatal" ||
+    value.severity === "blocked"
+      ? value.severity
+      : "info";
+
+  return {
+    code,
+    severity,
+    category: readStringField(value, "category", ""),
+    field:
+      typeof value.field === "string" && value.field.trim().length > 0
+        ? value.field.trim()
+        : undefined,
+    fieldPath:
+      typeof value.fieldPath === "string" && value.fieldPath.trim().length > 0
+        ? value.fieldPath.trim()
+        : undefined,
+    message: readStringField(
+      value,
+      "message",
+      "Validation finding returned without a message."
+    ),
+    fixSuggestion: readStringField(value, "fixSuggestion", ""),
+    legalConfidence:
+      value.legalConfidence === "technical" ||
+      value.legalConfidence === "educational_simulation" ||
+      value.legalConfidence === "review_required" ||
+      value.legalConfidence === "standard_based" ||
+      value.legalConfidence === "official_source_derived" ||
+      value.legalConfidence === "professional_review_required"
+        ? value.legalConfidence
+        : undefined,
+    ruleSetCode: readStringField(value, "ruleSetCode", ""),
+    ruleVersion: readStringField(value, "ruleVersion", ""),
+    sourceLabels: readStringArray(value.sourceLabels)
+  };
+}
+
+function normalizeTotals(value: unknown): ValidationTotals {
+  if (!isPlainObject(value)) {
+    return {
+      lineExtensionAmount: 0,
+      taxExclusiveAmount: 0,
+      taxAmount: 0,
+      taxInclusiveAmount: 0,
+      payableAmount: 0
+    };
+  }
+
+  return {
+    lineExtensionAmount: readAmountField(value, "lineExtensionAmount"),
+    taxExclusiveAmount: readAmountField(value, "taxExclusiveAmount"),
+    taxAmount: readAmountField(value, "taxAmount"),
+    taxInclusiveAmount: readAmountField(value, "taxInclusiveAmount"),
+    payableAmount: readAmountField(value, "payableAmount")
+  };
+}
+
+function countFindings(findings: ValidationFinding[]) {
+  return findings.reduce<ValidationReportFindingCounts>(
+    (counts, finding) => {
+      counts[finding.severity] += 1;
+      return counts;
+    },
+    { ...EMPTY_FINDING_COUNTS }
+  );
+}
+
+function normalizeFindingCounts(
+  value: unknown,
+  findings: ValidationFinding[]
+): ValidationReportFindingCounts {
+  if (!isPlainObject(value)) {
+    return countFindings(findings);
+  }
+
+  return {
+    info:
+      typeof value.info === "number" && Number.isFinite(value.info)
+        ? value.info
+        : 0,
+    warning:
+      typeof value.warning === "number" && Number.isFinite(value.warning)
+        ? value.warning
+        : 0,
+    fatal:
+      typeof value.fatal === "number" && Number.isFinite(value.fatal)
+        ? value.fatal
+        : 0,
+    blocked:
+      typeof value.blocked === "number" && Number.isFinite(value.blocked)
+        ? value.blocked
+        : 0
+  };
+}
+
+function buildOverallStatus(counts: ValidationReportFindingCounts) {
+  if (counts.blocked > 0 || counts.fatal > 0) {
+    return "technical_issues_found";
+  }
+
+  if (counts.warning > 0) {
+    return "warnings_require_review";
+  }
+
+  return "no_selected_technical_issues_detected";
+}
+
+function buildLegalConfidenceSummary(findings: ValidationFinding[]) {
+  if (
+    findings.some(
+      (finding) =>
+        finding.legalConfidence === "professional_review_required" ||
+        finding.legalConfidence === "review_required"
+    )
+  ) {
+    return "Professional review required for one or more findings.";
+  }
+
+  if (
+    findings.some(
+      (finding) => finding.legalConfidence === "educational_simulation"
+    )
+  ) {
+    return "Educational simulation metadata is present on one or more findings.";
+  }
+
+  if (findings.length > 0) {
+    return "Technical rule metadata only.";
+  }
+
+  return "No finding-level legal confidence labels were returned.";
+}
+
+function buildRecommendedNextActions(counts: ValidationReportFindingCounts) {
+  if (counts.blocked > 0 || counts.fatal > 0) {
+    return ["Fix blocking/fatal technical issues before relying on this draft."];
+  }
+
+  if (counts.warning > 0) {
+    return ["Review warnings and seek professional advice where required."];
+  }
+
+  const totalFindings =
+    counts.info + counts.warning + counts.fatal + counts.blocked;
+
+  if (totalFindings === 0) {
+    return [
+      "No selected technical issues were detected by this sandbox rule set. This is not legal/tax certification."
+    ];
+  }
+
+  return [
+    "Review informational findings and keep supporting records for professional review where appropriate."
+  ];
+}
+
+function buildRuleSetsFromFindings(findings: ValidationFinding[]) {
+  const ruleSets = new Map<string, ValidationReportRuleSetSummary>();
+
+  for (const finding of findings) {
+    const code = finding.ruleSetCode?.trim() ?? "";
+    const version = finding.ruleVersion?.trim() ?? "";
+
+    if (!code && !version) {
+      continue;
+    }
+
+    const key = `${code || "not_linked"}::${version || "not_versioned"}`;
+    const current = ruleSets.get(key);
+    const sourceLabels = finding.sourceLabels ?? [];
+
+    if (current) {
+      current.sourceLabels = [
+        ...new Set([...current.sourceLabels, ...sourceLabels])
+      ];
+      continue;
+    }
+
+    ruleSets.set(key, {
+      code: code || "not_linked",
+      version: version || "not_versioned",
+      sourceLabels: [...new Set(sourceLabels)]
+    });
+  }
+
+  return [...ruleSets.values()];
+}
+
+function normalizeRuleSetsUsed(
+  value: unknown,
+  findings: ValidationFinding[]
+): ValidationReportRuleSetSummary[] {
+  if (!Array.isArray(value)) {
+    return buildRuleSetsFromFindings(findings);
+  }
+
+  const ruleSets = value
+    .map((item) => {
+      if (!isPlainObject(item)) {
+        return null;
+      }
+
+      const code = readStringField(item, "code", "not_linked");
+      const version = readStringField(item, "version", "not_versioned");
+
+      return {
+        code,
+        version,
+        sourceLabels: readStringArray(item.sourceLabels)
+      };
+    })
+    .filter(
+      (item): item is ValidationReportRuleSetSummary => item !== null
+    );
+
+  return ruleSets.length > 0 ? ruleSets : buildRuleSetsFromFindings(findings);
+}
+
+function buildFallbackReportSummary(
+  run: Omit<SavedValidationRun, "reportSummary">
+): ValidationReportSummary {
+  const findingCounts = countFindings(run.findings);
+
+  return {
+    reportTitle: "Validation report",
+    validationRunId: run.id,
+    createdAt: run.createdAt,
+    invoiceNumber: run.invoiceNumber,
+    issueDate: run.issueDate,
+    seller: run.seller,
+    buyer: run.buyer,
+    currency: run.currency,
+    overallStatus: buildOverallStatus(findingCounts),
+    technicalStatus: run.technicalStatus,
+    standardStatus: run.standardStatus,
+    findingCounts,
+    legalConfidenceSummary: buildLegalConfidenceSummary(run.findings),
+    ruleSetsUsed: buildRuleSetsFromFindings(run.findings),
+    disclaimer: VALIDATION_REPORT_DISCLAIMER,
+    recommendedNextActions: buildRecommendedNextActions(findingCounts)
+  };
+}
+
+function normalizeReportSummary(
+  value: unknown,
+  run: Omit<SavedValidationRun, "reportSummary">
+): ValidationReportSummary {
+  const fallback = buildFallbackReportSummary(run);
+
+  if (!isPlainObject(value)) {
+    return fallback;
+  }
+
+  const findingCounts = normalizeFindingCounts(value.findingCounts, run.findings);
+  const recommendedNextActions = readStringArray(value.recommendedNextActions);
+
+  return {
+    reportTitle: readStringField(value, "reportTitle", fallback.reportTitle),
+    validationRunId: readStringField(
+      value,
+      "validationRunId",
+      fallback.validationRunId
+    ),
+    createdAt: readStringField(value, "createdAt", fallback.createdAt),
+    invoiceNumber: readStringField(
+      value,
+      "invoiceNumber",
+      fallback.invoiceNumber
+    ),
+    issueDate: readStringField(value, "issueDate", fallback.issueDate),
+    seller: readStringField(value, "seller", fallback.seller),
+    buyer: readStringField(value, "buyer", fallback.buyer),
+    currency: readStringField(value, "currency", fallback.currency),
+    overallStatus: readStringField(
+      value,
+      "overallStatus",
+      buildOverallStatus(findingCounts)
+    ),
+    technicalStatus: readStringField(
+      value,
+      "technicalStatus",
+      fallback.technicalStatus
+    ),
+    standardStatus: readStringField(
+      value,
+      "standardStatus",
+      fallback.standardStatus
+    ),
+    findingCounts,
+    legalConfidenceSummary: readStringField(
+      value,
+      "legalConfidenceSummary",
+      fallback.legalConfidenceSummary
+    ),
+    ruleSetsUsed: normalizeRuleSetsUsed(value.ruleSetsUsed, run.findings),
+    disclaimer: readStringField(
+      value,
+      "disclaimer",
+      VALIDATION_REPORT_DISCLAIMER
+    ),
+    recommendedNextActions:
+      recommendedNextActions.length > 0
+        ? recommendedNextActions
+        : buildRecommendedNextActions(findingCounts)
+  };
+}
+
+function normalizeValidationRun(
+  value: unknown,
+  reportSummaryValue: unknown
+): SavedValidationRun | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id", "");
+
+  if (!id) {
+    return null;
+  }
+
+  const findings = Array.isArray(value.findings)
+    ? value.findings
+        .map((finding) => normalizeFinding(finding))
+        .filter((finding): finding is ValidationFinding => finding !== null)
+    : [];
+
+  const runWithoutSummary: Omit<SavedValidationRun, "reportSummary"> = {
+    id,
+    invoiceNumber: readStringField(value, "invoiceNumber", "Untitled invoice"),
+    buyer: readStringField(value, "buyer", "Unknown buyer"),
+    seller: readStringField(value, "seller", "Unknown seller"),
+    issueDate: readStringField(value, "issueDate", ""),
+    createdAt: readStringField(value, "createdAt", new Date().toISOString()),
+    technicalStatus: readStringField(value, "technicalStatus", "failed"),
+    standardStatus: readStringField(value, "standardStatus", "warning"),
+    countrySimulationStatus: readStringField(
+      value,
+      "countrySimulationStatus",
+      "not_relevant"
+    ),
+    vidaReadinessStatus: readStringField(
+      value,
+      "vidaReadinessStatus",
+      "not_relevant"
+    ),
+    confidence: readStringField(value, "confidence", "technical_preview"),
+    profile: readStringField(value, "profile", "API_VALIDATION"),
+    currency: readStringField(value, "currency", "EUR"),
+    totals: normalizeTotals(value.totals),
+    findings,
+    disclaimer: readStringField(
+      value,
+      "disclaimer",
+      "This validation report is a technical readiness simulation only. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
+    ),
+    sourceType: normalizeSourceType(value.sourceType),
+    sourceFileName: readStringField(value, "sourceFileName", ""),
+    sourceRootElement: readStringField(value, "sourceRootElement", ""),
+    sourceDocumentType: readStringField(value, "sourceDocumentType", "")
+  };
+
+  return {
+    ...runWithoutSummary,
+    reportSummary: normalizeReportSummary(reportSummaryValue, runWithoutSummary)
+  };
+}
+
 function buildSourceContext(run: SavedValidationRun): EvidenceItem[] {
   if (run.sourceType === "xml_readiness") {
     return [
@@ -210,23 +655,15 @@ function buildSourceContext(run: SavedValidationRun): EvidenceItem[] {
       },
       {
         label: "Source file",
-        value: formatSourceValue(run.sourceFileName, "XML file name unavailable")
+        value: formatOptionalValue(run.sourceFileName, "XML file name unavailable")
       },
       {
         label: "Document type",
-        value: formatSourceValue(run.sourceDocumentType, "Unknown XML document")
+        value: formatOptionalValue(run.sourceDocumentType, "Unknown XML document")
       },
       {
         label: "Root element",
-        value: formatSourceValue(run.sourceRootElement, "Unknown root element")
-      },
-      {
-        label: "Invoice ID",
-        value: formatSourceValue(run.invoiceNumber, "Invoice ID not detected")
-      },
-      {
-        label: "Created",
-        value: formatDateTime(run.createdAt)
+        value: formatOptionalValue(run.sourceRootElement, "Unknown root element")
       }
     ];
   }
@@ -237,197 +674,18 @@ function buildSourceContext(run: SavedValidationRun): EvidenceItem[] {
       value: "Structured invoice validation report generated from invoice data."
     },
     {
-      label: "Invoice number",
-      value: run.invoiceNumber
-    },
-    {
-      label: "Seller",
-      value: run.seller
-    },
-    {
-      label: "Buyer",
-      value: run.buyer
-    },
-    {
       label: "Profile",
       value: run.profile
     },
     {
-      label: "Created",
-      value: formatDateTime(run.createdAt)
+      label: "Stored raw XML",
+      value: "No"
+    },
+    {
+      label: "Report boundary",
+      value: "Independent technical sandbox report."
     }
   ];
-}
-
-function buildEvidence(run: SavedValidationRun): EvidenceItem[] {
-  if (run.sourceType === "xml_readiness") {
-    return [
-      {
-        label: "XML readiness source",
-        value:
-          "This report was generated from an API-owned XML readiness report, not from the manual invoice editor."
-      },
-      {
-        label: "Technical layer",
-        value:
-          run.technicalStatus === "passed"
-            ? "The XML readiness engine produced a technical pass state for this report."
-            : "The XML readiness engine returned blocking or review-required technical findings."
-      },
-      {
-        label: "Format/profile layer",
-        value:
-          "UBL, EN 16931, Peppol, endpoint, country, tax, and payment signals are interpreted as readiness simulation indicators."
-      },
-      {
-        label: "Boundary",
-        value:
-          "This is not official XML, Peppol, EN 16931, ViDA, tax, legal, accounting, government, or authority validation."
-      }
-    ];
-  }
-
-  return [
-    {
-      label: "Schema layer",
-      value:
-        run.technicalStatus === "passed"
-          ? "The API accepted the request payload and produced an invoice validation report."
-          : "The API produced blocking technical findings for this invoice validation report."
-    },
-    {
-      label: "Calculation layer",
-      value:
-        "Totals were recalculated by the API from invoice lines, unit prices, quantities, and VAT rates."
-    },
-    {
-      label: "Country simulation",
-      value:
-        run.countrySimulationStatus === "review_required"
-          ? "Cross-border buyer/seller context requires professional review."
-          : "No cross-border country simulation was applied for this report."
-    },
-    {
-      label: "Rule source placeholder",
-      value:
-        "Future production reports will attach source links, reviewed date, rule version, and audit log ID."
-    }
-  ];
-}
-
-function normalizeFinding(value: unknown): ValidationFinding | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-  const code = readStringField(record, "code", "");
-
-  if (!code) {
-    return null;
-  }
-
-  const severity =
-    record.severity === "info" ||
-    record.severity === "warning" ||
-    record.severity === "fatal"
-      ? record.severity
-      : "info";
-
-  return {
-    code,
-    severity,
-    field:
-      typeof record.field === "string" && record.field.trim().length > 0
-        ? record.field.trim()
-        : undefined,
-    message: readStringField(
-      record,
-      "message",
-      "Validation finding returned without a message."
-    ),
-    legalConfidence:
-      record.legalConfidence === "technical" ||
-      record.legalConfidence === "educational_simulation" ||
-      record.legalConfidence === "review_required"
-        ? record.legalConfidence
-        : undefined
-  };
-}
-
-function normalizeTotals(value: unknown): ValidationTotals {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {
-      lineExtensionAmount: 0,
-      taxExclusiveAmount: 0,
-      taxAmount: 0,
-      taxInclusiveAmount: 0,
-      payableAmount: 0
-    };
-  }
-
-  const record = value as Record<string, unknown>;
-
-  return {
-    lineExtensionAmount: readAmountField(record, "lineExtensionAmount"),
-    taxExclusiveAmount: readAmountField(record, "taxExclusiveAmount"),
-    taxAmount: readAmountField(record, "taxAmount"),
-    taxInclusiveAmount: readAmountField(record, "taxInclusiveAmount"),
-    payableAmount: readAmountField(record, "payableAmount")
-  };
-}
-
-function normalizeValidationRun(value: unknown): SavedValidationRun | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-  const id = readStringField(record, "id", "");
-
-  if (!id) {
-    return null;
-  }
-
-  const findings = Array.isArray(record.findings)
-    ? record.findings
-        .map((finding) => normalizeFinding(finding))
-        .filter((finding): finding is ValidationFinding => finding !== null)
-    : [];
-
-  return {
-    id,
-    invoiceNumber: readStringField(record, "invoiceNumber", "Untitled invoice"),
-    buyer: readStringField(record, "buyer", "Unknown buyer"),
-    seller: readStringField(record, "seller", "Unknown seller"),
-    createdAt: readStringField(record, "createdAt", new Date().toISOString()),
-    technicalStatus: readStringField(record, "technicalStatus", "failed"),
-    standardStatus: readStringField(record, "standardStatus", "warning"),
-    countrySimulationStatus: readStringField(
-      record,
-      "countrySimulationStatus",
-      "not_relevant"
-    ),
-    vidaReadinessStatus: readStringField(
-      record,
-      "vidaReadinessStatus",
-      "not_relevant"
-    ),
-    confidence: readStringField(record, "confidence", "technical_preview"),
-    profile: readStringField(record, "profile", "API_VALIDATION"),
-    currency: readStringField(record, "currency", "EUR"),
-    totals: normalizeTotals(record.totals),
-    findings,
-    disclaimer: readStringField(
-      record,
-      "disclaimer",
-      "This validation report is a technical readiness simulation only. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
-    ),
-    sourceType: normalizeSourceType(record.sourceType),
-    sourceFileName: readStringField(record, "sourceFileName", ""),
-    sourceRootElement: readStringField(record, "sourceRootElement", ""),
-    sourceDocumentType: readStringField(record, "sourceDocumentType", "")
-  };
 }
 
 function sanitizeFileNamePart(value: string) {
@@ -450,12 +708,12 @@ function buildExportFileName(run: SavedValidationRun) {
   )}-${datePart}.json`;
 }
 
-function buildExportPayload(run: SavedValidationRun, evidence: EvidenceItem[]) {
+function buildExportPayload(run: SavedValidationRun, sourceContext: EvidenceItem[]) {
   return {
     platform: {
       name: "Invoice Lantern",
       productBoundary:
-        "Independent e-invoice readiness and simulation platform. Not official government, tax authority, Peppol authority, EN 16931 certification, ViDA compliance, legal, accounting, or tax validation."
+        "Independent e-invoice validation and readiness sandbox. Not official validation, not Peppol certification, and not legal, tax, or accounting advice."
     },
     export: {
       exportedAt: new Date().toISOString(),
@@ -468,11 +726,12 @@ function buildExportPayload(run: SavedValidationRun, evidence: EvidenceItem[]) {
       invoiceNumber: run.invoiceNumber,
       buyer: run.buyer,
       seller: run.seller,
+      issueDate: run.issueDate,
       createdAt: run.createdAt,
       technicalStatus: run.technicalStatus,
       standardStatus: run.standardStatus,
       countrySimulationStatus: run.countrySimulationStatus,
-      vidaReadinessStatus: run.vidaReadinessStatus,
+      readinessStatus: run.vidaReadinessStatus,
       confidence: run.confidence,
       profile: run.profile,
       currency: run.currency,
@@ -481,15 +740,19 @@ function buildExportPayload(run: SavedValidationRun, evidence: EvidenceItem[]) {
       sourceRootElement: run.sourceRootElement,
       sourceDocumentType: run.sourceDocumentType
     },
+    reportSummary: run.reportSummary,
     totals: run.totals,
     findings: run.findings,
-    evidence,
-    disclaimer: run.disclaimer
+    sourceContext,
+    disclaimer: run.reportSummary.disclaimer
   };
 }
 
-function downloadValidationReport(run: SavedValidationRun, evidence: EvidenceItem[]) {
-  const json = JSON.stringify(buildExportPayload(run, evidence), null, 2);
+function downloadValidationReport(
+  run: SavedValidationRun,
+  sourceContext: EvidenceItem[]
+) {
+  const json = JSON.stringify(buildExportPayload(run, sourceContext), null, 2);
   const blob = new Blob([json], {
     type: "application/json;charset=utf-8"
   });
@@ -505,6 +768,19 @@ function downloadValidationReport(run: SavedValidationRun, evidence: EvidenceIte
   anchor.remove();
 
   URL.revokeObjectURL(objectUrl);
+}
+
+function renderCountCard(
+  label: keyof ValidationReportFindingCounts,
+  counts: ValidationReportFindingCounts
+) {
+  return (
+    <div className={`workspace-data-card is-${getStatusTone(label)}`} key={label}>
+      <p>{label}</p>
+      <strong>{counts[label]}</strong>
+      <span>Finding count</span>
+    </div>
+  );
 }
 
 export default function ValidationRunDetailPage() {
@@ -547,7 +823,10 @@ export default function ValidationRunDetailPage() {
         }
 
         const payload = responseData as ValidationRunDetailResponse;
-        const normalizedRun = normalizeValidationRun(payload.record);
+        const normalizedRun = normalizeValidationRun(
+          payload.record,
+          payload.reportSummary
+        );
 
         if (!isMounted) {
           return;
@@ -583,39 +862,37 @@ export default function ValidationRunDetailPage() {
     };
   }, [params.id]);
 
-  const evidence = useMemo(() => (run ? buildEvidence(run) : []), [run]);
   const sourceContext = useMemo(() => (run ? buildSourceContext(run) : []), [run]);
 
   return (
-    <div className="workspace-page">
-      <section className="workspace-page-head">
+    <div className="workspace-page validation-report-page">
+      <section className="workspace-page-head validation-report-head">
         <Link href="/workspace/validation-runs" className="back-link">
           <ArrowLeft size={17} />
           Reports
         </Link>
 
-        <p className="workspace-kicker">Invoice validation report</p>
-        <h2>
-          {isLoadingRun
-            ? "Loading validation report"
-            : run
-              ? run.id
-              : "Validation report unavailable"}
-        </h2>
+        <p className="workspace-kicker">Validation report</p>
+        <h2>Validation report</h2>
         <p>
           {run
-            ? `Full report preview for ${run.invoiceNumber}. This page reads the report through the local Next.js proxy from the dedicated Invoice Lantern API service. Source: ${formatSourceType(
-                run.sourceType
-              )}.`
+            ? `Run ${run.id}. Created ${formatDateTime(
+                run.createdAt
+              )}. Invoice ${run.invoiceNumber || "not numbered"}.`
             : "No demo report is shown here. This page only displays API-owned validation report records."}
         </p>
 
         {run ? (
           <div className="workspace-row-actions">
+            <div className="confidence-label">
+              <ShieldAlert size={17} />
+              non-official sandbox
+            </div>
+
             <button
               type="button"
               className="text-link-button"
-              onClick={() => downloadValidationReport(run, evidence)}
+              onClick={() => downloadValidationReport(run, sourceContext)}
             >
               <Download size={16} />
               Download report JSON
@@ -650,119 +927,122 @@ export default function ValidationRunDetailPage() {
                 the route may have been opened with an invalid report ID.
               </p>
             </div>
-
-            <div className="alert-item">
-              <span />
-              <p>
-                Go back to the report history and open an existing API-owned
-                invoice validation report, or create a new report from real invoice
-                data.
-              </p>
-            </div>
           </div>
         </section>
       ) : null}
 
       {run ? (
         <>
-          <section className="validation-run-grid">
-            <div className="validation-run-layer">
-              <div className="validation-layer-icon">
-                <Layers3 size={22} />
-              </div>
-              <span>{getStatusTone(run.technicalStatus)}</span>
-              <h3>Technical status</h3>
-              <p>{formatStatus(run.technicalStatus)}</p>
-            </div>
-
-            <div className="validation-run-layer">
-              <div className="validation-layer-icon">
-                <FileCheck2 size={22} />
-              </div>
-              <span>{getStatusTone(run.standardStatus)}</span>
-              <h3>Standard status</h3>
-              <p>{formatStatus(run.standardStatus)}</p>
-            </div>
-
-            <div className="validation-run-layer">
-              <div className="validation-layer-icon">
-                <Globe2 size={22} />
-              </div>
-              <span>{getStatusTone(run.countrySimulationStatus)}</span>
-              <h3>Country simulation</h3>
-              <p>{formatStatus(run.countrySimulationStatus)}</p>
-            </div>
-
-            <div className="validation-run-layer">
-              <div className="validation-layer-icon">
-                <ShieldAlert size={22} />
-              </div>
-              <span>{getStatusTone(run.vidaReadinessStatus)}</span>
-              <h3>ViDA readiness</h3>
-              <p>{formatStatus(run.vidaReadinessStatus)}</p>
-            </div>
-          </section>
-
           <section className="workspace-table-shell">
             <div className="workspace-table-head">
               <div>
-                <p>Source context</p>
-                <h3>
-                  {run.sourceType === "xml_readiness"
-                    ? "XML readiness report source"
-                    : "Invoice validation source"}
-                </h3>
+                <p>Status summary</p>
+                <h3>Sandbox validation outcome</h3>
               </div>
 
               <div className="confidence-label">
-                <Database size={17} />
-                {formatSourceType(run.sourceType)}
+                <BadgeCheck size={17} />
+                {formatStatus(run.reportSummary.overallStatus)}
               </div>
             </div>
 
             <div className="workspace-data-grid">
-              {sourceContext.map((item) => (
-                <div className="workspace-data-card" key={item.label}>
-                  <p>{item.label}</p>
-                  <strong>{item.value}</strong>
-                  <span>Report metadata</span>
-                </div>
-              ))}
-            </div>
-          </section>
+              <div
+                className={`workspace-data-card is-${getStatusTone(
+                  run.reportSummary.overallStatus
+                )}`}
+              >
+                <p>Overall status</p>
+                <strong>{formatStatus(run.reportSummary.overallStatus)}</strong>
+                <span>Derived from selected sandbox findings</span>
+              </div>
 
-          <section className="workspace-map">
-            <div>
-              <FileText size={24} />
-              <h3>Invoice context</h3>
-              <p>
-                Invoice {run.invoiceNumber} from {run.seller} to {run.buyer}.
-                Profile: {run.profile}. Currency: {run.currency}. Created:{" "}
-                {formatDateTime(run.createdAt)}.
-              </p>
-            </div>
+              <div
+                className={`workspace-data-card is-${getStatusTone(
+                  run.reportSummary.technicalStatus
+                )}`}
+              >
+                <p>Technical status</p>
+                <strong>{formatStatus(run.reportSummary.technicalStatus)}</strong>
+                <span>Stored validation run status</span>
+              </div>
 
-            <div>
-              <BadgeCheck size={24} />
-              <h3>Confidence label</h3>
-              <p>
-                {formatStatus(run.confidence)}. This report is a technical readiness
-                simulation and must not be interpreted as legal, tax, accounting,
-                Peppol, ViDA, EN 16931, government, or authority approval.
-              </p>
+              <div
+                className={`workspace-data-card is-${getStatusTone(
+                  run.reportSummary.standardStatus
+                )}`}
+              >
+                <p>Standard status</p>
+                <strong>{formatStatus(run.reportSummary.standardStatus)}</strong>
+                <span>Stored standard readiness signal</span>
+              </div>
+
+              <div className="workspace-data-card is-wide">
+                <p>Legal confidence</p>
+                <strong>{run.reportSummary.legalConfidenceSummary}</strong>
+                <span>Finding-level metadata, not legal advice</span>
+              </div>
+
+              {(
+                ["info", "warning", "fatal", "blocked"] as Array<
+                  keyof ValidationReportFindingCounts
+                >
+              ).map((severity) =>
+                renderCountCard(severity, run.reportSummary.findingCounts)
+              )}
             </div>
           </section>
 
           <section className="workspace-table-shell">
             <div className="workspace-table-head">
               <div>
-                <p>Monetary totals</p>
-                <h3>Calculated report summary</h3>
+                <p>Invoice summary</p>
+                <h3>Document and parties</h3>
               </div>
 
               <div className="confidence-label">
-                <Calculator size={17} />
-                API result
+                <FileText size={17} />
+                {run.currency}
+              </div>
+            </div>
+
+            <div className="workspace-data-grid">
+              <div className="workspace-data-card">
+                <p>Invoice number</p>
+                <strong>{formatOptionalValue(run.invoiceNumber)}</strong>
+                <span>Document identifier</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Issue date</p>
+                <strong>{formatOptionalValue(run.issueDate)}</strong>
+                <span>Stored when available</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Currency</p>
+                <strong>{run.currency}</strong>
+                <span>Validation run currency</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Seller</p>
+                <strong>{formatOptionalValue(run.seller, "Unknown seller")}</strong>
+                <span>Invoice party</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Buyer</p>
+                <strong>{formatOptionalValue(run.buyer, "Unknown buyer")}</strong>
+                <span>Invoice party</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Payable amount</p>
+                <strong>
+                  {formatTotalAmount(run.currency, run.totals.payableAmount)}
+                </strong>
+                <span>Calculated report total</span>
               </div>
             </div>
 
@@ -790,6 +1070,72 @@ export default function ValidationRunDetailPage() {
             </div>
           </section>
 
+          <section className="workspace-table-shell">
+            <div className="workspace-table-head">
+              <div>
+                <p>Rule set summary</p>
+                <h3>Rule metadata used by findings</h3>
+              </div>
+
+              <div className="confidence-label">
+                <Layers3 size={17} />
+                sandbox report
+              </div>
+            </div>
+
+            <div className="workspace-data-grid">
+              {run.reportSummary.ruleSetsUsed.length === 0 ? (
+                <div className="workspace-data-card is-full">
+                  <p>Rule set</p>
+                  <strong>Not linked in findings</strong>
+                  <span>
+                    This run did not return finding-level rule set metadata.
+                  </span>
+                </div>
+              ) : (
+                run.reportSummary.ruleSetsUsed.map((ruleSet) => (
+                  <div
+                    className="workspace-data-card is-wide"
+                    key={`${ruleSet.code}-${ruleSet.version}`}
+                  >
+                    <p>{ruleSet.code}</p>
+                    <strong>Version {ruleSet.version}</strong>
+                    <span>
+                      Sources:{" "}
+                      {ruleSet.sourceLabels.length > 0
+                        ? ruleSet.sourceLabels.join(", ")
+                        : "No source labels returned"}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="workspace-table-shell">
+            <div className="workspace-table-head">
+              <div>
+                <p>Source context</p>
+                <h3>{formatSourceType(run.sourceType)}</h3>
+              </div>
+
+              <div className="confidence-label">
+                <FileCheck2 size={17} />
+                raw XML not stored
+              </div>
+            </div>
+
+            <div className="workspace-data-grid">
+              {sourceContext.map((item) => (
+                <div className="workspace-data-card" key={item.label}>
+                  <p>{item.label}</p>
+                  <strong>{item.value}</strong>
+                  <span>Report metadata</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
           <section className="findings-console">
             <div className="findings-console-head">
               <div>
@@ -799,7 +1145,7 @@ export default function ValidationRunDetailPage() {
 
               <div className="confidence-label">
                 <ShieldAlert size={17} />
-                {run.findings.length > 0 ? "review required" : "no findings"}
+                {run.findings.length > 0 ? "review findings" : "no findings"}
               </div>
             </div>
 
@@ -810,7 +1156,10 @@ export default function ValidationRunDetailPage() {
 
                   <div>
                     <strong>NO_FINDINGS_RETURNED</strong>
-                    <p>The API did not return any findings for this validation report.</p>
+                    <p>
+                      No selected technical issues were returned by this sandbox
+                      validation run.
+                    </p>
                   </div>
 
                   <span>info</span>
@@ -824,12 +1173,22 @@ export default function ValidationRunDetailPage() {
                       <strong>{item.code}</strong>
                       <p>{item.message}</p>
                       <p>
-                        Field: {item.field ?? "report"}. Confidence:{" "}
-                        {item.legalConfidence
-                          ? formatStatus(item.legalConfidence)
-                          : "not labelled"}
-                        .
+                        Severity: {item.severity}. Category:{" "}
+                        {item.category || "Validation"}. Field:{" "}
+                        {item.fieldPath ?? item.field ?? "report"}.
                       </p>
+                      {item.fixSuggestion ? (
+                        <p>Fix suggestion: {item.fixSuggestion}</p>
+                      ) : null}
+                      <p>
+                        Legal confidence:{" "}
+                        {formatLegalConfidence(item.legalConfidence)}. Rule set:{" "}
+                        {item.ruleSetCode || "Not linked"}. Version:{" "}
+                        {item.ruleVersion || "not versioned"}.
+                      </p>
+                      {item.sourceLabels && item.sourceLabels.length > 0 ? (
+                        <p>Sources: {item.sourceLabels.join(", ")}.</p>
+                      ) : null}
                     </div>
 
                     <span>{item.severity}</span>
@@ -839,42 +1198,21 @@ export default function ValidationRunDetailPage() {
             </div>
           </section>
 
-          <section className="workspace-table-shell">
-            <div className="workspace-table-head">
-              <div>
-                <p>Evidence</p>
-                <h3>Source and audit context</h3>
-              </div>
+          <section className="workspace-alerts">
+            <div className="alerts-head">
+              <ClipboardList size={22} />
 
-              <div className="confidence-label">
-                <Database size={17} />
-                report metadata
+              <div>
+                <p>Recommended next actions</p>
+                <h3>Review steps from this report</h3>
               </div>
             </div>
 
-            <div className="workspace-table">
-              {evidence.map((item) => (
-                <div className="workspace-table-row" key={item.label}>
-                  <div>
-                    <strong>{item.label}</strong>
-                    <span>{item.value}</span>
-                  </div>
-
-                  <div>
-                    <span>source</span>
-                  </div>
-
-                  <div>
-                    <span className="status-pill">
-                      {run.sourceType === "xml_readiness"
-                        ? "xml readiness"
-                        : "invoice validation"}
-                    </span>
-                  </div>
-
-                  <strong>recorded</strong>
-
-                  <Database size={17} />
+            <div className="alert-list">
+              {run.reportSummary.recommendedNextActions.map((action) => (
+                <div className="alert-item" key={action}>
+                  <span />
+                  <p>{action}</p>
                 </div>
               ))}
             </div>
@@ -885,33 +1223,15 @@ export default function ValidationRunDetailPage() {
               <ShieldAlert size={22} />
 
               <div>
-                <p>Boundary notice</p>
-                <h3>Not official validation.</h3>
+                <p>Disclaimer</p>
+                <h3>Sandbox boundary</h3>
               </div>
             </div>
 
             <div className="alert-list">
               <div className="alert-item">
                 <span />
-                <p>{run.disclaimer}</p>
-              </div>
-
-              <div className="alert-item">
-                <span />
-                <p>
-                  A future production report must include rule version, source
-                  reference, reviewed date, execution timestamp, organization ID, and
-                  audit log ID.
-                </p>
-              </div>
-
-              <div className="alert-item">
-                <span />
-                <p>
-                  Country, Peppol, EN 16931, and ViDA logic should remain clearly
-                  marked as simulation unless reviewed and maintained by qualified
-                  professionals.
-                </p>
+                <p>{run.reportSummary.disclaimer}</p>
               </div>
             </div>
           </section>

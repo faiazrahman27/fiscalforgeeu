@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, MouseEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -194,6 +195,162 @@ type ApiXmlInspectResponse = {
   findings?: XmlReadinessFinding[];
   disclaimer: string;
   record?: ApiXmlUploadRecord;
+};
+
+type UblParseFindingSeverity = "info" | "warning" | "fatal" | "blocked";
+
+type UblParseFinding = {
+  code: string;
+  severity: UblParseFindingSeverity;
+  category: string;
+  fieldPath: string;
+  message: string;
+  fixSuggestion?: string;
+  legalConfidence: string;
+  ruleSetCode?: string;
+  ruleVersion?: string;
+  sourceLabels?: string[];
+};
+
+type CanonicalPartyPreview = {
+  name: string;
+  country: string;
+  vatId: string;
+  city: string;
+  postalCode: string;
+  street: string;
+  region: string;
+  electronicAddress: string;
+};
+
+type CanonicalDocumentPreview = {
+  type: string;
+  number: string;
+  currency: string;
+  issueDate: string;
+  dueDate: string;
+  profile: string;
+  buyerReference: string;
+  contractReference: string;
+};
+
+type CanonicalInvoiceLinePreview = {
+  id: string;
+  description: string;
+  quantity: string;
+  unitCode: string;
+  unitPrice: string;
+  vatCategory: string;
+  vatRate: string;
+  netAmount?: string;
+  taxAmount?: string;
+};
+
+type CanonicalInvoiceTotalsPreview = {
+  lineExtensionAmount?: string;
+  taxExclusiveAmount?: string;
+  taxAmount?: string;
+  taxInclusiveAmount?: string;
+  allowanceTotalAmount?: string;
+  chargeTotalAmount?: string;
+  prepaidAmount?: string;
+  payableRoundingAmount?: string;
+  payableAmount?: string;
+};
+
+type CanonicalTaxSubtotalPreview = {
+  taxableAmount?: string;
+  taxAmount?: string;
+  vatCategory: string;
+  vatRate: string;
+};
+
+type CanonicalInvoicePreview = {
+  document: CanonicalDocumentPreview;
+  seller: CanonicalPartyPreview;
+  buyer: CanonicalPartyPreview;
+  lines: CanonicalInvoiceLinePreview[];
+  taxSubtotals: CanonicalTaxSubtotalPreview[];
+  totals: CanonicalInvoiceTotalsPreview;
+};
+
+type UblCalculatedLine = CanonicalInvoiceLinePreview & {
+  index: number;
+  taxAmount: string;
+  netAmount: string;
+};
+
+type UblCalculatedTaxSubtotal = {
+  vatCategory: string;
+  vatRate: string;
+  taxableAmount: string;
+  taxAmount: string;
+};
+
+type UblCalculatedTotals = {
+  lines: UblCalculatedLine[];
+  taxSubtotals: UblCalculatedTaxSubtotal[];
+  totals: {
+    lineExtensionAmount: string;
+    taxExclusiveAmount: string;
+    taxAmount: string;
+    taxInclusiveAmount: string;
+    payableAmount: string;
+  };
+};
+
+type UblDetectedMetadata = {
+  documentType: string;
+  rootName: string;
+  profileId: string;
+  customizationId: string;
+  invoiceNumber: string;
+  issueDate: string;
+  currency: string;
+  sellerName: string;
+  sellerCountry: string;
+  buyerName: string;
+  buyerCountry: string;
+};
+
+type UblParsePreview = {
+  parsed: boolean;
+  canonicalInvoice?: CanonicalInvoicePreview;
+  detected: UblDetectedMetadata;
+  findings: UblParseFinding[];
+  totals?: UblCalculatedTotals;
+  disclaimer: string;
+};
+
+type ApiUblParseResponse = {
+  parsed?: boolean;
+  canonicalInvoice?: unknown;
+  detected?: unknown;
+  findings?: unknown;
+  totals?: unknown;
+  disclaimer?: string;
+};
+
+type UblImportResult = {
+  created: boolean;
+  invoiceDraftId: string;
+  redirectPath: string;
+  reason: string;
+  detected: UblDetectedMetadata;
+  findings: UblParseFinding[];
+  totals?: UblCalculatedTotals;
+  disclaimer: string;
+};
+
+type ApiUblImportResponse = {
+  created?: boolean;
+  invoiceDraftId?: unknown;
+  redirectPath?: unknown;
+  reason?: unknown;
+  detected?: unknown;
+  findings?: unknown;
+  totals?: unknown;
+  disclaimer?: unknown;
 };
 
 const MAX_XML_FILE_SIZE_BYTES = 1024 * 1024 * 2;
@@ -469,6 +626,308 @@ function normalizeFindings(value: unknown): XmlReadinessFinding[] {
   return value
     .map((item) => normalizeFinding(item))
     .filter((item): item is XmlReadinessFinding => item !== null);
+}
+
+function isUblParseFindingSeverity(
+  value: unknown
+): value is UblParseFindingSeverity {
+  return (
+    value === "info" ||
+    value === "warning" ||
+    value === "fatal" ||
+    value === "blocked"
+  );
+}
+
+function normalizeUblParseFinding(value: unknown): UblParseFinding | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const code = readStringField(value, "code", "");
+
+  if (!code) {
+    return null;
+  }
+
+  const finding: UblParseFinding = {
+    code,
+    severity: isUblParseFindingSeverity(value.severity)
+      ? value.severity
+      : "info",
+    category: readStringField(value, "category", "UBL"),
+    fieldPath: readStringField(value, "fieldPath", "xml"),
+    message: readStringField(
+      value,
+      "message",
+      "UBL parser returned a finding without a message."
+    ),
+    legalConfidence: readStringField(value, "legalConfidence", "technical"),
+    sourceLabels: readStringArrayField(value, "sourceLabels")
+  };
+
+  const fixSuggestion = readStringField(value, "fixSuggestion", "");
+  const ruleSetCode = readStringField(value, "ruleSetCode", "");
+  const ruleVersion = readStringField(value, "ruleVersion", "");
+
+  if (fixSuggestion) {
+    finding.fixSuggestion = fixSuggestion;
+  }
+
+  if (ruleSetCode) {
+    finding.ruleSetCode = ruleSetCode;
+  }
+
+  if (ruleVersion) {
+    finding.ruleVersion = ruleVersion;
+  }
+
+  return finding;
+}
+
+function normalizeUblParseFindings(value: unknown): UblParseFinding[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => normalizeUblParseFinding(item))
+    .filter((item): item is UblParseFinding => item !== null);
+}
+
+function normalizeCanonicalParty(value: unknown): CanonicalPartyPreview {
+  const record = isPlainObject(value) ? value : {};
+
+  return {
+    name: readStringField(record, "name", ""),
+    country: readStringField(record, "country", ""),
+    vatId: readStringField(record, "vatId", ""),
+    city: readStringField(record, "city", ""),
+    postalCode: readStringField(record, "postalCode", ""),
+    street: readStringField(record, "street", ""),
+    region: readStringField(record, "region", ""),
+    electronicAddress: readStringField(record, "electronicAddress", "")
+  };
+}
+
+function normalizeCanonicalDocument(value: unknown): CanonicalDocumentPreview {
+  const record = isPlainObject(value) ? value : {};
+
+  return {
+    type: readStringField(record, "type", "invoice"),
+    number: readStringField(record, "number", ""),
+    currency: readStringField(record, "currency", ""),
+    issueDate: readStringField(record, "issueDate", ""),
+    dueDate: readStringField(record, "dueDate", ""),
+    profile: readStringField(record, "profile", ""),
+    buyerReference: readStringField(record, "buyerReference", ""),
+    contractReference: readStringField(record, "contractReference", "")
+  };
+}
+
+function normalizeCanonicalLine(value: unknown): CanonicalInvoiceLinePreview {
+  const record = isPlainObject(value) ? value : {};
+  const line: CanonicalInvoiceLinePreview = {
+    id: readStringField(record, "id", ""),
+    description: readStringField(record, "description", ""),
+    quantity: readStringField(record, "quantity", ""),
+    unitCode: readStringField(record, "unitCode", ""),
+    unitPrice: readStringField(record, "unitPrice", ""),
+    vatCategory: readStringField(record, "vatCategory", ""),
+    vatRate: readStringField(record, "vatRate", "")
+  };
+
+  const netAmount = readStringField(record, "netAmount", "");
+  const taxAmount = readStringField(record, "taxAmount", "");
+
+  if (netAmount) {
+    line.netAmount = netAmount;
+  }
+
+  if (taxAmount) {
+    line.taxAmount = taxAmount;
+  }
+
+  return line;
+}
+
+function normalizeCanonicalTotals(value: unknown): CanonicalInvoiceTotalsPreview {
+  const record = isPlainObject(value) ? value : {};
+  const totals: CanonicalInvoiceTotalsPreview = {};
+  const keys: (keyof CanonicalInvoiceTotalsPreview)[] = [
+    "lineExtensionAmount",
+    "taxExclusiveAmount",
+    "taxAmount",
+    "taxInclusiveAmount",
+    "allowanceTotalAmount",
+    "chargeTotalAmount",
+    "prepaidAmount",
+    "payableRoundingAmount",
+    "payableAmount"
+  ];
+
+  keys.forEach((key) => {
+    const valueForKey = readStringField(record, key, "");
+
+    if (valueForKey) {
+      totals[key] = valueForKey;
+    }
+  });
+
+  return totals;
+}
+
+function normalizeCanonicalTaxSubtotal(
+  value: unknown
+): CanonicalTaxSubtotalPreview {
+  const record = isPlainObject(value) ? value : {};
+  const subtotal: CanonicalTaxSubtotalPreview = {
+    vatCategory: readStringField(record, "vatCategory", ""),
+    vatRate: readStringField(record, "vatRate", "")
+  };
+  const taxableAmount = readStringField(record, "taxableAmount", "");
+  const taxAmount = readStringField(record, "taxAmount", "");
+
+  if (taxableAmount) {
+    subtotal.taxableAmount = taxableAmount;
+  }
+
+  if (taxAmount) {
+    subtotal.taxAmount = taxAmount;
+  }
+
+  return subtotal;
+}
+
+function normalizeCanonicalInvoice(value: unknown) {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  return {
+    document: normalizeCanonicalDocument(value.document),
+    seller: normalizeCanonicalParty(value.seller),
+    buyer: normalizeCanonicalParty(value.buyer),
+    lines: Array.isArray(value.lines)
+      ? value.lines.map((item) => normalizeCanonicalLine(item))
+      : [],
+    taxSubtotals: Array.isArray(value.taxSubtotals)
+      ? value.taxSubtotals.map((item) => normalizeCanonicalTaxSubtotal(item))
+      : [],
+    totals: normalizeCanonicalTotals(value.totals)
+  };
+}
+
+function normalizeCalculatedTotals(value: unknown) {
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  const totalsRecord = isPlainObject(value.totals) ? value.totals : {};
+
+  return {
+    lines: Array.isArray(value.lines)
+      ? value.lines.map((item) => ({
+          ...normalizeCanonicalLine(item),
+          index: isPlainObject(item) ? readNumberField(item, "index", 0) : 0,
+          netAmount: isPlainObject(item)
+            ? readStringField(item, "netAmount", "")
+            : "",
+          taxAmount: isPlainObject(item)
+            ? readStringField(item, "taxAmount", "")
+            : ""
+        }))
+      : [],
+    taxSubtotals: Array.isArray(value.taxSubtotals)
+      ? value.taxSubtotals.map((item) => {
+          const record = isPlainObject(item) ? item : {};
+
+          return {
+            vatCategory: readStringField(record, "vatCategory", ""),
+            vatRate: readStringField(record, "vatRate", ""),
+            taxableAmount: readStringField(record, "taxableAmount", ""),
+            taxAmount: readStringField(record, "taxAmount", "")
+          };
+        })
+      : [],
+    totals: {
+      lineExtensionAmount: readStringField(
+        totalsRecord,
+        "lineExtensionAmount",
+        ""
+      ),
+      taxExclusiveAmount: readStringField(
+        totalsRecord,
+        "taxExclusiveAmount",
+        ""
+      ),
+      taxAmount: readStringField(totalsRecord, "taxAmount", ""),
+      taxInclusiveAmount: readStringField(
+        totalsRecord,
+        "taxInclusiveAmount",
+        ""
+      ),
+      payableAmount: readStringField(totalsRecord, "payableAmount", "")
+    }
+  };
+}
+
+function normalizeUblDetectedMetadata(value: unknown): UblDetectedMetadata {
+  const record = isPlainObject(value) ? value : {};
+
+  return {
+    documentType: readStringField(record, "documentType", "unknown"),
+    rootName: readStringField(record, "rootName", "unknown"),
+    profileId: readStringField(record, "profileId", "not_detected"),
+    customizationId: readStringField(record, "customizationId", "not_detected"),
+    invoiceNumber: readStringField(record, "invoiceNumber", "not_detected"),
+    issueDate: readStringField(record, "issueDate", "not_detected"),
+    currency: readStringField(record, "currency", "not_detected"),
+    sellerName: readStringField(record, "sellerName", "not_detected"),
+    sellerCountry: readStringField(record, "sellerCountry", "not_detected"),
+    buyerName: readStringField(record, "buyerName", "not_detected"),
+    buyerCountry: readStringField(record, "buyerCountry", "not_detected")
+  };
+}
+
+function normalizeUblParsePreview(value: unknown): UblParsePreview {
+  const record: ApiUblParseResponse = isPlainObject(value)
+    ? (value as ApiUblParseResponse)
+    : {};
+
+  return {
+    parsed: record.parsed === true,
+    canonicalInvoice: normalizeCanonicalInvoice(record.canonicalInvoice),
+    detected: normalizeUblDetectedMetadata(record.detected),
+    findings: normalizeUblParseFindings(record.findings),
+    totals: normalizeCalculatedTotals(record.totals),
+    disclaimer:
+      typeof record.disclaimer === "string" && record.disclaimer.trim()
+        ? record.disclaimer.trim()
+      : "This UBL parse result is a technical sandbox preview. It is not official XML validation, Peppol certification, tax advice, legal advice, accounting advice, or authority acceptance."
+  };
+}
+
+function normalizeUblImportResult(value: unknown): UblImportResult {
+  const record: ApiUblImportResponse = isPlainObject(value)
+    ? (value as ApiUblImportResponse)
+    : {};
+
+  return {
+    created: record.created === true,
+    invoiceDraftId:
+      typeof record.invoiceDraftId === "string" ? record.invoiceDraftId : "",
+    redirectPath:
+      typeof record.redirectPath === "string" ? record.redirectPath : "",
+    reason: typeof record.reason === "string" ? record.reason : "",
+    detected: normalizeUblDetectedMetadata(record.detected),
+    findings: normalizeUblParseFindings(record.findings),
+    totals: normalizeCalculatedTotals(record.totals),
+    disclaimer:
+      typeof record.disclaimer === "string" && record.disclaimer.trim()
+        ? record.disclaimer.trim()
+        : "This draft was created from parsed UBL XML for technical sandbox use. It is not official validation, Peppol certification, or tax/legal/accounting advice."
+  };
 }
 
 function normalizeProfileSignal(value: unknown): XmlProfileSignal {
@@ -882,11 +1341,20 @@ function uploadMatchesFilters({
 }
 
 export default function WorkspaceXmlUploadPage() {
+  const router = useRouter();
   const [uploadHistory, setUploadHistory] = useState<XmlUploadRecord[]>([]);
   const [analysis, setAnalysis] = useState<XmlAnalysis | null>(null);
+  const [xmlInput, setXmlInput] = useState("");
+  const [ublParsePreview, setUblParsePreview] =
+    useState<UblParsePreview | null>(null);
+  const [ublImportResult, setUblImportResult] =
+    useState<UblImportResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [ublParseMessage, setUblParseMessage] = useState("");
   const [uploadLoadMessage, setUploadLoadMessage] = useState("");
   const [isInspecting, setIsInspecting] = useState(false);
+  const [isParsingUbl, setIsParsingUbl] = useState(false);
+  const [isImportingUblDraft, setIsImportingUblDraft] = useState(false);
   const [isLoadingUploads, setIsLoadingUploads] = useState(true);
   const [deletingUploadId, setDeletingUploadId] = useState("");
   const [openingUploadId, setOpeningUploadId] = useState("");
@@ -980,6 +1448,11 @@ export default function WorkspaceXmlUploadPage() {
   }, []);
 
   async function inspectXmlWithApi(file: File, xmlText: string) {
+    setXmlInput(xmlText);
+    setUblParsePreview(null);
+    setUblImportResult(null);
+    setUblParseMessage("");
+
     const response = await fetch("/api/local/xml/inspect", {
       method: "POST",
       headers: {
@@ -1070,6 +1543,120 @@ export default function WorkspaceXmlUploadPage() {
       return nextRecords.slice(0, 250);
     });
     setUploadLoadMessage("");
+  }
+
+  async function parseUblWithApi() {
+    const xml = xmlInput.trim();
+
+    setErrorMessage("");
+    setUblParseMessage("");
+    setUblImportResult(null);
+
+    if (!xml) {
+      setUblParseMessage(
+        "Paste UBL XML or upload an XML file before running canonical preview parsing."
+      );
+      return;
+    }
+
+    if (new TextEncoder().encode(xml).byteLength > MAX_XML_FILE_SIZE_BYTES) {
+      setUblParseMessage("UBL XML must be 2 MB or smaller for this preview.");
+      return;
+    }
+
+    setIsParsingUbl(true);
+
+    try {
+      const response = await fetch("/api/local/invoices/parse/ubl", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ xml })
+      });
+
+      const responseData = await readResponseBody(response);
+      const preview = normalizeUblParsePreview(responseData);
+
+      setUblParsePreview(preview);
+
+      if (!response.ok && preview.findings.length === 0) {
+        setUblParseMessage(
+          getApiErrorMessage(responseData, "The UBL parse request failed.")
+        );
+        return;
+      }
+
+      setUblParseMessage(
+        preview.parsed
+          ? "Parsed UBL XML into a canonical invoice preview."
+          : "The UBL parser returned review findings and did not build a canonical invoice preview."
+      );
+    } catch {
+      setUblParseMessage(
+        "Could not parse UBL XML. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsParsingUbl(false);
+    }
+  }
+
+  async function importUblDraftWithApi() {
+    const xml = xmlInput.trim();
+
+    setErrorMessage("");
+    setUblImportResult(null);
+
+    if (!xml) {
+      setUblParseMessage(
+        "Paste UBL XML or upload an XML file before creating an editable draft."
+      );
+      return;
+    }
+
+    if (new TextEncoder().encode(xml).byteLength > MAX_XML_FILE_SIZE_BYTES) {
+      setUblParseMessage("UBL XML must be 2 MB or smaller for draft import.");
+      return;
+    }
+
+    setIsImportingUblDraft(true);
+
+    try {
+      const response = await fetch("/api/local/invoices/import/ubl", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ xml })
+      });
+
+      const responseData = await readResponseBody(response);
+      const result = normalizeUblImportResult(responseData);
+
+      setUblImportResult(result);
+
+      if (!response.ok || !result.created || !result.redirectPath) {
+        setUblParseMessage(
+          result.reason ||
+            getApiErrorMessage(responseData, "The UBL import request failed.")
+        );
+        return;
+      }
+
+      setUblParseMessage(
+        "Imported draft created from parsed UBL XML. Redirecting to the editable draft."
+      );
+
+      window.setTimeout(() => {
+        router.push(result.redirectPath);
+      }, 650);
+    } catch {
+      setUblParseMessage(
+        "Could not create an editable draft. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsImportingUblDraft(false);
+    }
   }
 
   async function openSavedUploadReport(
@@ -1177,6 +1764,9 @@ export default function WorkspaceXmlUploadPage() {
 
     setErrorMessage("");
     setAnalysis(null);
+    setUblParsePreview(null);
+    setUblImportResult(null);
+    setUblParseMessage("");
 
     if (!file) {
       return;
@@ -1204,6 +1794,7 @@ export default function WorkspaceXmlUploadPage() {
 
     try {
       const xmlText = await file.text();
+      setXmlInput(xmlText);
       await inspectXmlWithApi(file, xmlText);
     } catch (error) {
       setErrorMessage(
@@ -1222,11 +1813,35 @@ export default function WorkspaceXmlUploadPage() {
     setErrorMessage("");
   }
 
+  function clearUblParsePreview() {
+    setUblParsePreview(null);
+    setUblImportResult(null);
+    setUblParseMessage("");
+  }
+
   function clearHistoryFilters() {
     setHistorySearchQuery("");
     setReadinessFilter("all");
     setDocumentFilter("all");
   }
+
+  const parsedCanonicalInvoice = ublParsePreview?.canonicalInvoice;
+  const parsedCurrency =
+    parsedCanonicalInvoice?.document.currency ||
+    ublParsePreview?.detected.currency ||
+    "not_detected";
+  const parsedPayableAmount =
+    ublParsePreview?.totals?.totals.payableAmount ||
+    parsedCanonicalInvoice?.totals.payableAmount ||
+    "";
+  const parsedTaxAmount =
+    ublParsePreview?.totals?.totals.taxAmount ||
+    parsedCanonicalInvoice?.totals.taxAmount ||
+    "";
+  const canCreateDraftFromParsedUbl =
+    Boolean(ublParsePreview?.parsed && parsedCanonicalInvoice) &&
+    !isParsingUbl &&
+    !isImportingUblDraft;
 
   return (
     <div className="workspace-page">
@@ -1236,8 +1851,8 @@ export default function WorkspaceXmlUploadPage() {
         <p>
           Upload a local XML file to inspect document structure, key invoice
           fields, totals, tax signals, readiness status, and review findings.
-          Invoice Lantern gives a technical simulation before official submission
-          or professional review.
+          Invoice Lantern gives a technical sandbox preview before professional
+          review or controlled operational testing.
         </p>
       </section>
 
@@ -1317,6 +1932,383 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           </div>
         ) : null}
       </section>
+
+      <section className="developer-console">
+        <div className="developer-console-head">
+          <div>
+            <p>Parsed UBL XML</p>
+            <h3>Canonical invoice preview</h3>
+          </div>
+
+          <div className="workspace-row-actions">
+            <button
+              type="button"
+              onClick={parseUblWithApi}
+              disabled={isParsingUbl || !xmlInput.trim()}
+            >
+              <FileSearch size={16} />
+              {isParsingUbl ? "Parsing..." : "Parse UBL"}
+            </button>
+
+            <button
+              type="button"
+              onClick={importUblDraftWithApi}
+              disabled={!canCreateDraftFromParsedUbl}
+            >
+              <FileInput size={16} />
+              {isImportingUblDraft
+                ? "Creating..."
+                : "Create editable draft"}
+            </button>
+
+            <button
+              type="button"
+              onClick={clearUblParsePreview}
+              disabled={!ublParsePreview && !ublParseMessage}
+            >
+              <X size={16} />
+              Clear parse
+            </button>
+          </div>
+        </div>
+
+        <label className="workspace-xml-input-shell">
+          <span>Paste UBL XML or upload a file above to reuse its XML content.</span>
+          <textarea
+            value={xmlInput}
+            onChange={(event) => {
+              setXmlInput(event.target.value);
+              setUblParsePreview(null);
+              setUblImportResult(null);
+              setUblParseMessage("");
+            }}
+            placeholder="Paste UBL Invoice XML for technical sandbox parsing..."
+            rows={10}
+            spellCheck={false}
+          />
+        </label>
+
+        <div className="alert-item">
+          <span />
+          <p>
+            This preview parses UBL XML into the shared canonical invoice model
+            and runs technical invoice-core validation. It is not official XML
+            validation, Peppol certification, or tax/legal/accounting advice.
+          </p>
+        </div>
+
+        {ublParseMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{ublParseMessage}</p>
+          </div>
+        ) : null}
+
+        {ublImportResult ? (
+          <div className="alert-item">
+            <span />
+            <p>
+              {ublImportResult.created ? (
+                <>
+                  Imported draft created from parsed UBL XML for technical
+                  sandbox import.{" "}
+                  {ublImportResult.redirectPath ? (
+                    <a href={ublImportResult.redirectPath}>
+                      Open imported draft
+                    </a>
+                  ) : null}
+                  . Review all values before using this invoice.
+                </>
+              ) : (
+                <>
+                  Technical sandbox import blocked
+                  {ublImportResult.reason ? `: ${ublImportResult.reason}` : "."}
+                  {ublImportResult.findings.length > 0
+                    ? ` Findings: ${ublImportResult.findings
+                        .map((finding) => finding.code)
+                        .join(", ")}.`
+                    : ""}
+                </>
+              )}{" "}
+              {ublImportResult.disclaimer}
+            </p>
+          </div>
+        ) : null}
+      </section>
+
+      {ublParsePreview ? (
+        <section className="workspace-table-shell">
+          <div className="workspace-table-head">
+            <div>
+              <p>Technical sandbox parsing</p>
+              <h3>Detected UBL metadata</h3>
+            </div>
+
+            <div className="confidence-label">
+              <FileCode2 size={17} />
+              {ublParsePreview.parsed ? "parsed preview" : "review required"}
+            </div>
+          </div>
+
+          <div className="workspace-data-grid">
+            <div
+              className={
+                ublParsePreview.parsed
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+            >
+              <p>Parse status</p>
+              <strong>{ublParsePreview.parsed ? "Parsed" : "Not parsed"}</strong>
+              <span>Canonical preview creation status.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Document type</p>
+              <strong>{formatStatus(ublParsePreview.detected.documentType)}</strong>
+              <span>Detected from XML root.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Root name</p>
+              <strong>{formatDetectedValue(ublParsePreview.detected.rootName)}</strong>
+              <span>Parsed root element.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Invoice number</p>
+              <strong>
+                {formatDetectedValue(ublParsePreview.detected.invoiceNumber)}
+              </strong>
+              <span>UBL document ID.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Issue date</p>
+              <strong>{formatDetectedValue(ublParsePreview.detected.issueDate)}</strong>
+              <span>IssueDate value.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Currency</p>
+              <strong>{formatDetectedValue(ublParsePreview.detected.currency)}</strong>
+              <span>DocumentCurrencyCode.</span>
+            </div>
+
+            <div className="workspace-data-card is-wide">
+              <p>CustomizationID</p>
+              <strong>
+                {formatDetectedValue(ublParsePreview.detected.customizationId)}
+              </strong>
+              <span>Profile context only, not official validation.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>ProfileID</p>
+              <strong>{formatDetectedValue(ublParsePreview.detected.profileId)}</strong>
+              <span>Business-process profile signal.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Seller</p>
+              <strong>{formatDetectedValue(ublParsePreview.detected.sellerName)}</strong>
+              <span>{formatDetectedValue(ublParsePreview.detected.sellerCountry)}</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Buyer</p>
+              <strong>{formatDetectedValue(ublParsePreview.detected.buyerName)}</strong>
+              <span>{formatDetectedValue(ublParsePreview.detected.buyerCountry)}</span>
+            </div>
+
+            <div className="workspace-data-card is-full">
+              <p>Boundary notice</p>
+              <strong>Not official XML validation.</strong>
+              <span>{ublParsePreview.disclaimer}</span>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {parsedCanonicalInvoice ? (
+        <section className="workspace-table-shell">
+          <div className="workspace-table-head">
+            <div>
+              <p>Canonical invoice preview</p>
+              <h3>Parsed parties, totals, and line values</h3>
+            </div>
+
+            <div className="confidence-label">
+              <Calculator size={17} />
+              invoice-core
+            </div>
+          </div>
+
+          <div className="workspace-data-grid">
+            <div className="workspace-data-card">
+              <p>Seller</p>
+              <strong>{parsedCanonicalInvoice.seller.name || "Not detected"}</strong>
+              <span>
+                {parsedCanonicalInvoice.seller.country || "No country"}{" "}
+                {parsedCanonicalInvoice.seller.vatId
+                  ? `- ${parsedCanonicalInvoice.seller.vatId}`
+                  : ""}
+              </span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Buyer</p>
+              <strong>{parsedCanonicalInvoice.buyer.name || "Not detected"}</strong>
+              <span>
+                {parsedCanonicalInvoice.buyer.country || "No country"}{" "}
+                {parsedCanonicalInvoice.buyer.vatId
+                  ? `- ${parsedCanonicalInvoice.buyer.vatId}`
+                  : ""}
+              </span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Document</p>
+              <strong>
+                {parsedCanonicalInvoice.document.number || "Not detected"}
+              </strong>
+              <span>
+                {parsedCanonicalInvoice.document.issueDate || "No issue date"} /{" "}
+                {parsedCanonicalInvoice.document.dueDate || "No due date"}
+              </span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Lines</p>
+              <strong>{parsedCanonicalInvoice.lines.length}</strong>
+              <span>InvoiceLine blocks normalized into canonical lines.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Payable amount</p>
+              <strong>
+                {formatMoneyValue(
+                  parsedCurrency,
+                  parsedPayableAmount || "not_detected"
+                )}
+              </strong>
+              <span>Calculated when line data is sufficient.</span>
+            </div>
+
+            <div className="workspace-data-card">
+              <p>Tax total</p>
+              <strong>
+                {formatMoneyValue(parsedCurrency, parsedTaxAmount || "not_detected")}
+              </strong>
+              <span>Parsed or calculated VAT total.</span>
+            </div>
+          </div>
+
+          <div className="workspace-line-grid">
+            {parsedCanonicalInvoice.lines.length === 0 ? (
+              <div className="workspace-line-row">
+                <strong>No invoice lines parsed</strong>
+                <span>The parser did not invent line values.</span>
+              </div>
+            ) : (
+              parsedCanonicalInvoice.lines.map((line, index) => (
+                <div
+                  className="workspace-line-row"
+                  key={`${line.id || "line"}-${index}`}
+                >
+                  <div>
+                    <strong>{line.id || `Line ${index + 1}`}</strong>
+                    <span>{line.description || "No description parsed"}</span>
+                  </div>
+
+                  <span>
+                    Qty {line.quantity || "not detected"} {line.unitCode}
+                  </span>
+
+                  <span>
+                    Unit {formatMoneyValue(parsedCurrency, line.unitPrice)}
+                  </span>
+
+                  <span>
+                    Net{" "}
+                    {formatMoneyValue(
+                      parsedCurrency,
+                      line.netAmount || "not_detected"
+                    )}
+                  </span>
+
+                  <span>
+                    VAT {line.vatCategory || "not detected"}{" "}
+                    {line.vatRate ? `${line.vatRate}%` : ""}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {ublParsePreview ? (
+        <section className="findings-console">
+          <div className="findings-console-head">
+            <div>
+              <p>Parsed UBL XML findings</p>
+              <h3>Canonical preview validation signals</h3>
+            </div>
+
+            <div className="confidence-label">
+              <ShieldAlert size={17} />
+              {ublParsePreview.findings.length} findings
+            </div>
+          </div>
+
+          <div className="finding-console-list">
+            {ublParsePreview.findings.length === 0 ? (
+              <div className="finding-console-row">
+                <BadgeCheck size={18} />
+
+                <div>
+                  <strong>NO_PARSE_FINDINGS_RETURNED</strong>
+                  <p>The UBL parser did not return findings for this preview.</p>
+                </div>
+
+                <span>info</span>
+              </div>
+            ) : (
+              ublParsePreview.findings.map((finding) => (
+                <div
+                  className="finding-console-row"
+                  key={`${finding.code}-${finding.fieldPath}`}
+                >
+                  {finding.severity === "info" ? (
+                    <BadgeCheck size={18} />
+                  ) : (
+                    <AlertTriangle size={18} />
+                  )}
+
+                  <div>
+                    <strong>{finding.code}</strong>
+                    <p>{finding.message}</p>
+                    {finding.fixSuggestion ? <p>{finding.fixSuggestion}</p> : null}
+                    <p>
+                      Category: {finding.category}. Field: {finding.fieldPath}.
+                      Legal confidence: {formatStatus(finding.legalConfidence)}.
+                    </p>
+                    {finding.ruleSetCode || finding.ruleVersion ? (
+                      <p>
+                        Rule: {finding.ruleSetCode || "unversioned"}{" "}
+                        {finding.ruleVersion || ""}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <span>{finding.severity}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
 
       {analysis ? (
         <section className="workspace-table-shell">

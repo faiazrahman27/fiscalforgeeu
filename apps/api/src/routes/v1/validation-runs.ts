@@ -12,6 +12,11 @@ import {
   type AuthenticatedValidationRunContext,
   type ValidationRunRecord
 } from "../../repositories/validation-run-repository.js";
+import {
+  buildValidationReportSummary,
+  type ValidationReportFindingCounts,
+  type ValidationReportSummary
+} from "../../services/validation-report-summary.js";
 import { formatZodError } from "../../utils/zod-error.js";
 
 type ValidationRunSummary = {
@@ -19,6 +24,7 @@ type ValidationRunSummary = {
   invoiceNumber: string;
   buyer: string;
   seller: string;
+  issueDate: string;
   createdAt: string;
   technicalStatus: string;
   standardStatus: string;
@@ -27,8 +33,11 @@ type ValidationRunSummary = {
   confidence: string;
   profile: string;
   currency: string;
+  overallStatus: string;
+  findingCounts: ValidationReportFindingCounts;
   findingsCount: number;
-  payableAmount: number;
+  payableAmount: string;
+  reportLabel: string;
 };
 
 const validationRunParamsSchema = z
@@ -69,11 +78,14 @@ function sendStorageError(reply: FastifyReply, error: unknown) {
 function buildValidationRunSummary(
   run: ValidationRunRecord
 ): ValidationRunSummary {
+  const reportSummary = buildValidationReportSummary(run);
+
   return {
     id: run.id,
     invoiceNumber: run.invoiceNumber,
     buyer: run.buyer,
     seller: run.seller,
+    issueDate: run.issueDate ?? "",
     createdAt: run.createdAt,
     technicalStatus: run.technicalStatus,
     standardStatus: run.standardStatus,
@@ -82,8 +94,21 @@ function buildValidationRunSummary(
     confidence: run.confidence,
     profile: run.profile,
     currency: run.currency,
+    overallStatus: reportSummary.overallStatus,
+    findingCounts: reportSummary.findingCounts,
     findingsCount: run.findings.length,
-    payableAmount: run.totals.payableAmount
+    payableAmount: run.totals.payableAmount,
+    reportLabel: "sandbox report"
+  };
+}
+
+function buildValidationRunDetailResponse(run: ValidationRunRecord): {
+  record: ValidationRunRecord;
+  reportSummary: ValidationReportSummary;
+} {
+  return {
+    record: run,
+    reportSummary: buildValidationReportSummary(run)
   };
 }
 
@@ -148,9 +173,7 @@ export async function validationRunRoutes(app: FastifyInstance) {
           });
         }
 
-        return {
-          record: run
-        };
+        return buildValidationRunDetailResponse(run);
       } catch (error) {
         return sendStorageError(reply, error);
       }

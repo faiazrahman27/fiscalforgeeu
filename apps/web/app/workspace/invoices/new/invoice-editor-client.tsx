@@ -8,9 +8,11 @@ import {
   BadgeCheck,
   Calculator,
   Code2,
+  Download,
   FileCode2,
   FileText,
   Globe2,
+  History,
   Save,
   ShieldAlert,
   Sparkles,
@@ -41,8 +43,16 @@ type ValidationPreviewItem = {
 type FindingPreview = {
   code: string;
   message: string;
-  severity: "info" | "warning" | "fatal";
+  severity: "info" | "warning" | "fatal" | "blocked";
 };
+
+type LegalConfidence =
+  | "technical"
+  | "standard_based"
+  | "official_source_derived"
+  | "educational_simulation"
+  | "professional_review_required"
+  | "review_required";
 
 type LocalValidationReport = {
   id: string;
@@ -62,6 +72,7 @@ type ApiValidationRequestPayload = {
     number: string;
     currency: string;
     issueDate?: string;
+    dueDate?: string;
   };
   seller: {
     name: string;
@@ -75,27 +86,33 @@ type ApiValidationRequestPayload = {
   };
   lines: {
     description: string;
-    quantity: number;
-    unitPrice: number;
+    quantity: string;
+    unitCode?: string;
+    unitPrice: string;
     vatCategory: string;
-    vatRate: number;
+    vatRate: string;
+    netAmount?: string;
   }[];
+  totals?: InvoiceTotalsDraft;
 };
 
 type ApiValidationTotals = {
-  lineExtensionAmount: number;
-  taxExclusiveAmount: number;
-  taxAmount: number;
-  taxInclusiveAmount: number;
-  payableAmount: number;
+  lineExtensionAmount: number | string;
+  taxExclusiveAmount: number | string;
+  taxAmount: number | string;
+  taxInclusiveAmount: number | string;
+  payableAmount: number | string;
 };
 
 type ApiValidationFinding = {
   code: string;
-  severity: "info" | "warning" | "fatal";
-  field: string;
+  severity: "info" | "warning" | "fatal" | "blocked";
+  field?: string;
+  fieldPath?: string;
+  category?: string;
   message: string;
-  legalConfidence: "technical" | "educational_simulation" | "review_required";
+  fixSuggestion?: string;
+  legalConfidence: LegalConfidence;
 };
 
 type ApiValidationResponse = {
@@ -127,6 +144,72 @@ type ApiDraftSaveResponse = {
     currency: string;
     updatedAt: string;
   };
+};
+
+type ApiUblExportResponse = {
+  xml?: string;
+  metadata?: {
+    exportId?: string;
+    contentType?: string;
+    filename?: string;
+    suggestedFilename?: string;
+    readinessLabel?: string;
+    xmlSha256?: string;
+    xmlSizeBytes?: number;
+    createdAt?: string;
+    status?: string;
+    profile?: string;
+  };
+  exportId?: string;
+  filename?: string;
+  contentType?: string;
+  xmlSha256?: string;
+  xmlSizeBytes?: number;
+  createdAt?: string;
+  status?: string;
+  profile?: string;
+  readinessStatus?: "blocked" | "generated_with_warnings" | "generated";
+  totals?: ApiValidationTotals;
+  findings?: ApiValidationFinding[];
+  disclaimer?: string;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+};
+
+type UblExportResult = {
+  xml: string;
+  readinessStatus: "blocked" | "generated_with_warnings" | "generated" | "error";
+  metadata: {
+    contentType: string;
+    suggestedFilename: string;
+    readinessLabel: string;
+  };
+  exportId: string;
+  filename: string;
+  xmlSha256: string;
+  xmlSizeBytes: number;
+  status: string;
+  profile: string;
+  findings: FindingPreview[];
+  disclaimer: string;
+  generatedAt: string;
+};
+
+type UblExportHistoryItem = {
+  id: string;
+  invoiceDraftId: string | null;
+  validationRunId: string | null;
+  exportType: string;
+  format: string;
+  profile: string;
+  filename: string;
+  contentType: string;
+  xmlSha256: string;
+  xmlSizeBytes: number;
+  status: string;
+  createdAt: string;
 };
 
 function createBlankParty(): InvoicePartyDraft {
@@ -199,13 +282,78 @@ export function InvoiceEditorClient({
   const [saveMessage, setSaveMessage] = useState("");
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isRunningValidation, setIsRunningValidation] = useState(false);
+  const [isExportingUbl, setIsExportingUbl] = useState(false);
   const [validationReport, setValidationReport] =
     useState<LocalValidationReport | null>(null);
+  const [ublExportResult, setUblExportResult] =
+    useState<UblExportResult | null>(null);
+  const [ublExportHistory, setUblExportHistory] = useState<
+    UblExportHistoryItem[]
+  >([]);
+  const [isLoadingUblExportHistory, setIsLoadingUblExportHistory] =
+    useState(false);
+  const [ublExportHistoryMessage, setUblExportHistoryMessage] = useState("");
 
   useEffect(() => {
     setDraft(initialDraft ?? createEmptyInvoiceDraft());
     setHasLoadedDraft(true);
   }, [initialDraft, loadStoredDraft]);
+
+  useEffect(() => {
+    setUblExportResult(null);
+  }, [draft]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadUblExportHistory() {
+      setIsLoadingUblExportHistory(true);
+      setUblExportHistoryMessage("");
+
+      try {
+        const response = await fetch(buildUblExportHistoryUrl(draftId), {
+          method: "GET",
+          cache: "no-store"
+        });
+
+        const responseData: unknown = await response.json();
+
+        if (!response.ok) {
+          if (isMounted) {
+            setUblExportHistory([]);
+            setUblExportHistoryMessage("Export records could not be loaded.");
+          }
+
+          return;
+        }
+
+        const records = getUblExportHistoryRecords(responseData)
+          .map((record) => normalizeUblExportHistoryItem(record))
+          .filter((record): record is UblExportHistoryItem => record !== null);
+
+        if (isMounted) {
+          setUblExportHistory(records);
+        }
+      } catch {
+        if (isMounted) {
+          setUblExportHistory([]);
+          setUblExportHistoryMessage(
+            "The local invoice export API is unavailable."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingUblExportHistory(false);
+        }
+      }
+    }
+
+    loadUblExportHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [draftId]);
 
   const recalculatedTotals = useMemo(
     () => calculateTotals(draft.lines),
@@ -432,6 +580,84 @@ export function InvoiceEditorClient({
     }
   }
 
+  async function runUblExport() {
+    setIsExportingUbl(true);
+
+    try {
+      const exportPayload = buildUblExportRequestPayload({
+        draft,
+        totals: recalculatedTotals,
+        draftId,
+        validationReport
+      });
+
+      const response = await fetch("/api/local/invoices/export/ubl", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(exportPayload)
+      });
+
+      const responseData: unknown = await response.json();
+      const exportData = responseData as ApiUblExportResponse;
+
+      if (!response.ok && !Array.isArray(exportData.findings)) {
+        const apiError = extractApiError(responseData);
+
+        setUblExportResult(
+          buildUblErrorResult({
+            code: apiError.code,
+            message: apiError.message
+          })
+        );
+
+        return;
+      }
+
+      setUblExportResult(mapUblExportResponse(exportData));
+
+      const exportHistoryRecord = mapUblExportResponseToHistoryItem(exportData);
+
+      if (exportHistoryRecord) {
+        setUblExportHistory((currentRecords) => [
+          exportHistoryRecord,
+          ...currentRecords.filter((record) => record.id !== exportHistoryRecord.id)
+        ].slice(0, 5));
+      }
+    } catch {
+      setUblExportResult(
+        buildUblErrorResult({
+          code: "API_UNAVAILABLE",
+          message:
+            "The local API could not be reached for UBL export readiness. Make sure apps/api and apps/web are both running."
+        })
+      );
+    } finally {
+      setIsExportingUbl(false);
+    }
+  }
+
+  function downloadGeneratedUblXml() {
+    if (!ublExportResult?.xml) {
+      return;
+    }
+
+    const blob = new Blob([ublExportResult.xml], {
+      type: ublExportResult.metadata.contentType
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = objectUrl;
+    anchor.download = ublExportResult.metadata.suggestedFilename;
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
   return (
     <div className={styles.page}>
       <div className={styles.editorTop}>
@@ -471,8 +697,8 @@ export function InvoiceEditorClient({
           <h2>Build a structured invoice from canonical data, not pixels.</h2>
           <p>
             This editor saves drafts through the local Next.js API proxy into the
-            dedicated Invoice Lantern API service. Validation requests also run through
-            the same API boundary.
+            dedicated Invoice Lantern API service. Validation and generated UBL XML
+            now run through that API boundary; browser totals are draft assistance only.
           </p>
         </div>
 
@@ -796,7 +1022,7 @@ export function InvoiceEditorClient({
 
               <div>
                 <p>Totals</p>
-                <h3>Calculated summary</h3>
+                <h3>Draft calculation aid</h3>
               </div>
             </div>
 
@@ -834,7 +1060,7 @@ export function InvoiceEditorClient({
 
               <div>
                 <p>Findings</p>
-                <h3>Local checks</h3>
+                <h3>Local draft hints</h3>
               </div>
             </div>
 
@@ -861,19 +1087,127 @@ export function InvoiceEditorClient({
               <FileCode2 size={20} />
 
               <div>
-                <p>UBL preview</p>
-                <h3>Export shape</h3>
+                <p>UBL export readiness</p>
+                <h3>Generated UBL XML</h3>
               </div>
             </div>
 
             <pre className={styles.xmlPreview}>
-              {buildUblPreview(draft, recalculatedTotals)}
+              {ublExportResult?.xml || buildUblExportPlaceholder(ublExportResult)}
             </pre>
 
-            <button type="button" className={styles.fullWidthButton} disabled>
+            <button
+              type="button"
+              className={styles.fullWidthButton}
+              onClick={runUblExport}
+              disabled={isExportingUbl}
+            >
               <Code2 size={16} />
-              UBL export engine planned
+              {isExportingUbl ? "Generating..." : "Generate UBL XML"}
             </button>
+
+            {ublExportResult?.xml ? (
+              <button
+                type="button"
+                className={styles.fullWidthButton}
+                onClick={downloadGeneratedUblXml}
+              >
+                <Download size={16} />
+                Download XML
+              </button>
+            ) : null}
+
+            {ublExportResult ? (
+              <div className={styles.ublExportMeta}>
+                <span>{ublExportResult.readinessStatus.replaceAll("_", " ")}</span>
+                {ublExportResult.exportId ? (
+                  <div className={styles.ublExportRecordMeta}>
+                    <p>Export record</p>
+                    <strong>{ublExportResult.filename}</strong>
+                    <span>{formatBytes(ublExportResult.xmlSizeBytes)}</span>
+                    <code>{shortHash(ublExportResult.xmlSha256)}</code>
+                  </div>
+                ) : null}
+                <p>{ublExportResult.disclaimer}</p>
+                {ublExportResult.findings.length > 0 ? (
+                  <div className={styles.findingList}>
+                    {ublExportResult.findings.map((finding, index) => (
+                      <div
+                        className={styles.findingItem}
+                        key={`${finding.code}-${index}`}
+                      >
+                        <span>{finding.severity}</span>
+                        <strong>{finding.code}</strong>
+                        <p>{finding.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className={styles.sidePanel}>
+            <div className={styles.sidePanelHead}>
+              <History size={20} />
+
+              <div>
+                <p>Export records</p>
+                <h3>UBL export history</h3>
+              </div>
+            </div>
+
+            <p className={styles.exportHistoryNote}>
+              Generated UBL XML metadata only. Not official validation or
+              certification.
+            </p>
+
+            <div className={styles.exportHistoryList}>
+              {isLoadingUblExportHistory ? (
+                <div className={styles.exportHistoryItem}>
+                  <strong>Loading export records</strong>
+                  <span>Reading recent generated UBL XML metadata.</span>
+                </div>
+              ) : ublExportHistoryMessage ? (
+                <div className={styles.exportHistoryItem}>
+                  <strong>Export history unavailable</strong>
+                  <span>{ublExportHistoryMessage}</span>
+                </div>
+              ) : ublExportHistory.length === 0 ? (
+                <div className={styles.exportHistoryItem}>
+                  <strong>No export records yet</strong>
+                  <span>Generate UBL XML to create the first metadata record.</span>
+                </div>
+              ) : (
+                ublExportHistory.map((record) => (
+                  <div className={styles.exportHistoryItem} key={record.id}>
+                    <div>
+                      <strong>{record.filename}</strong>
+                      <span>{formatDateTime(record.createdAt)}</span>
+                    </div>
+
+                    <dl className={styles.exportHistoryMeta}>
+                      <div>
+                        <dt>Size</dt>
+                        <dd>{formatBytes(record.xmlSizeBytes)}</dd>
+                      </div>
+                      <div>
+                        <dt>SHA-256</dt>
+                        <dd>{shortHash(record.xmlSha256)}</dd>
+                      </div>
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{record.status}</dd>
+                      </div>
+                      <div>
+                        <dt>Profile</dt>
+                        <dd>{record.profile}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </aside>
       </section>
@@ -1149,7 +1483,7 @@ function buildFindings(
 
   if (isCrossBorder && !draft.buyer.vatId.trim()) {
     findings.push({
-      code: "BUYER_VAT_ID_REQUIRED",
+      code: "BUYER_VAT_ID_REQUIRED_FOR_CROSS_BORDER_SIMULATION",
       severity: "fatal",
       message: "Buyer VAT ID is required for this cross-border B2B simulation."
     });
@@ -1224,6 +1558,59 @@ function buildDraftSavePayload(
   };
 }
 
+function getPersistedValidationRunId(report: LocalValidationReport | null) {
+  const id = report?.id.trim() ?? "";
+
+  return id && !id.startsWith("api_error_") ? id : "";
+}
+
+function buildUblExportRequestPayload({
+  draft,
+  totals,
+  draftId,
+  validationReport
+}: {
+  draft: InvoiceEditorDraft;
+  totals: InvoiceTotalsDraft;
+  draftId?: string;
+  validationReport: LocalValidationReport | null;
+}) {
+  const payload: {
+    invoice: ReturnType<typeof buildDraftSavePayload>;
+    invoiceDraftId?: string;
+    validationRunId?: string;
+  } = {
+    invoice: buildDraftSavePayload(draft, totals)
+  };
+
+  const safeDraftId = draftId?.trim();
+  const validationRunId = getPersistedValidationRunId(validationReport);
+
+  if (safeDraftId) {
+    payload.invoiceDraftId = safeDraftId;
+  }
+
+  if (validationRunId) {
+    payload.validationRunId = validationRunId;
+  }
+
+  return payload;
+}
+
+function buildUblExportHistoryUrl(draftId?: string) {
+  const searchParams = new URLSearchParams({
+    limit: "5"
+  });
+
+  const safeDraftId = draftId?.trim();
+
+  if (safeDraftId) {
+    searchParams.set("invoiceDraftId", safeDraftId);
+  }
+
+  return `/api/local/invoices/exports?${searchParams.toString()}`;
+}
+
 function buildApiValidationPayload(
   draft: InvoiceEditorDraft
 ): ApiValidationRequestPayload {
@@ -1232,7 +1619,8 @@ function buildApiValidationPayload(
       type: draft.document.invoiceType,
       number: draft.document.number,
       currency: draft.document.currency,
-      issueDate: draft.document.issueDate
+      issueDate: draft.document.issueDate,
+      dueDate: draft.document.dueDate
     },
     seller: {
       name: draft.seller.name,
@@ -1246,10 +1634,12 @@ function buildApiValidationPayload(
     },
     lines: draft.lines.map((line) => ({
       description: line.description,
-      quantity: toDecimalNumber(line.quantity),
-      unitPrice: toDecimalNumber(line.unitPrice),
+      quantity: normalizeDecimalForApi(line.quantity),
+      unitCode: line.unitCode,
+      unitPrice: normalizeDecimalForApi(line.unitPrice),
       vatCategory: line.vatCategory,
-      vatRate: toDecimalNumber(line.vatRate)
+      vatRate: normalizeDecimalForApi(line.vatRate),
+      netAmount: normalizeDecimalForApi(line.netAmount)
     }))
   };
 }
@@ -1319,20 +1709,26 @@ function mapApiTotals(
   }
 
   return {
-    lineExtensionAmount: toMoney(totals.lineExtensionAmount),
-    taxExclusiveAmount: toMoney(totals.taxExclusiveAmount),
-    taxAmount: toMoney(totals.taxAmount),
-    taxInclusiveAmount: toMoney(totals.taxInclusiveAmount),
-    payableAmount: toMoney(totals.payableAmount)
+    lineExtensionAmount: toMoneyString(totals.lineExtensionAmount),
+    taxExclusiveAmount: toMoneyString(totals.taxExclusiveAmount),
+    taxAmount: toMoneyString(totals.taxAmount),
+    taxInclusiveAmount: toMoneyString(totals.taxInclusiveAmount),
+    payableAmount: toMoneyString(totals.payableAmount)
   };
 }
 
-function toMoney(value: number) {
-  if (!Number.isFinite(value)) {
-    return "0.00";
+function toMoneyString(value: number | string) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toFixed(2) : "0.00";
   }
 
-  return value.toFixed(2);
+  return value.trim().length > 0 ? value.trim() : "0.00";
+}
+
+function normalizeDecimalForApi(value: string) {
+  const normalized = value.trim().replace(",", ".");
+
+  return normalized || "0";
 }
 
 function cleanDecimalInput(value: string) {
@@ -1376,6 +1772,231 @@ function buildApiErrorReport({
     disclaimer:
       "The local API validation request did not complete successfully. This is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."
   };
+}
+
+function mapApiFinding(finding: ApiValidationFinding): FindingPreview {
+  return {
+    code: finding.code,
+    severity: finding.severity,
+    message: finding.message
+  };
+}
+
+function getNullableStringField(source: Record<string, unknown>, key: string) {
+  const value = source[key];
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function getNumberField(
+  source: Record<string, unknown>,
+  key: string,
+  fallback = 0
+) {
+  const value = source[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function getUblExportHistoryRecords(data: unknown) {
+  if (!isPlainObject(data) || !Array.isArray(data.records)) {
+    return [];
+  }
+
+  return data.records;
+}
+
+function normalizeUblExportHistoryItem(
+  value: unknown
+): UblExportHistoryItem | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = getStringField(value, "id");
+  const filename = getStringField(value, "filename");
+  const xmlSha256 = getStringField(value, "xmlSha256");
+  const createdAt = getStringField(value, "createdAt");
+
+  if (!id || !filename || !xmlSha256 || !createdAt) {
+    return null;
+  }
+
+  return {
+    id,
+    invoiceDraftId: getNullableStringField(value, "invoiceDraftId"),
+    validationRunId: getNullableStringField(value, "validationRunId"),
+    exportType: getStringField(value, "exportType") || "ubl_invoice",
+    format: getStringField(value, "format") || "xml",
+    profile: getStringField(value, "profile") || "UBL export readiness",
+    filename,
+    contentType:
+      getStringField(value, "contentType") || "application/xml; charset=utf-8",
+    xmlSha256,
+    xmlSizeBytes: getNumberField(value, "xmlSizeBytes"),
+    status: getStringField(value, "status") || "generated",
+    createdAt
+  };
+}
+
+function mapUblExportResponseToHistoryItem(
+  response: ApiUblExportResponse
+): UblExportHistoryItem | null {
+  const metadata = response.metadata ?? {};
+  const exportId = response.exportId ?? metadata.exportId ?? "";
+
+  if (!exportId) {
+    return null;
+  }
+
+  return normalizeUblExportHistoryItem({
+    id: exportId,
+    invoiceDraftId: null,
+    validationRunId: null,
+    exportType: "ubl_invoice",
+    format: "xml",
+    profile: response.profile ?? metadata.profile ?? "UBL export readiness",
+    filename:
+      response.filename ??
+      metadata.filename ??
+      metadata.suggestedFilename ??
+      "invoice-lantern-ubl.xml",
+    contentType:
+      response.contentType ??
+      metadata.contentType ??
+      "application/xml; charset=utf-8",
+    xmlSha256: response.xmlSha256 ?? metadata.xmlSha256 ?? "",
+    xmlSizeBytes: response.xmlSizeBytes ?? metadata.xmlSizeBytes ?? 0,
+    status: response.status ?? metadata.status ?? "generated",
+    createdAt: response.createdAt ?? metadata.createdAt ?? new Date().toISOString()
+  });
+}
+
+function mapUblExportResponse(response: ApiUblExportResponse): UblExportResult {
+  const metadata = response.metadata ?? {};
+  const filename =
+    response.filename ??
+    metadata.filename ??
+    metadata.suggestedFilename ??
+    "invoice-lantern-ubl.xml";
+
+  return {
+    xml: response.xml ?? "",
+    readinessStatus: response.readinessStatus ?? "error",
+    metadata: {
+      contentType:
+        response.contentType ??
+        metadata.contentType ??
+        "application/xml; charset=utf-8",
+      suggestedFilename: metadata.suggestedFilename ?? filename,
+      readinessLabel: metadata.readinessLabel ?? "UBL export readiness"
+    },
+    exportId: response.exportId ?? metadata.exportId ?? "",
+    filename,
+    xmlSha256: response.xmlSha256 ?? metadata.xmlSha256 ?? "",
+    xmlSizeBytes: response.xmlSizeBytes ?? metadata.xmlSizeBytes ?? 0,
+    status: response.status ?? metadata.status ?? "",
+    profile: response.profile ?? metadata.profile ?? "",
+    findings: Array.isArray(response.findings)
+      ? response.findings.map(mapApiFinding)
+      : [],
+    disclaimer:
+      response.disclaimer ??
+      "This generated UBL XML is not official validation, legal, tax, or accounting advice.",
+    generatedAt: response.createdAt ?? metadata.createdAt ?? new Date().toISOString()
+  };
+}
+
+function buildUblErrorResult({
+  code,
+  message
+}: {
+  code: string;
+  message: string;
+}): UblExportResult {
+  return {
+    xml: "",
+    readinessStatus: "error",
+    metadata: {
+      contentType: "application/xml; charset=utf-8",
+      suggestedFilename: "invoice-lantern-ubl.xml",
+      readinessLabel: "UBL export readiness"
+    },
+    exportId: "",
+    filename: "invoice-lantern-ubl.xml",
+    xmlSha256: "",
+    xmlSizeBytes: 0,
+    status: "failed",
+    profile: "UBL export readiness",
+    findings: [
+      {
+        code,
+        severity: "fatal",
+        message
+      }
+    ],
+    disclaimer:
+      "UBL export readiness did not complete. This is not official validation, legal, tax, or accounting advice.",
+    generatedAt: new Date().toISOString()
+  };
+}
+
+function buildUblExportPlaceholder(result: UblExportResult | null) {
+  if (result?.readinessStatus === "blocked") {
+    return [
+      "UBL export readiness is blocked by canonical invoice findings.",
+      "No XML was generated.",
+      "Run API validation or review the findings below."
+    ].join("\n");
+  }
+
+  if (result?.readinessStatus === "error") {
+    return [
+      "Generated UBL XML is unavailable because the export request failed.",
+      "Review the API finding below."
+    ].join("\n");
+  }
+
+  return [
+    "Generated UBL XML will appear here after the API export endpoint runs.",
+    "Client-side totals are only a draft aid.",
+    "This is not official validation, legal, tax, or accounting advice."
+  ].join("\n");
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B";
+  }
+
+  if (value < 1024) {
+    return `${value} B`;
+  }
+
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function shortHash(value: string) {
+  return value.trim().length >= 12 ? value.trim().slice(0, 12) : value || "n/a";
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -1429,42 +2050,4 @@ function extractApiError(data: unknown) {
     code,
     message: detailText ? `${message} ${detailText}` : message
   };
-}
-
-function buildUblPreview(draft: InvoiceEditorDraft, totals: InvoiceTotalsDraft) {
-  return `<Invoice>
-  <ID>${escapeXml(draft.document.number)}</ID>
-  <IssueDate>${escapeXml(draft.document.issueDate)}</IssueDate>
-  <DueDate>${escapeXml(draft.document.dueDate)}</DueDate>
-  <DocumentCurrencyCode>${escapeXml(draft.document.currency)}</DocumentCurrencyCode>
-  <BuyerReference>${escapeXml(draft.document.buyerReference)}</BuyerReference>
-
-  <AccountingSupplierParty>
-    <PartyName>${escapeXml(draft.seller.name)}</PartyName>
-    <CompanyID>${escapeXml(draft.seller.vatId)}</CompanyID>
-    <Country>${escapeXml(draft.seller.country)}</Country>
-  </AccountingSupplierParty>
-
-  <AccountingCustomerParty>
-    <PartyName>${escapeXml(draft.buyer.name)}</PartyName>
-    <CompanyID>${escapeXml(draft.buyer.vatId)}</CompanyID>
-    <Country>${escapeXml(draft.buyer.country)}</Country>
-  </AccountingCustomerParty>
-
-  <LegalMonetaryTotal>
-    <LineExtensionAmount>${totals.lineExtensionAmount}</LineExtensionAmount>
-    <TaxExclusiveAmount>${totals.taxExclusiveAmount}</TaxExclusiveAmount>
-    <TaxInclusiveAmount>${totals.taxInclusiveAmount}</TaxInclusiveAmount>
-    <PayableAmount>${totals.payableAmount}</PayableAmount>
-  </LegalMonetaryTotal>
-</Invoice>`;
-}
-
-function escapeXml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
 }

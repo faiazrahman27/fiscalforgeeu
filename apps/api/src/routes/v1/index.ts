@@ -1,7 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { healthRoutes } from "../health.js";
+import { importUblRoutes } from "./import-ubl.js";
 import { invoiceDraftRoutes } from "./invoice-drafts.js";
+import { invoiceExportRoutes } from "./invoice-exports.js";
+import { parseUblRoutes } from "./parse-ubl.js";
 import { validateInvoiceRoutes } from "./validate-invoice.js";
+import { validationRuleRoutes } from "./validation-rules.js";
 import { validationRunRoutes } from "./validation-runs.js";
 import { workspaceActivityRoutes } from "./workspace-activity.js";
 import { workspaceDeletionRunRoutes } from "./workspace-deletion-runs.js";
@@ -25,8 +29,24 @@ export async function v1Routes(app: FastifyInstance) {
     prefix: "/invoices"
   });
 
+  await app.register(invoiceExportRoutes, {
+    prefix: "/invoices"
+  });
+
+  await app.register(parseUblRoutes, {
+    prefix: "/invoices"
+  });
+
+  await app.register(importUblRoutes, {
+    prefix: "/invoices"
+  });
+
   await app.register(validationRunRoutes, {
     prefix: "/validation-runs"
+  });
+
+  await app.register(validationRuleRoutes, {
+    prefix: "/validation"
   });
 
   await app.register(xmlRoutes, {

@@ -15,7 +15,14 @@ import {
   Trash2
 } from "lucide-react";
 
-type FindingSeverity = "info" | "warning" | "fatal";
+type FindingSeverity = "info" | "warning" | "fatal" | "blocked";
+type LegalConfidence =
+  | "technical"
+  | "standard_based"
+  | "official_source_derived"
+  | "educational_simulation"
+  | "professional_review_required"
+  | "review_required";
 
 type ValidationLayerIconKey = "schema" | "calculation" | "ubl" | "legal";
 
@@ -29,24 +36,33 @@ type ValidationLayerCard = {
 type ValidationFinding = {
   code: string;
   severity: FindingSeverity;
+  category?: string;
   field?: string;
+  fieldPath?: string;
   message: string;
-  legalConfidence?: "technical" | "educational_simulation" | "review_required";
+  fixSuggestion?: string;
+  legalConfidence?: LegalConfidence;
+  ruleSetCode?: string;
+  ruleVersion?: string;
+  sourceLabels?: string[];
 };
 
 type ValidationTotals = {
-  lineExtensionAmount: number;
-  taxExclusiveAmount: number;
-  taxAmount: number;
-  taxInclusiveAmount: number;
-  payableAmount: number;
+  lineExtensionAmount: number | string;
+  taxExclusiveAmount: number | string;
+  taxAmount: number | string;
+  taxInclusiveAmount: number | string;
+  payableAmount: number | string;
 };
+
+type ValidationReportFindingCounts = Record<FindingSeverity, number>;
 
 type ValidationRunSummary = {
   id: string;
   invoiceNumber: string;
   buyer: string;
   seller: string;
+  issueDate: string;
   createdAt: string;
   technicalStatus: string;
   standardStatus: string;
@@ -55,8 +71,11 @@ type ValidationRunSummary = {
   confidence: string;
   profile: string;
   currency: string;
+  overallStatus: string;
+  findingCounts: ValidationReportFindingCounts;
   findingsCount: number;
-  payableAmount: number;
+  payableAmount: number | string;
+  reportLabel: string;
 };
 
 type SavedValidationRun = {
@@ -134,8 +153,20 @@ type ReportQueueItem = {
   secondaryStatus: string;
   amountLabel: string;
   findingsCount: number;
+  fatalCount: number;
+  warningCount: number;
+  invoiceNumber: string;
+  currency: string;
+  reportLabel: string;
   href: string;
   canDelete: boolean;
+};
+
+const EMPTY_FINDING_COUNTS: ValidationReportFindingCounts = {
+  info: 0,
+  warning: 0,
+  fatal: 0,
+  blocked: 0
 };
 
 const validationLayerCards: ValidationLayerCard[] = [
@@ -182,6 +213,19 @@ function getValidationIcon(iconKey: ValidationLayerIconKey) {
 
 function formatStatus(status: string) {
   return status.replaceAll("_", " ");
+}
+
+function formatLegalConfidence(value: LegalConfidence | undefined) {
+  const labels: Record<LegalConfidence, string> = {
+    technical: "Technical",
+    standard_based: "Standard-based",
+    official_source_derived: "Source-derived",
+    educational_simulation: "Educational simulation",
+    professional_review_required: "Professional review required",
+    review_required: "Professional review required"
+  };
+
+  return value ? labels[value] : "Not labelled";
 }
 
 function formatDateTime(value: string) {
@@ -246,6 +290,37 @@ function readNumberField(
   return fallback;
 }
 
+function readAmountField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: number | string
+) {
+  const value = record[key];
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+
+  return fallback;
+}
+
+function readFindingCounts(value: unknown): ValidationReportFindingCounts {
+  if (!isPlainObject(value)) {
+    return { ...EMPTY_FINDING_COUNTS };
+  }
+
+  return {
+    info: readNumberField(value, "info", 0),
+    warning: readNumberField(value, "warning", 0),
+    fatal: readNumberField(value, "fatal", 0),
+    blocked: readNumberField(value, "blocked", 0)
+  };
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -302,6 +377,7 @@ function normalizeValidationRunSummary(
     invoiceNumber: readStringField(value, "invoiceNumber", "Untitled invoice"),
     buyer: readStringField(value, "buyer", "Unknown buyer"),
     seller: readStringField(value, "seller", "Unknown seller"),
+    issueDate: readStringField(value, "issueDate", ""),
     createdAt: readStringField(value, "createdAt", new Date().toISOString()),
     technicalStatus: readStringField(value, "technicalStatus", "failed"),
     standardStatus: readStringField(value, "standardStatus", "warning"),
@@ -318,8 +394,15 @@ function normalizeValidationRunSummary(
     confidence: readStringField(value, "confidence", "technical_preview"),
     profile: readStringField(value, "profile", "API_VALIDATION"),
     currency: readStringField(value, "currency", "EUR"),
+    overallStatus: readStringField(
+      value,
+      "overallStatus",
+      readStringField(value, "technicalStatus", "failed")
+    ),
+    findingCounts: readFindingCounts(value.findingCounts),
     findingsCount: readNumberField(value, "findingsCount", 0),
-    payableAmount: readNumberField(value, "payableAmount", 0)
+    payableAmount: readAmountField(value, "payableAmount", 0),
+    reportLabel: readStringField(value, "reportLabel", "sandbox report")
   };
 }
 
@@ -385,28 +468,46 @@ function normalizeFinding(value: unknown): ValidationFinding | null {
   const severity =
     value.severity === "info" ||
     value.severity === "warning" ||
-    value.severity === "fatal"
+      value.severity === "fatal" ||
+      value.severity === "blocked"
       ? value.severity
       : "info";
 
   return {
     code,
     severity,
+    category: readStringField(value, "category", ""),
     field:
       typeof value.field === "string" && value.field.trim().length > 0
         ? value.field.trim()
+        : undefined,
+    fieldPath:
+      typeof value.fieldPath === "string" && value.fieldPath.trim().length > 0
+        ? value.fieldPath.trim()
         : undefined,
     message: readStringField(
       value,
       "message",
       "Validation finding returned without a message."
     ),
+    fixSuggestion: readStringField(value, "fixSuggestion", ""),
     legalConfidence:
       value.legalConfidence === "technical" ||
       value.legalConfidence === "educational_simulation" ||
-      value.legalConfidence === "review_required"
+      value.legalConfidence === "review_required" ||
+      value.legalConfidence === "standard_based" ||
+      value.legalConfidence === "official_source_derived" ||
+      value.legalConfidence === "professional_review_required"
         ? value.legalConfidence
-        : undefined
+        : undefined,
+    ruleSetCode: readStringField(value, "ruleSetCode", ""),
+    ruleVersion: readStringField(value, "ruleVersion", ""),
+    sourceLabels: Array.isArray(value.sourceLabels)
+      ? value.sourceLabels
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : []
   };
 }
 
@@ -422,11 +523,11 @@ function normalizeTotals(value: unknown): ValidationTotals {
   }
 
   return {
-    lineExtensionAmount: readNumberField(value, "lineExtensionAmount", 0),
-    taxExclusiveAmount: readNumberField(value, "taxExclusiveAmount", 0),
-    taxAmount: readNumberField(value, "taxAmount", 0),
-    taxInclusiveAmount: readNumberField(value, "taxInclusiveAmount", 0),
-    payableAmount: readNumberField(value, "payableAmount", 0)
+    lineExtensionAmount: readAmountField(value, "lineExtensionAmount", 0),
+    taxExclusiveAmount: readAmountField(value, "taxExclusiveAmount", 0),
+    taxAmount: readAmountField(value, "taxAmount", 0),
+    taxInclusiveAmount: readAmountField(value, "taxInclusiveAmount", 0),
+    payableAmount: readAmountField(value, "payableAmount", 0)
   };
 }
 
@@ -506,10 +607,15 @@ function buildValidationQueueItem(run: ValidationRunSummary): ReportQueueItem {
     title: run.invoiceNumber,
     subtitle: `${run.seller} to ${run.buyer}`,
     createdAt: run.createdAt,
-    status: run.technicalStatus,
-    secondaryStatus: run.standardStatus,
+    status: run.overallStatus,
+    secondaryStatus: run.technicalStatus,
     amountLabel: formatMoneyValue(run.currency, run.payableAmount),
     findingsCount: run.findingsCount,
+    fatalCount: run.findingCounts.fatal + run.findingCounts.blocked,
+    warningCount: run.findingCounts.warning,
+    invoiceNumber: run.invoiceNumber,
+    currency: run.currency,
+    reportLabel: run.reportLabel,
     href: `/workspace/validation-runs/${encodeURIComponent(run.id)}`,
     canDelete: true
   };
@@ -538,6 +644,11 @@ function buildXmlQueueItem(upload: XmlUploadRecord): ReportQueueItem {
     secondaryStatus: upload.profileStatus,
     amountLabel: formatMoneyValue(upload.currency, payableAmount),
     findingsCount: upload.findingsCount,
+    fatalCount: 0,
+    warningCount: upload.findingsCount,
+    invoiceNumber: invoiceLabel,
+    currency: upload.currency,
+    reportLabel: "XML readiness report",
     href: "/workspace/xml-upload",
     canDelete: true
   };
@@ -861,11 +972,16 @@ export default function WorkspaceValidationRunsPage() {
                   <strong>{item.title}</strong>
                   <span>{item.subtitle}</span>
                   <span>
-                    Source:{" "}
+                    Label: {item.reportLabel}. Source:{" "}
                     {item.sourceType === "xml_readiness"
                       ? "XML readiness report"
                       : "Invoice validation report"}
                     . Findings: {item.findingsCount}. Amount: {item.amountLabel}.
+                  </span>
+                  <span>
+                    Run: {item.id.slice(0, 12)}. Invoice: {item.invoiceNumber}.
+                    Currency: {item.currency}. Fatal/blocking: {item.fatalCount}.
+                    Warnings: {item.warningCount}.
                   </span>
 
                   <div className="workspace-row-actions">
@@ -993,6 +1109,18 @@ export default function WorkspaceValidationRunsPage() {
                 <div>
                   <strong>{item.code}</strong>
                   <p>{item.message}</p>
+                  <p>
+                    Category: {item.category || "Validation"}. Field:{" "}
+                    {item.fieldPath ?? item.field ?? "report"}. Confidence:{" "}
+                    {formatLegalConfidence(item.legalConfidence)}.
+                  </p>
+                  {item.fixSuggestion ? <p>Fix: {item.fixSuggestion}</p> : null}
+                  {item.ruleSetCode || item.ruleVersion ? (
+                    <p>
+                      Rule set: {item.ruleSetCode || "Not linked"}. Version:{" "}
+                      {item.ruleVersion || "not versioned"}.
+                    </p>
+                  ) : null}
                 </div>
 
                 <span>{item.severity}</span>

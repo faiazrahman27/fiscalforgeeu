@@ -1,24 +1,27 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  buildCoreValidationFindings,
+  calculateInvoiceTotals,
+  type LegalConfidence,
+  type ValidationFinding as CoreValidationFinding,
+  type ValidationFindingSeverity
+} from "@invoice-lantern/invoice-core";
 import type { InvoiceValidationRequest } from "../schemas/invoice.js";
 import { getSupabaseUserClient } from "../lib/supabase/server-client.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
-export type FindingSeverity = "info" | "warning" | "fatal";
+export type FindingSeverity = ValidationFindingSeverity;
 
-export type Finding = {
-  code: string;
-  severity: FindingSeverity;
+export type Finding = CoreValidationFinding & {
   field: string;
-  message: string;
-  legalConfidence: "technical" | "educational_simulation" | "review_required";
 };
 
 export type ValidationTotals = {
-  lineExtensionAmount: number;
-  taxExclusiveAmount: number;
-  taxAmount: number;
-  taxInclusiveAmount: number;
-  payableAmount: number;
+  lineExtensionAmount: string;
+  taxExclusiveAmount: string;
+  taxAmount: string;
+  taxInclusiveAmount: string;
+  payableAmount: string;
 };
 
 export type ValidationRunRecord = {
@@ -26,6 +29,7 @@ export type ValidationRunRecord = {
   invoiceNumber: string;
   buyer: string;
   seller: string;
+  issueDate?: string;
   createdAt: string;
   technicalStatus: "passed" | "failed";
   standardStatus: "ready" | "warning";
@@ -82,11 +86,11 @@ type SupabaseValidationRunRow = {
 type ValidationRunTotalsRow = {
   organization_id: string;
   validation_run_id: string;
-  line_extension_amount: number;
-  tax_exclusive_amount: number;
-  tax_amount: number;
-  tax_inclusive_amount: number;
-  payable_amount: number;
+  line_extension_amount: string;
+  tax_exclusive_amount: string;
+  tax_amount: string;
+  tax_inclusive_amount: string;
+  payable_amount: string;
   currency: string;
 };
 
@@ -95,10 +99,10 @@ type ValidationRunFindingRow = {
   validation_run_id: string;
   finding_position: number;
   code: string;
-  severity: FindingSeverity;
+  severity: "info" | "warning" | "fatal";
   field_path: string;
   message: string;
-  legal_confidence: Finding["legalConfidence"];
+  legal_confidence: LegalConfidence;
 };
 
 type WorkspaceActivityEventInput = {
@@ -136,48 +140,41 @@ function readStringField(
     : fallback;
 }
 
-function readNumberField(
+function readAmountField(
   record: Record<string, unknown>,
   key: string,
-  fallback = 0
+  fallback = "0.00"
 ) {
   const value = record[key];
 
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+    return value.toFixed(2);
   }
 
   if (typeof value === "string" && value.trim()) {
-    const parsedValue = Number(value);
-
-    return Number.isFinite(parsedValue) ? parsedValue : fallback;
+    return value.trim();
   }
 
   return fallback;
+}
+
+function readStringArrayField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function sortValidationRunsByCreatedAt(records: ValidationRunRecord[]) {
   return [...records].sort((first, second) =>
     second.createdAt.localeCompare(first.createdAt)
   );
-}
-
-function numberToCents(value: number) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Math.round(value * 100);
-}
-
-function centsToMoney(value: number) {
-  return Number((value / 100).toFixed(2));
-}
-
-function calculateLineNetCents(quantity: number, unitPrice: number) {
-  const unitPriceCents = numberToCents(unitPrice);
-
-  return Math.round(quantity * unitPriceCents);
 }
 
 function normalizeWorkspaceBootstrapRecord(
@@ -209,20 +206,20 @@ function normalizeWorkspaceBootstrapRecord(
 function normalizeValidationTotals(value: unknown): ValidationTotals {
   if (!isPlainObject(value)) {
     return {
-      lineExtensionAmount: 0,
-      taxExclusiveAmount: 0,
-      taxAmount: 0,
-      taxInclusiveAmount: 0,
-      payableAmount: 0
+      lineExtensionAmount: "0.00",
+      taxExclusiveAmount: "0.00",
+      taxAmount: "0.00",
+      taxInclusiveAmount: "0.00",
+      payableAmount: "0.00"
     };
   }
 
   return {
-    lineExtensionAmount: readNumberField(value, "lineExtensionAmount"),
-    taxExclusiveAmount: readNumberField(value, "taxExclusiveAmount"),
-    taxAmount: readNumberField(value, "taxAmount"),
-    taxInclusiveAmount: readNumberField(value, "taxInclusiveAmount"),
-    payableAmount: readNumberField(value, "payableAmount")
+    lineExtensionAmount: readAmountField(value, "lineExtensionAmount"),
+    taxExclusiveAmount: readAmountField(value, "taxExclusiveAmount"),
+    taxAmount: readAmountField(value, "taxAmount"),
+    taxInclusiveAmount: readAmountField(value, "taxInclusiveAmount"),
+    payableAmount: readAmountField(value, "payableAmount")
   };
 }
 
@@ -235,34 +232,65 @@ function normalizeFinding(value: unknown): Finding | null {
   const severity = readStringField(value, "severity") as FindingSeverity;
   const field = readStringField(value, "field");
   const message = readStringField(value, "message");
-  const legalConfidence = readStringField(value, "legalConfidence") as
-    | "technical"
-    | "educational_simulation"
-    | "review_required";
+  const rawLegalConfidence = readStringField(value, "legalConfidence");
+  const legalConfidence =
+    rawLegalConfidence === "review_required"
+      ? "professional_review_required"
+      : (rawLegalConfidence as LegalConfidence);
+  const category = readStringField(value, "category", "validation");
+  const fieldPath = readStringField(value, "fieldPath", field);
+  const fixSuggestion = readStringField(value, "fixSuggestion");
+  const ruleSetCode = readStringField(value, "ruleSetCode");
+  const ruleVersion = readStringField(value, "ruleVersion");
+  const sourceLabels = readStringArrayField(value, "sourceLabels");
 
   if (!code || !field || !message) {
     return null;
   }
 
-  if (!["info", "warning", "fatal"].includes(severity)) {
+  if (!["info", "warning", "fatal", "blocked"].includes(severity)) {
     return null;
   }
 
   if (
-    !["technical", "educational_simulation", "review_required"].includes(
-      legalConfidence
-    )
+    ![
+      "technical",
+      "standard_based",
+      "official_source_derived",
+      "educational_simulation",
+      "professional_review_required"
+    ].includes(legalConfidence)
   ) {
     return null;
   }
 
-  return {
+  const finding: Finding = {
     code,
     severity,
+    category,
     field,
+    fieldPath,
     message,
     legalConfidence
   };
+
+  if (fixSuggestion) {
+    finding.fixSuggestion = fixSuggestion;
+  }
+
+  if (ruleSetCode) {
+    finding.ruleSetCode = ruleSetCode;
+  }
+
+  if (ruleVersion) {
+    finding.ruleVersion = ruleVersion;
+  }
+
+  if (sourceLabels.length > 0) {
+    finding.sourceLabels = sourceLabels;
+  }
+
+  return finding;
 }
 
 function normalizeFindings(value: unknown): Finding[] {
@@ -315,6 +343,7 @@ function normalizeSupabaseValidationRunRow(
     invoiceNumber: row.invoice_number,
     buyer: row.buyer_name,
     seller: row.seller_name,
+    issueDate: row.issue_date,
     createdAt: row.created_at,
     technicalStatus: normalizeTechnicalStatus(row.technical_status),
     standardStatus: normalizeStandardStatus(row.standard_status),
@@ -407,6 +436,12 @@ function buildValidationRunTotalsRow(
   };
 }
 
+function toPersistedFindingSeverity(
+  severity: FindingSeverity
+): ValidationRunFindingRow["severity"] {
+  return severity === "blocked" ? "fatal" : severity;
+}
+
 function buildValidationRunFindingRows(
   record: ValidationRunRecord,
   organizationId: string,
@@ -417,8 +452,8 @@ function buildValidationRunFindingRows(
     validation_run_id: validationRunId,
     finding_position: index + 1,
     code: finding.code,
-    severity: finding.severity,
-    field_path: finding.field,
+    severity: toPersistedFindingSeverity(finding.severity),
+    field_path: finding.fieldPath || finding.field,
     message: finding.message,
     legal_confidence: finding.legalConfidence
   }));
@@ -532,70 +567,16 @@ export function hasAuthenticatedValidationRunContext(
 export function calculateValidationTotals(
   payload: InvoiceValidationRequest
 ): ValidationTotals {
-  const lineExtensionCents = payload.lines.reduce((sum, line) => {
-    return sum + calculateLineNetCents(line.quantity, line.unitPrice);
-  }, 0);
-
-  const taxCents = payload.lines.reduce((sum, line) => {
-    const lineNetCents = calculateLineNetCents(line.quantity, line.unitPrice);
-    const lineTaxCents = Math.round((lineNetCents * line.vatRate) / 100);
-
-    return sum + lineTaxCents;
-  }, 0);
-
-  const taxInclusiveCents = lineExtensionCents + taxCents;
-
-  return {
-    lineExtensionAmount: centsToMoney(lineExtensionCents),
-    taxExclusiveAmount: centsToMoney(lineExtensionCents),
-    taxAmount: centsToMoney(taxCents),
-    taxInclusiveAmount: centsToMoney(taxInclusiveCents),
-    payableAmount: centsToMoney(taxInclusiveCents)
-  };
+  return calculateInvoiceTotals(payload).totals;
 }
 
 export function buildValidationFindings(
   payload: InvoiceValidationRequest
 ): Finding[] {
-  const findings: Finding[] = [];
-  const isCrossBorder = payload.seller.country !== payload.buyer.country;
-
-  if (isCrossBorder && !payload.buyer.vatId) {
-    findings.push({
-      code: "BUYER_VAT_ID_REQUIRED",
-      severity: "fatal",
-      field: "buyer.vatId",
-      message: "Buyer VAT ID is required for this cross-border B2B simulation.",
-      legalConfidence: "educational_simulation"
-    });
-  }
-
-  if (isCrossBorder) {
-    findings.push({
-      code: "CROSS_BORDER_REVIEW_REQUIRED",
-      severity: "warning",
-      field: "buyer.country",
-      message:
-        "Seller and buyer countries differ. Country and VAT treatment require professional review.",
-      legalConfidence: "review_required"
-    });
-  }
-
-  const hasZeroValueLine = payload.lines.some((line) => {
-    return calculateLineNetCents(line.quantity, line.unitPrice) === 0;
-  });
-
-  if (hasZeroValueLine) {
-    findings.push({
-      code: "ZERO_VALUE_LINE_REVIEW",
-      severity: "warning",
-      field: "lines",
-      message: "One or more invoice lines have zero value and should be reviewed.",
-      legalConfidence: "technical"
-    });
-  }
-
-  return findings;
+  return buildCoreValidationFindings(payload).map((finding) => ({
+    ...finding,
+    field: finding.fieldPath
+  }));
 }
 
 /* -------------------------------------------------------------------------- */

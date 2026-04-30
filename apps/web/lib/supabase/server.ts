@@ -18,8 +18,8 @@ export async function createSupabaseServerClient() {
         } catch {
           /*
            * Server Components cannot always write cookies directly.
-           * Supabase session refresh will be handled by the auth proxy/middleware
-           * that we add in the next step.
+           * Supabase session refresh is handled by the auth proxy
+           * at the app boundary.
            */
         }
       }

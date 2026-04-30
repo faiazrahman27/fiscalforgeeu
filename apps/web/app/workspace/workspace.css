@@ -941,6 +941,44 @@
   line-height: 1.8;
 }
 
+.workspace-xml-input-shell {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.35rem;
+}
+
+.workspace-xml-input-shell span {
+  color: rgba(255,255,255,0.48);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.workspace-xml-input-shell textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 1.1rem;
+  background: rgba(0,0,0,0.44);
+  color: rgba(255,255,255,0.84);
+  padding: 1rem;
+  font: 0.86rem/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  outline: none;
+}
+
+.workspace-xml-input-shell textarea:focus {
+  border-color: rgba(100,210,255,0.34);
+  box-shadow: 0 0 0 3px rgba(100,210,255,0.08);
+}
+
+.developer-console-head button:disabled,
+.workspace-table-head button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+  box-shadow: none;
+}
+
 .api-event-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1287,6 +1325,45 @@
   margin-top: 0.75rem;
 }
 
+.workspace-line-grid {
+  display: grid;
+  gap: 0;
+  margin-top: 1.35rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.workspace-line-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(14rem, 1.4fr) repeat(4, minmax(8rem, 0.75fr));
+  gap: 0.85rem;
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 1rem 0;
+}
+
+.workspace-line-row > * {
+  min-width: 0;
+}
+
+.workspace-line-row strong,
+.workspace-line-row span {
+  overflow-wrap: anywhere;
+}
+
+.workspace-line-row strong {
+  display: block;
+  color: white;
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.workspace-line-row span {
+  color: rgba(255,255,255,0.56);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 /* Better compact table behavior on mid-size screens. */
 @media (max-width: 1150px) {
   .workspace-data-grid {
@@ -1376,6 +1453,10 @@
   .workspace-history-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .workspace-line-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -1385,5 +1466,55 @@
 
   .workspace-history-filters button {
     width: 100%;
+  }
+
+  .workspace-line-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  .workspace-sidebar,
+  .workspace-topbar,
+  .back-link,
+  .workspace-row-actions {
+    display: none !important;
+  }
+
+  .workspace-shell,
+  .workspace-main,
+  .workspace-page {
+    display: block;
+    min-height: auto;
+    background: white !important;
+    color: black !important;
+    padding: 0;
+  }
+
+  .workspace-page-head,
+  .workspace-alerts,
+  .workspace-table-shell,
+  .findings-console,
+  .workspace-data-card {
+    break-inside: avoid;
+    background: white !important;
+    border-color: #d8d8d8 !important;
+    box-shadow: none !important;
+    color: black !important;
+  }
+
+  .workspace-page-head p,
+  .workspace-table-row span,
+  .workspace-data-card p,
+  .workspace-data-card span,
+  .finding-console-row p,
+  .alert-item p {
+    color: #333 !important;
+  }
+
+  .workspace-table-row strong,
+  .workspace-data-card strong,
+  .finding-console-row strong {
+    color: black !important;
   }
 }

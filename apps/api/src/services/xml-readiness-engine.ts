@@ -1,4 +1,5 @@
 import { XMLParser, XMLValidator } from "fast-xml-parser";
+import { inspectXmlSafety } from "@invoice-lantern/ubl";
 
 export type XmlFindingSeverity = "info" | "warning" | "fatal";
 
@@ -104,11 +105,6 @@ type XmlParserContext = {
   securityPolicyMessage: string;
 };
 
-type XmlSecurityPolicyResult = {
-  passed: boolean;
-  message: string;
-};
-
 const parser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "@_",
@@ -134,45 +130,6 @@ function asArray(value: unknown): unknown[] {
   }
 
   return [value];
-}
-
-function checkXmlSecurityPolicy(xml: string): XmlSecurityPolicyResult {
-  if (/<!DOCTYPE/i.test(xml)) {
-    return {
-      passed: false,
-      message:
-        "XML contains a DOCTYPE declaration. DOCTYPE is blocked to reduce DTD and XXE risk."
-    };
-  }
-
-  if (/<!ENTITY/i.test(xml)) {
-    return {
-      passed: false,
-      message:
-        "XML contains an ENTITY declaration. XML entities are blocked to reduce XXE and expansion risk."
-    };
-  }
-
-  if (/\bSYSTEM\b/i.test(xml) || /\bPUBLIC\b/i.test(xml)) {
-    return {
-      passed: false,
-      message:
-        "XML contains SYSTEM or PUBLIC external identifier text. External identifiers are blocked for upload safety."
-    };
-  }
-
-  if (/<\?xml-stylesheet/i.test(xml)) {
-    return {
-      passed: false,
-      message:
-        "XML stylesheet processing instructions are blocked for upload safety."
-    };
-  }
-
-  return {
-    passed: true,
-    message: ""
-  };
 }
 
 function detectRootElement(xml: string) {
@@ -214,9 +171,9 @@ function getValidationErrorMessage(result: unknown) {
 
 function buildXmlParserContext(xml: string): XmlParserContext {
   const rootElement = detectRootElement(xml);
-  const securityPolicy = checkXmlSecurityPolicy(xml);
+  const securityPolicy = inspectXmlSafety(xml);
 
-  if (!securityPolicy.passed) {
+  if (!securityPolicy.safe) {
     return {
       xml,
       parsedXml: {},

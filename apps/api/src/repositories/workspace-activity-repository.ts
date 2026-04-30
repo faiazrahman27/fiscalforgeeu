@@ -18,6 +18,16 @@ export type WorkspaceActivityEventSummary = {
   createdAt: string;
 };
 
+export type CreateWorkspaceActivityEventInput = {
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  severity?: WorkspaceActivityEventSummary["severity"];
+  source?: "api";
+  metadata?: Record<string, unknown>;
+};
+
 type SupabaseWorkspaceBootstrapRecord = {
   organizationId: string;
   organizationName: string;
@@ -168,4 +178,28 @@ export async function listAuthenticatedWorkspaceActivityEvents(
   return ((data ?? []) as SupabaseWorkspaceActivityEventRow[]).map((row) =>
     normalizeWorkspaceActivityEventRow(row)
   );
+}
+
+export async function createAuthenticatedWorkspaceActivityEvent(
+  context: AuthenticatedWorkspaceActivityContext,
+  input: CreateWorkspaceActivityEventInput
+) {
+  const supabase = createAuthenticatedSupabaseClient(context);
+  const workspace = await getWorkspaceForAuthenticatedUser(supabase);
+
+  const { error } = await supabase.from("workspace_activity_events").insert({
+    organization_id: workspace.organizationId,
+    actor_user_id: context.userId,
+    event_type: input.eventType,
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    entity_label: input.entityLabel,
+    severity: input.severity ?? "info",
+    source: input.source ?? "api",
+    metadata: input.metadata ?? {}
+  });
+
+  if (error) {
+    throw new Error(`Could not record workspace activity event: ${error.message}`);
+  }
 }

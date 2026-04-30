@@ -35,12 +35,12 @@ function copyResponseCookies(source: NextResponse, target: NextResponse) {
   });
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { supabaseUrl, supabasePublicKey } = readSupabasePublicConfig();
 
   /*
    * Keep the existing local platform usable before a Supabase project is connected.
-   * Once NEXT_PUBLIC_SUPABASE_URL and a public key are configured, this middleware
+   * Once NEXT_PUBLIC_SUPABASE_URL and a public key are configured, this proxy
    * synchronizes Supabase auth cookies and protects workspace pages.
    */
   if (!supabaseUrl || !supabasePublicKey) {

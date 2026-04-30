@@ -100,8 +100,40 @@ export type ValidationFindingPreview = {
   severity: FindingSeverity;
   category: string;
   field?: string;
+  fieldPath?: string;
   legalConfidence: LegalConfidence;
   message: string;
+  fixSuggestion?: string;
+  ruleSetCode?: string;
+  ruleVersion?: string;
+  sourceLabels?: string[];
+};
+
+export type ValidationReportFindingCounts = Record<FindingSeverity, number>;
+
+export type ValidationReportRuleSetSummary = {
+  code: string;
+  version: string;
+  sourceLabels: string[];
+};
+
+export type ValidationReportSummary = {
+  reportTitle: string;
+  validationRunId: string;
+  createdAt: string;
+  invoiceNumber: string;
+  issueDate: string;
+  seller: string;
+  buyer: string;
+  currency: string;
+  overallStatus: string;
+  technicalStatus: string;
+  standardStatus: string;
+  findingCounts: ValidationReportFindingCounts;
+  legalConfidenceSummary: string;
+  ruleSetsUsed: ValidationReportRuleSetSummary[];
+  disclaimer: string;
+  recommendedNextActions: string[];
 };
 
 export type ApiControl = {

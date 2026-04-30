@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  calculateInvoiceTotals,
+  canonicalInvoiceSchema,
+  type CanonicalInvoice
+} from "@invoice-lantern/invoice-core";
 import type { InvoiceEditorDraftPayload } from "../schemas/invoice.js";
 import { getSupabaseUserClient } from "../lib/supabase/server-client.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
@@ -83,21 +88,21 @@ type InvoiceDraftLineRow = {
   source_line_id: string;
   line_position: number;
   description: string;
-  quantity: number;
+  quantity: string;
   unit_code: string;
-  unit_price: number;
+  unit_price: string;
   vat_category: string;
-  vat_rate: number;
-  net_amount: number;
+  vat_rate: string;
+  net_amount: string;
 };
 
 type InvoiceDraftTaxSummaryRow = {
   organization_id: string;
   invoice_draft_id: string;
   vat_category: string;
-  vat_rate: number;
-  taxable_amount: number;
-  tax_amount: number;
+  vat_rate: string;
+  taxable_amount: string;
+  tax_amount: string;
   currency: string;
 };
 
@@ -134,26 +139,6 @@ function readStringField(
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : fallback;
-}
-
-function parseDecimalString(value: string) {
-  const normalizedValue = value.trim();
-
-  if (!normalizedValue) {
-    return 0;
-  }
-
-  const parsedValue = Number(normalizedValue);
-
-  return Number.isFinite(parsedValue) ? parsedValue : 0;
-}
-
-function roundMoney(value: number) {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  return Number(value.toFixed(2));
 }
 
 function getDraftNumberKey(draft: Pick<InvoiceDraftRecord, "document">) {
@@ -247,6 +232,8 @@ function buildSupabaseInvoiceDraftValues(
   organizationId: string,
   userId: string
 ) {
+  const calculatedTotals = calculateInvoiceTotals(toCanonicalInvoiceDraft(payload)).totals;
+
   return {
     organization_id: organizationId,
     created_by: userId,
@@ -265,11 +252,11 @@ function buildSupabaseInvoiceDraftValues(
     buyer_country: payload.buyer.country,
 
     currency: payload.document.currency,
-    line_extension_amount: payload.totals.lineExtensionAmount,
-    tax_exclusive_amount: payload.totals.taxExclusiveAmount,
-    tax_amount: payload.totals.taxAmount,
-    tax_inclusive_amount: payload.totals.taxInclusiveAmount,
-    payable_amount: payload.totals.payableAmount,
+    line_extension_amount: calculatedTotals.lineExtensionAmount,
+    tax_exclusive_amount: calculatedTotals.taxExclusiveAmount,
+    tax_amount: calculatedTotals.taxAmount,
+    tax_inclusive_amount: calculatedTotals.taxInclusiveAmount,
+    payable_amount: calculatedTotals.payableAmount,
 
     payload,
     summary: {
@@ -288,12 +275,12 @@ function buildSupabaseInvoiceDraftValues(
 
       status: "Draft",
       currency: payload.document.currency,
-      lineExtensionAmount: payload.totals.lineExtensionAmount,
-      taxExclusiveAmount: payload.totals.taxExclusiveAmount,
-      taxAmount: payload.totals.taxAmount,
-      taxInclusiveAmount: payload.totals.taxInclusiveAmount,
-      payableAmount: payload.totals.payableAmount,
-      amount: `${payload.document.currency} ${payload.totals.payableAmount}`
+      lineExtensionAmount: calculatedTotals.lineExtensionAmount,
+      taxExclusiveAmount: calculatedTotals.taxExclusiveAmount,
+      taxAmount: calculatedTotals.taxAmount,
+      taxInclusiveAmount: calculatedTotals.taxInclusiveAmount,
+      payableAmount: calculatedTotals.payableAmount,
+      amount: `${payload.document.currency} ${calculatedTotals.payableAmount}`
     }
   };
 }
@@ -313,6 +300,10 @@ function buildInvoiceDraftActivityMetadata(payload: InvoiceEditorDraftPayload) {
     lineCount: payload.lines.length,
     payableAmount: payload.totals.payableAmount
   };
+}
+
+function toCanonicalInvoiceDraft(payload: InvoiceEditorDraftPayload): CanonicalInvoice {
+  return canonicalInvoiceSchema.parse(payload);
 }
 
 function buildInvoiceDraftPartyRows(
@@ -348,37 +339,28 @@ function buildInvoiceDraftPartyRows(
   ];
 }
 
-function calculateLineNetAmount(line: InvoiceEditorDraftPayload["lines"][number]) {
-  const explicitNetAmount = parseDecimalString(line.netAmount);
-
-  if (explicitNetAmount > 0) {
-    return roundMoney(explicitNetAmount);
-  }
-
-  const quantity = parseDecimalString(line.quantity);
-  const unitPrice = parseDecimalString(line.unitPrice);
-
-  return roundMoney(quantity * unitPrice);
-}
-
 function buildInvoiceDraftLineRows(
   payload: InvoiceEditorDraftPayload,
   organizationId: string,
   invoiceDraftId: string
 ): InvoiceDraftLineRow[] {
+  const calculatedLines = calculateInvoiceTotals(toCanonicalInvoiceDraft(payload)).lines;
+
   return payload.lines.map((line, index) => {
+    const calculatedLine = calculatedLines[index];
+
     return {
       organization_id: organizationId,
       invoice_draft_id: invoiceDraftId,
       source_line_id: line.id,
       line_position: index + 1,
       description: line.description,
-      quantity: parseDecimalString(line.quantity),
+      quantity: calculatedLine?.quantity ?? line.quantity,
       unit_code: line.unitCode,
-      unit_price: parseDecimalString(line.unitPrice),
+      unit_price: calculatedLine?.unitPrice ?? line.unitPrice,
       vat_category: line.vatCategory,
-      vat_rate: parseDecimalString(line.vatRate),
-      net_amount: calculateLineNetAmount(line)
+      vat_rate: calculatedLine?.vatRate ?? line.vatRate,
+      net_amount: calculatedLine?.netAmount ?? line.netAmount
     };
   });
 }
@@ -388,42 +370,9 @@ function buildInvoiceDraftTaxSummaryRows(
   organizationId: string,
   invoiceDraftId: string
 ): InvoiceDraftTaxSummaryRow[] {
-  const taxSummaryMap = new Map<
-    string,
-    {
-      vatCategory: string;
-      vatRate: number;
-      taxableAmount: number;
-      taxAmount: number;
-    }
-  >();
+  const taxSubtotals = calculateInvoiceTotals(toCanonicalInvoiceDraft(payload)).taxSubtotals;
 
-  for (const line of payload.lines) {
-    const vatCategory = line.vatCategory.trim();
-    const vatRate = parseDecimalString(line.vatRate);
-    const taxableAmount = calculateLineNetAmount(line);
-    const taxAmount = roundMoney((taxableAmount * vatRate) / 100);
-    const key = `${vatCategory}::${vatRate.toFixed(4)}`;
-
-    const existingSummary = taxSummaryMap.get(key);
-
-    if (existingSummary) {
-      existingSummary.taxableAmount = roundMoney(
-        existingSummary.taxableAmount + taxableAmount
-      );
-      existingSummary.taxAmount = roundMoney(existingSummary.taxAmount + taxAmount);
-      continue;
-    }
-
-    taxSummaryMap.set(key, {
-      vatCategory,
-      vatRate,
-      taxableAmount,
-      taxAmount
-    });
-  }
-
-  return [...taxSummaryMap.values()].map((summary) => ({
+  return taxSubtotals.map((summary) => ({
     organization_id: organizationId,
     invoice_draft_id: invoiceDraftId,
     vat_category: summary.vatCategory,
