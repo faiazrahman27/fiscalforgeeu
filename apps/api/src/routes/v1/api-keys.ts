@@ -130,7 +130,7 @@ function sendApiKeyRouteError(reply: FastifyReply, error: unknown) {
     error: {
       code: "API_KEY_OPERATION_FAILED",
       message: "Could not complete the API key operation.",
-      details: error instanceof Error ? error.message : null
+      details: null
     }
   });
 }
@@ -150,7 +150,8 @@ export async function apiKeyRoutes(app: FastifyInstance) {
         }
 
         const apiKeys = await listApiKeys({
-          organizationId: context.organizationId
+          organizationId: context.organizationId,
+          accessToken: context.accessToken
         });
 
         return {
@@ -193,7 +194,8 @@ export async function apiKeyRoutes(app: FastifyInstance) {
           environment: parsedBody.data.environment,
           scopes: parsedBody.data.scopes,
           expiresAt: parsedBody.data.expiresAt ?? null,
-          createdBy: context.userId
+          createdBy: context.userId,
+          accessToken: context.accessToken
         });
 
         return reply.status(201).send({
@@ -235,7 +237,8 @@ export async function apiKeyRoutes(app: FastifyInstance) {
         const apiKey = await revokeApiKey({
           organizationId: context.organizationId,
           apiKeyId: parsedParams.data.id,
-          revokedBy: context.userId
+          revokedBy: context.userId,
+          accessToken: context.accessToken
         });
 
         return {

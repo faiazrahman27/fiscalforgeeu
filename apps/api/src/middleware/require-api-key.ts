@@ -133,7 +133,27 @@ async function authenticateWithOrganizationApiKey(
 ) {
   const verification = await verifyApiKey(rawApiKey, requiredScopes, {
     ipAddress: request.ip
+  }).catch((error) => {
+    request.log.error(
+      {
+        error
+      },
+      "Organization API key authentication failed before verification"
+    );
+
+    return null;
   });
+
+  if (!verification) {
+    return reply.status(503).send({
+      error: {
+        code: "API_KEY_AUTH_NOT_CONFIGURED",
+        message:
+          "Organization API key authentication is not available for this API service.",
+        details: null
+      }
+    });
+  }
 
   if (!verification.ok) {
     return sendAuthenticationError(

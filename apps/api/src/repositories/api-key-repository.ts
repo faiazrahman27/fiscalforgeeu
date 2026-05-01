@@ -9,6 +9,7 @@ import type {
   ApiUsageSummary,
   GetApiUsageSummaryInput,
   ApiKeyRecord,
+  ApiKeyMetadata,
   ApiKeyScope,
   ApiKeyStatus,
   ListApiRequestsInput,
@@ -27,6 +28,7 @@ export type CreateApiKeyRecordInput = {
   scopes: ApiKeyScope[];
   expiresAt: string | null;
   createdBy: string | null;
+  accessToken?: string;
 };
 
 export type ApiKeyRepository = {
@@ -35,12 +37,16 @@ export type ApiKeyRepository = {
     accessToken: string;
   }): Promise<ApiKeyWorkspace>;
   createApiKeyRecord(input: CreateApiKeyRecordInput): Promise<ApiKeyRecord>;
-  listApiKeys(input: { organizationId: string }): Promise<ApiKeyRecord[]>;
+  listApiKeys(input: {
+    organizationId: string;
+    accessToken?: string;
+  }): Promise<ApiKeyRecord[]>;
   findApiKeysByPrefix(input: { keyPrefix: string }): Promise<ApiKeyRecord[]>;
   revokeApiKey(input: {
     organizationId: string;
     apiKeyId: string;
     revokedBy: string | null;
+    accessToken?: string;
   }): Promise<ApiKeyRecord | null>;
   markApiKeyExpired(input: {
     organizationId: string;
@@ -71,7 +77,7 @@ type SupabaseApiKeyRow = {
   organization_id: string;
   name: string;
   key_prefix: string;
-  key_hash: string;
+  key_hash?: string | null;
   environment: string;
   scopes: unknown;
   status: string;
@@ -118,6 +124,9 @@ type SupabaseApiRequestSummaryRow = {
 
 const API_KEY_SELECT_FIELDS =
   "id, organization_id, name, key_prefix, key_hash, environment, scopes, status, expires_at, last_used_at, last_used_ip, created_by, revoked_by, revoked_at, created_at, updated_at";
+
+const API_KEY_METADATA_SELECT_FIELDS =
+  "id, organization_id, name, key_prefix, environment, scopes, status, expires_at, last_used_at, last_used_ip, created_by, revoked_by, revoked_at, created_at, updated_at";
 
 const API_REQUEST_SELECT_FIELDS =
   "id, organization_id, api_key_id, request_method, request_path, status_code, duration_ms, ip_address, user_agent, error_code, created_at, api_keys(name, key_prefix)";
@@ -205,12 +214,11 @@ function normalizeNullableString(value: string | null | undefined) {
 }
 
 function normalizeApiKeyRow(row: SupabaseApiKeyRow): ApiKeyRecord {
-  return {
+  const metadata: ApiKeyMetadata = {
     id: row.id,
     organizationId: row.organization_id,
     name: row.name,
     keyPrefix: row.key_prefix,
-    keyHash: row.key_hash,
     environment: normalizeEnvironment(row.environment),
     scopes: normalizeScopes(row.scopes),
     status: normalizeStatus(row.status),
@@ -223,6 +231,15 @@ function normalizeApiKeyRow(row: SupabaseApiKeyRow): ApiKeyRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+
+  if (typeof row.key_hash === "string" && row.key_hash.trim().length > 0) {
+    return {
+      ...metadata,
+      keyHash: row.key_hash
+    };
+  }
+
+  return metadata;
 }
 
 function readJoinedApiKey(
@@ -351,6 +368,22 @@ function createAuthenticatedSupabaseClient(input: {
   return getSupabaseUserClient(input.accessToken);
 }
 
+function createClientForAuthenticatedOrServiceRole(input: {
+  accessToken?: string | undefined;
+}): SupabaseClient {
+  return input.accessToken
+    ? createAuthenticatedSupabaseClient({
+        accessToken: input.accessToken
+      })
+    : createServiceRoleClient();
+}
+
+function getApiKeySelectFields(input: { includeKeyHash: boolean }) {
+  return input.includeKeyHash
+    ? API_KEY_SELECT_FIELDS
+    : API_KEY_METADATA_SELECT_FIELDS;
+}
+
 async function getWorkspaceForUser(
   supabase: SupabaseClient,
   userId: string
@@ -405,11 +438,16 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
   },
 
   async createApiKeyRecord(input) {
-    const supabase = createServiceRoleClient();
-    const { data, error } = await supabase
-      .from("api_keys")
+    const supabase = createClientForAuthenticatedOrServiceRole({
+      accessToken: input.accessToken
+    });
+    const selectFields = getApiKeySelectFields({
+      includeKeyHash: !input.accessToken
+    });
+    const apiKeysTable = supabase.from("api_keys") as any;
+    const { data, error } = await apiKeysTable
       .insert(buildInsertValues(input))
-      .select(API_KEY_SELECT_FIELDS)
+      .select(selectFields)
       .single();
 
     if (error) {
@@ -420,10 +458,15 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
   },
 
   async listApiKeys(input) {
-    const supabase = createServiceRoleClient();
-    const { data, error } = await supabase
-      .from("api_keys")
-      .select(API_KEY_SELECT_FIELDS)
+    const supabase = createClientForAuthenticatedOrServiceRole({
+      accessToken: input.accessToken
+    });
+    const selectFields = getApiKeySelectFields({
+      includeKeyHash: !input.accessToken
+    });
+    const apiKeysTable = supabase.from("api_keys") as any;
+    const { data, error } = await apiKeysTable
+      .select(selectFields)
       .eq("organization_id", input.organizationId)
       .order("created_at", {
         ascending: false
@@ -452,9 +495,14 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
   },
 
   async revokeApiKey(input) {
-    const supabase = createServiceRoleClient();
-    const { data, error } = await supabase
-      .from("api_keys")
+    const supabase = createClientForAuthenticatedOrServiceRole({
+      accessToken: input.accessToken
+    });
+    const selectFields = getApiKeySelectFields({
+      includeKeyHash: !input.accessToken
+    });
+    const apiKeysTable = supabase.from("api_keys") as any;
+    const { data, error } = await apiKeysTable
       .update({
         status: "revoked",
         revoked_by: input.revokedBy,
@@ -462,7 +510,7 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
       })
       .eq("id", input.apiKeyId)
       .eq("organization_id", input.organizationId)
-      .select(API_KEY_SELECT_FIELDS)
+      .select(selectFields)
       .maybeSingle();
 
     if (error) {
@@ -523,7 +571,9 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
   },
 
   async countRecentApiRequests(input) {
-    const supabase = createServiceRoleClient();
+    const supabase = createClientForAuthenticatedOrServiceRole({
+      accessToken: input.accessToken
+    });
     let query = supabase
       .from("api_requests")
       .select("created_at", {
@@ -564,7 +614,9 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
   },
 
   async listApiRequests(input) {
-    const supabase = createServiceRoleClient();
+    const supabase = createClientForAuthenticatedOrServiceRole({
+      accessToken: input.accessToken
+    });
     let query = supabase
       .from("api_requests")
       .select(API_REQUEST_SELECT_FIELDS)
@@ -598,7 +650,9 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
   },
 
   async getApiUsageSummary(input) {
-    const supabase = createServiceRoleClient();
+    const supabase = createClientForAuthenticatedOrServiceRole({
+      accessToken: input.accessToken
+    });
     const sinceDays = input.sinceDays ?? 30;
     const sinceIso = new Date(
       Date.now() - sinceDays * 24 * 60 * 60 * 1000

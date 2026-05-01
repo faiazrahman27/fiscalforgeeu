@@ -3,6 +3,7 @@ import { test, beforeEach, afterEach } from "node:test";
 import { buildApp } from "../app.js";
 import { env } from "../config/env.js";
 import type { ApiKeyRepository } from "../repositories/api-key-repository.js";
+import { apiKeyRoutes } from "../routes/v1/api-keys.js";
 import { apiRequestRoutes } from "../routes/v1/api-requests.js";
 import { apiUsageRoutes } from "../routes/v1/api-usage.js";
 import { requireApiKeyRateLimitPolicy } from "../middleware/require-api-rate-limit.js";
@@ -36,6 +37,7 @@ type MemoryRepository = ApiKeyRepository & {
   records: ApiKeyRecord[];
   requests: MemoryApiRequest[];
   failRecordApiRequest: boolean;
+  workspaceError: Error | null;
   membershipRole: string;
 };
 
@@ -91,9 +93,14 @@ function createMemoryRepository(): MemoryRepository {
     records,
     requests,
     failRecordApiRequest: false,
+    workspaceError: null,
     membershipRole: "admin",
 
     async getWorkspaceForUser() {
+      if (memoryRepository.workspaceError) {
+        throw memoryRepository.workspaceError;
+      }
+
       return {
         organizationId,
         organizationName: "Test workspace",
@@ -416,6 +423,39 @@ async function getApiRequestRouteHandler(path: "/" | "/summary") {
   return handler;
 }
 
+async function getApiKeyRouteHandler(
+  method: "GET" | "POST",
+  path: "/" | "/:id/revoke"
+) {
+  const handlers = new Map<string, CapturedRouteHandler>();
+  const appStub = {
+    get(
+      routePath: string,
+      _options: unknown,
+      handler: CapturedRouteHandler
+    ) {
+      handlers.set(`GET ${routePath}`, handler);
+      return appStub;
+    },
+    post(
+      routePath: string,
+      _options: unknown,
+      handler: CapturedRouteHandler
+    ) {
+      handlers.set(`POST ${routePath}`, handler);
+      return appStub;
+    }
+  };
+
+  await apiKeyRoutes(appStub as never);
+
+  const handler = handlers.get(`${method} ${path}`);
+
+  assert.ok(handler);
+
+  return handler;
+}
+
 async function getApiUsageRouteHandler(path: "/policies" | "/current") {
   const handlers = new Map<string, CapturedRouteHandler>();
   const appStub = {
@@ -462,6 +502,34 @@ async function callApiRequestRoute(
   const result = await handler(
     {
       query,
+      authenticatedUser: {
+        id: userId,
+        email: "admin@example.test",
+        role: "authenticated"
+      },
+      authenticatedAccessToken: "test-access-token"
+    },
+    reply
+  );
+
+  return {
+    statusCode: reply.statusCode,
+    body: reply.payload ?? result
+  };
+}
+
+async function callApiKeyRoute(input: {
+  method: "GET" | "POST";
+  path: "/" | "/:id/revoke";
+  body?: unknown;
+  params?: Record<string, unknown>;
+}) {
+  const handler = await getApiKeyRouteHandler(input.method, input.path);
+  const reply = createRouteReply();
+  const result = await handler(
+    {
+      body: input.body,
+      params: input.params ?? {},
       authenticatedUser: {
         id: userId,
         email: "admin@example.test",
@@ -566,7 +634,7 @@ test("API key secret is only returned by create and plaintext is not stored", as
   const storedRecord = repository.records[0];
 
   assert.ok(storedRecord);
-  assert.match(storedRecord.keyHash, /^[a-f0-9]{64}$/);
+  assert.match(storedRecord.keyHash ?? "", /^[a-f0-9]{64}$/);
   assert.notEqual(storedRecord.keyHash, created.secret);
   assert.equal(JSON.stringify(repository.records).includes(created.secret), false);
 
@@ -577,6 +645,123 @@ test("API key secret is only returned by create and plaintext is not stored", as
   assert.ok(firstListed);
   assert.equal("keyHash" in firstListed, false);
   assert.equal("secret" in firstListed, false);
+});
+
+test("API key management routes create list and revoke with safe response fields", async () => {
+  const createResponse = await callApiKeyRoute({
+    method: "POST",
+    path: "/",
+    body: {
+      name: "Route-created key",
+      environment: "test",
+      scopes: ["rules:read"]
+    }
+  });
+
+  assert.equal(createResponse.statusCode, 201);
+  assert.equal(isPlainObject(createResponse.body), true);
+
+  const createBody = createResponse.body as Record<string, unknown>;
+  const apiKey = createBody.apiKey as Record<string, unknown>;
+
+  assert.equal(isPlainObject(apiKey), true);
+  assert.equal(typeof createBody.secret, "string");
+  assert.match(String(createBody.secret), /^il_test_/);
+
+  const serializedCreate = JSON.stringify(createBody);
+
+  assert.equal(serializedCreate.includes("keyHash"), false);
+  assert.equal(serializedCreate.includes("key_hash"), false);
+
+  const listResponse = await callApiKeyRoute({
+    method: "GET",
+    path: "/"
+  });
+
+  assert.equal(listResponse.statusCode, 200);
+
+  const serializedList = JSON.stringify(listResponse.body);
+
+  assert.equal(serializedList.includes(String(createBody.secret)), false);
+  assert.equal(serializedList.includes("keyHash"), false);
+  assert.equal(serializedList.includes("key_hash"), false);
+
+  const revokeResponse = await callApiKeyRoute({
+    method: "POST",
+    path: "/:id/revoke",
+    params: {
+      id: apiKey.id
+    }
+  });
+
+  assert.equal(revokeResponse.statusCode, 200);
+  assert.match(JSON.stringify(revokeResponse.body), /revoked/);
+  assert.equal(JSON.stringify(revokeResponse.body).includes("keyHash"), false);
+});
+
+test("API key management routes preserve owner or admin authorization", async () => {
+  repository.membershipRole = "member";
+
+  const listResponse = await callApiKeyRoute({
+    method: "GET",
+    path: "/"
+  });
+  const createResponse = await callApiKeyRoute({
+    method: "POST",
+    path: "/",
+    body: {
+      name: "Member should not create",
+      environment: "test",
+      scopes: ["rules:read"]
+    }
+  });
+
+  assert.equal(listResponse.statusCode, 403);
+  assert.equal(createResponse.statusCode, 403);
+  assert.match(JSON.stringify(listResponse.body), /API_KEY_MANAGER_ROLE_REQUIRED/);
+  assert.match(JSON.stringify(createResponse.body), /API_KEY_MANAGER_ROLE_REQUIRED/);
+});
+
+test("developer API workspace context failures return clear non-500 responses", async () => {
+  repository.workspaceError = new Error(
+    "Workspace bootstrap failed: relation does not exist"
+  );
+
+  const responses = await Promise.all([
+    callApiKeyRoute({
+      method: "GET",
+      path: "/"
+    }),
+    callApiRequestRoute("/", {}),
+    callApiUsageRoute("/current")
+  ]);
+
+  for (const response of responses) {
+    const serialized = JSON.stringify(response.body);
+
+    assert.equal(response.statusCode, 503);
+    assert.match(serialized, /WORKSPACE_CONTEXT_UNAVAILABLE/);
+    assert.match(serialized, /required database migrations/);
+    assert.doesNotMatch(serialized, /relation does not exist/);
+    assert.doesNotMatch(serialized, /keyHash|key_hash/);
+  }
+});
+
+test("developer API missing workspace context returns a user-actionable conflict", async () => {
+  repository.workspaceError = new Error(
+    "Workspace bootstrap returned an unreadable record."
+  );
+
+  const response = await callApiKeyRoute({
+    method: "GET",
+    path: "/"
+  });
+  const serialized = JSON.stringify(response.body);
+
+  assert.equal(response.statusCode, 409);
+  assert.match(serialized, /WORKSPACE_CONTEXT_REQUIRED/);
+  assert.match(serialized, /Create or select an organization/);
+  assert.doesNotMatch(serialized, /unreadable record/);
 });
 
 test("revoking an API key changes status and blocks authentication", async (t) => {
@@ -670,6 +855,33 @@ test("valid API key can call a scoped developer endpoint", async (t) => {
 
   assert.equal(response.statusCode, 200);
   assert.equal(Array.isArray(response.json().ruleSets), true);
+});
+
+test("organization API-key auth storage failures return clear non-500 setup errors", async (t) => {
+  const app = await buildApp();
+  const rawKey =
+    "il_test_storagefail.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+  repository.findApiKeysByPrefix = async () => {
+    throw new Error("Private API key storage unavailable for test.");
+  };
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/v1/validation/rules",
+    headers: {
+      "x-api-key": rawKey
+    }
+  });
+
+  assert.equal(response.statusCode, 503);
+  assert.match(response.body, /API_KEY_AUTH_NOT_CONFIGURED/);
+  assert.equal(response.body.includes(rawKey), false);
+  assert.doesNotMatch(response.body, /keyHash|key_hash/);
 });
 
 test("API rate-limit policy map exports expected sandbox policies", () => {
@@ -1189,6 +1401,42 @@ test("API usage current route returns safe usage counts", async () => {
   assert.equal(serialized.includes("<Invoice"), false);
 });
 
+test("API request summary and current usage return zero defaults with no logs", async () => {
+  const summaryResponse = await callApiRequestRoute("/summary", {
+    sinceDays: "30"
+  });
+  const currentUsageResponse = await callApiUsageRoute("/current");
+
+  assert.equal(summaryResponse.statusCode, 200);
+  assert.equal(currentUsageResponse.statusCode, 200);
+
+  const summaryBody = summaryResponse.body as Record<string, unknown>;
+  const summary = summaryBody.summary as Record<string, unknown>;
+
+  assert.equal(summary.totalRequests, 0);
+  assert.equal(summary.successfulRequests, 0);
+  assert.equal(summary.failedRequests, 0);
+  assert.equal(summary.averageDurationMs, 0);
+  assert.equal(summary.lastRequestAt, null);
+  assert.deepEqual(summary.topPaths, []);
+  assert.deepEqual(summary.statusBuckets, {
+    "2xx": 0,
+    "3xx": 0,
+    "4xx": 0,
+    "5xx": 0
+  });
+
+  const currentUsageBody = currentUsageResponse.body as Record<string, unknown>;
+  const usage = currentUsageBody.usage as Record<string, unknown>[];
+
+  assert.equal(Array.isArray(usage), true);
+  assert.equal(usage.length, 1);
+  assert.equal(usage[0]?.policyKey, "organization_developer_api_total");
+  assert.equal(usage[0]?.used, 0);
+  assert.equal(usage[0]?.remaining, 300);
+  assert.equal(JSON.stringify(currentUsageBody).includes("keyHash"), false);
+});
+
 test("API request routes follow existing owner or admin visibility rules", async () => {
   repository.membershipRole = "member";
 
@@ -1224,6 +1472,49 @@ test("API request routes reject unsigned access", async (t) => {
   assert.match(listResponse.body, /AUTH_TOKEN_REQUIRED/);
   assert.equal(summaryResponse.statusCode, 401);
   assert.match(summaryResponse.body, /AUTH_TOKEN_REQUIRED/);
+});
+
+test("developer API management routes reject unsigned access without 500", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const responses = await Promise.all([
+    app.inject({
+      method: "GET",
+      url: "/api/v1/api-keys",
+      headers: {
+        "x-api-key": env.DEV_API_KEY
+      }
+    }),
+    app.inject({
+      method: "POST",
+      url: "/api/v1/api-keys",
+      headers: {
+        "x-api-key": env.DEV_API_KEY
+      },
+      payload: {
+        name: "No bearer token",
+        environment: "test",
+        scopes: ["rules:read"]
+      }
+    }),
+    app.inject({
+      method: "GET",
+      url: "/api/v1/api-usage/current",
+      headers: {
+        "x-api-key": env.DEV_API_KEY
+      }
+    })
+  ]);
+
+  for (const response of responses) {
+    assert.equal(response.statusCode, 401);
+    assert.match(response.body, /AUTH_TOKEN_REQUIRED/);
+    assert.doesNotMatch(response.body, /keyHash|key_hash/);
+  }
 });
 
 test("development API key behavior still works for existing local routes", async (t) => {

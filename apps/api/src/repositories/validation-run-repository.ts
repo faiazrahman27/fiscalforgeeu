@@ -84,7 +84,7 @@ type SupabaseValidationRunRow = {
   payable_amount: string | number;
   totals: unknown;
   findings: unknown;
-  payload: unknown;
+  payload?: unknown;
   disclaimer: string;
   created_at: string;
   updated_at: string;
@@ -127,7 +127,7 @@ type WorkspaceActivityEventInput = {
 const VALIDATION_RUNS_FILE = "validation-runs.json";
 const MAX_STORED_VALIDATION_RUNS = 250;
 const VALIDATION_RUN_SELECT_FIELDS =
-  "id, organization_id, created_by, invoice_number, buyer_name, seller_name, profile, issue_date, seller_country, buyer_country, technical_status, standard_status, country_simulation_status, vida_readiness_status, confidence, currency, findings_count, payable_amount, totals, findings, payload, disclaimer, created_at, updated_at";
+  "id, organization_id, created_by, invoice_number, buyer_name, seller_name, profile, issue_date, seller_country, buyer_country, technical_status, standard_status, country_simulation_status, vida_readiness_status, confidence, currency, findings_count, payable_amount, totals, findings, disclaimer, created_at, updated_at";
 
 const storageProvider = getCollectionStorageProvider();
 

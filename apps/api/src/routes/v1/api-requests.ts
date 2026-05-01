@@ -146,7 +146,7 @@ function sendApiRequestRouteError(reply: FastifyReply, error: unknown) {
     error: {
       code: "API_REQUEST_LOG_OPERATION_FAILED",
       message: "Could not complete the API request log operation.",
-      details: error instanceof Error ? error.message : null
+      details: null
     }
   });
 }
@@ -179,7 +179,8 @@ export async function apiRequestRoutes(app: FastifyInstance) {
 
         const listInput = {
           organizationId: context.organizationId,
-          limit: parsedQuery.data.limit
+          limit: parsedQuery.data.limit,
+          accessToken: context.accessToken
         } as Parameters<typeof listApiRequests>[0];
 
         if (parsedQuery.data.apiKeyId) {
@@ -232,7 +233,8 @@ export async function apiRequestRoutes(app: FastifyInstance) {
 
         const summaryInput = {
           organizationId: context.organizationId,
-          sinceDays: parsedQuery.data.sinceDays
+          sinceDays: parsedQuery.data.sinceDays,
+          accessToken: context.accessToken
         } as Parameters<typeof getApiUsageSummary>[0];
 
         if (parsedQuery.data.apiKeyId) {

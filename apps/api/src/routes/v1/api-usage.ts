@@ -84,7 +84,7 @@ function sendApiUsageRouteError(reply: FastifyReply, error: unknown) {
     error: {
       code: "API_USAGE_OPERATION_FAILED",
       message: "Could not complete the API usage operation.",
-      details: error instanceof Error ? error.message : null
+      details: null
     }
   });
 }
@@ -177,7 +177,8 @@ export async function apiUsageRoutes(app: FastifyInstance) {
         }
 
         const usageInput = {
-          organizationId: context.organizationId
+          organizationId: context.organizationId,
+          accessToken: context.accessToken
         } as Parameters<typeof getApiRateLimitUsage>[0];
 
         if (parsedQuery.data.apiKeyId) {
@@ -200,4 +201,3 @@ export async function apiUsageRoutes(app: FastifyInstance) {
     }
   );
 }
-

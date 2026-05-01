@@ -10,7 +10,7 @@ function sendRuleCatalogError(reply: FastifyReply, error: unknown) {
     error: {
       code: "VALIDATION_RULE_CATALOG_ERROR",
       message: "Could not load the published validation rule catalog.",
-      details: error instanceof Error ? error.message : null
+      details: null
     }
   });
 }

@@ -83,12 +83,14 @@ function getRetryAfterSeconds(resetAt: string, nowMs: number) {
 async function getPolicyStatus(input: {
   organizationId: string;
   apiKeyId?: string;
+  accessToken?: string;
   policy: ApiRateLimitPolicy;
   nowMs: number;
 }) {
   const baseWindowInput = {
     organizationId: input.organizationId,
-    sinceIso: getWindowStartIso(input.nowMs, input.policy.windowSeconds)
+    sinceIso: getWindowStartIso(input.nowMs, input.policy.windowSeconds),
+    ...(input.accessToken ? { accessToken: input.accessToken } : {})
   };
   const windowInput = input.apiKeyId
     ? {
@@ -169,6 +171,7 @@ export async function getApiRateLimitUsage(input: {
   organizationId: string;
   apiKeyId?: string;
   policyKey?: string;
+  accessToken?: string;
   nowMs?: number;
 }) {
   const nowMs = input.nowMs ?? Date.now();
@@ -185,7 +188,8 @@ export async function getApiRateLimitUsage(input: {
       const policyStatusInput = {
         organizationId: input.organizationId,
         policy,
-        nowMs
+        nowMs,
+        ...(input.accessToken ? { accessToken: input.accessToken } : {})
       };
       const policyStatus = await getPolicyStatus(
         policy.appliesTo === "api_key" && input.apiKeyId

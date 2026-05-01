@@ -43,7 +43,7 @@ export type ApiKeyMetadata = {
 };
 
 export type ApiKeyRecord = ApiKeyMetadata & {
-  keyHash: string;
+  keyHash?: string;
 };
 
 export type ApiKeyWorkspace = {
@@ -61,6 +61,7 @@ export type CreateApiKeyInput = {
   scopes: ApiKeyScope[];
   expiresAt?: string | null;
   createdBy?: string | null;
+  accessToken?: string;
 };
 
 export type RecordApiRequestInput = {
@@ -80,6 +81,7 @@ export type CountRecentApiRequestsInput = {
   apiKeyId?: string;
   sinceIso: string;
   pathPrefix?: string;
+  accessToken?: string;
 };
 
 export type RecentApiRequestWindow = {
@@ -109,6 +111,7 @@ export type ListApiRequestsInput = {
   limit?: number;
   statusCode?: number;
   pathPrefix?: string;
+  accessToken?: string;
 };
 
 export type ApiUsageSummary = {
@@ -135,6 +138,7 @@ export type GetApiUsageSummaryInput = {
   organizationId: string;
   apiKeyId?: string;
   sinceDays?: number;
+  accessToken?: string;
 };
 
 export type VerifyApiKeyResult =
@@ -159,6 +163,24 @@ export class ApiKeyServiceError extends Error {
     this.code = code;
     this.statusCode = statusCode;
   }
+}
+
+function toWorkspaceContextError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message.includes("unreadable record")) {
+    return new ApiKeyServiceError(
+      "WORKSPACE_CONTEXT_REQUIRED",
+      "Create or select an organization before using this workspace feature.",
+      409
+    );
+  }
+
+  return new ApiKeyServiceError(
+    "WORKSPACE_CONTEXT_UNAVAILABLE",
+    "Workspace context could not be loaded. Confirm the required database migrations are applied.",
+    503
+  );
 }
 
 let activeRepository: ApiKeyRepository = supabaseApiKeyRepository;
@@ -297,7 +319,15 @@ export async function getApiKeyWorkspaceForUser(input: {
   userId: string;
   accessToken: string;
 }) {
-  return getRepository().getWorkspaceForUser(input);
+  try {
+    return await getRepository().getWorkspaceForUser(input);
+  } catch (error) {
+    if (error instanceof ApiKeyServiceError) {
+      throw error;
+    }
+
+    throw toWorkspaceContextError(error);
+  }
 }
 
 export async function createApiKey(input: CreateApiKeyInput) {
@@ -324,7 +354,8 @@ export async function createApiKey(input: CreateApiKeyInput) {
     environment: input.environment,
     scopes,
     expiresAt: input.expiresAt ?? null,
-    createdBy: input.createdBy ?? null
+    createdBy: input.createdBy ?? null,
+    ...(input.accessToken ? { accessToken: input.accessToken } : {})
   });
 
   return {
@@ -335,7 +366,10 @@ export async function createApiKey(input: CreateApiKeyInput) {
   };
 }
 
-export async function listApiKeys(input: { organizationId: string }) {
+export async function listApiKeys(input: {
+  organizationId: string;
+  accessToken?: string;
+}) {
   const records = await getRepository().listApiKeys(input);
 
   return records.map(toEffectiveMetadata);
@@ -345,11 +379,13 @@ export async function revokeApiKey(input: {
   organizationId: string;
   apiKeyId: string;
   revokedBy?: string | null;
+  accessToken?: string;
 }) {
   const record = await getRepository().revokeApiKey({
     organizationId: input.organizationId,
     apiKeyId: input.apiKeyId,
-    revokedBy: input.revokedBy ?? null
+    revokedBy: input.revokedBy ?? null,
+    ...(input.accessToken ? { accessToken: input.accessToken } : {})
   });
 
   if (!record) {
@@ -385,6 +421,7 @@ export async function verifyApiKey(
   const candidates = await getRepository().findApiKeysByPrefix({ keyPrefix });
   const record =
     candidates.find((candidate) =>
+      typeof candidate.keyHash === "string" &&
       hashMatches(hashApiKey(trimmedKey), candidate.keyHash)
     ) ?? null;
 
@@ -468,6 +505,10 @@ export async function countRecentApiRequests(
     countInput.pathPrefix = input.pathPrefix;
   }
 
+  if (input.accessToken) {
+    countInput.accessToken = input.accessToken;
+  }
+
   return getRepository().countRecentApiRequests(countInput);
 }
 
@@ -489,6 +530,10 @@ export async function listApiRequests(input: ListApiRequestsInput) {
     listInput.pathPrefix = input.pathPrefix;
   }
 
+  if (input.accessToken) {
+    listInput.accessToken = input.accessToken;
+  }
+
   return getRepository().listApiRequests(listInput);
 }
 
@@ -500,6 +545,10 @@ export async function getApiUsageSummary(input: GetApiUsageSummaryInput) {
 
   if (input.apiKeyId) {
     summaryInput.apiKeyId = input.apiKeyId;
+  }
+
+  if (input.accessToken) {
+    summaryInput.accessToken = input.accessToken;
   }
 
   return getRepository().getApiUsageSummary(summaryInput);

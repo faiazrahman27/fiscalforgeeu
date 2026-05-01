@@ -285,12 +285,23 @@ async function listDatabasePublishedValidationRules() {
 }
 
 export async function listPublishedValidationRules() {
+  const staticCatalog = toStaticRuleCatalog();
+
   if (!hasSupabaseServerConfig()) {
-    return toStaticRuleCatalog();
+    return staticCatalog;
   }
 
-  return appendRuleCatalog(
-    await listDatabasePublishedValidationRules(),
-    listVatFormatValidationRuleCatalog()
-  );
+  try {
+    return appendRuleCatalog(
+      await listDatabasePublishedValidationRules(),
+      listVatFormatValidationRuleCatalog()
+    );
+  } catch (error) {
+    console.warn(
+      "Database validation rule catalog was unavailable; using bundled rule catalog.",
+      error
+    );
+
+    return staticCatalog;
+  }
 }
