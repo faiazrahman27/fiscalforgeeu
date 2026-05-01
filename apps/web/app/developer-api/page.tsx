@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   Braces,
   KeyRound,
   RadioTower,
@@ -12,6 +13,12 @@ import { SiteHeader } from "../../components/site-header";
 import "./developer-api.css";
 
 const apiModules = [
+  {
+    icon: <BookOpen size={22} />,
+    title: "OpenAPI reference",
+    description:
+      "Browse the active OpenAPI document, auth requirements, scopes, response schemas, examples, and rate-limit headers for the current sandbox Developer API."
+  },
   {
     icon: <Braces size={22} />,
     title: "Validation endpoint",
@@ -82,6 +89,20 @@ export default function DeveloperApiPage() {
               accounting advice. API keys are shown once during creation and
               are sent with the X-API-Key header.
             </p>
+
+            <div className="reference-action-row">
+              <Link href="/developer-api/reference" className="text-link-button">
+                <BookOpen size={18} />
+                API reference
+              </Link>
+              <Link
+                href="/workspace/developer/api-keys"
+                className="text-link-button"
+              >
+                <KeyRound size={18} />
+                API key manager
+              </Link>
+            </div>
           </Reveal>
 
           <div className="subpage-grid">

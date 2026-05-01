@@ -122,3 +122,4 @@ to authenticated;
 grant select, insert, update, delete
 on table public.validation_run_findings
 to authenticated;
+

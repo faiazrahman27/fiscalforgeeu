@@ -5,3 +5,326 @@
 .developer-api-page .terminal-top p {
   color: rgba(100,210,255,0.68);
 }
+
+.reference-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.openapi-reference-shell,
+.reference-scope-table {
+  margin-top: 4rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 2rem;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(100,210,255,0.08), transparent 22rem),
+    rgba(255,255,255,0.026);
+  padding: clamp(1.25rem, 3vw, 2rem);
+  overflow: hidden;
+}
+
+.openapi-reference-head,
+.reference-table-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.25rem;
+}
+
+.openapi-reference-head p,
+.reference-table-head p {
+  margin: 0;
+  color: rgba(255,255,255,0.42);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.openapi-reference-head h2,
+.reference-table-head h2 {
+  margin: 0.45rem 0 0;
+  color: white;
+  font-size: clamp(1.7rem, 3.5vw, 3.2rem);
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+
+.openapi-reference-head span {
+  display: block;
+  margin-top: 0.7rem;
+  color: rgba(255,255,255,0.52);
+  font-size: 0.9rem;
+}
+
+.openapi-reference-head button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 999px;
+  background: white;
+  color: black;
+  padding: 0.78rem 1rem;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.openapi-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.35rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1.1rem;
+  background: rgba(0,0,0,0.26);
+  padding: 0.9rem 1rem;
+  color: rgba(255,255,255,0.68);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.openapi-status svg {
+  color: var(--ff-teal);
+}
+
+.openapi-status.is-error svg {
+  color: var(--ff-orange);
+}
+
+.openapi-status a {
+  margin-left: auto;
+  color: white;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.openapi-auth-strip {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.38fr) minmax(0, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1.2rem;
+  background: rgba(255,255,255,0.03);
+  padding: 1rem;
+}
+
+.openapi-auth-strip div {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+}
+
+.openapi-auth-strip svg {
+  color: var(--ff-green);
+}
+
+.openapi-auth-strip strong {
+  color: white;
+  font-size: 1rem;
+}
+
+.openapi-auth-strip span,
+.openapi-auth-strip p {
+  margin: 0;
+  color: rgba(255,255,255,0.58);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.openapi-auth-strip span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.openapi-groups {
+  display: grid;
+  gap: 1.35rem;
+  margin-top: 1.5rem;
+}
+
+.openapi-group h3 {
+  margin: 0;
+  color: white;
+  font-size: 1.45rem;
+  letter-spacing: -0.04em;
+}
+
+.openapi-operation-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.openapi-operation {
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1.2rem;
+  background: rgba(0,0,0,0.28);
+  padding: 1rem;
+}
+
+.openapi-operation header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.openapi-operation strong {
+  min-width: 0;
+  color: white;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.openapi-method {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 4.2rem;
+  justify-content: center;
+  border: 1px solid rgba(100,210,255,0.22);
+  border-radius: 999px;
+  background: rgba(100,210,255,0.08);
+  padding: 0.38rem 0.58rem;
+  color: #d8f6ff;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.openapi-method.is-post {
+  border-color: rgba(48,209,88,0.22);
+  background: rgba(48,209,88,0.08);
+  color: #d4ffe6;
+}
+
+.openapi-method.is-delete {
+  border-color: rgba(255,69,58,0.22);
+  background: rgba(255,69,58,0.08);
+  color: #ffd6d3;
+}
+
+.openapi-operation h4 {
+  margin: 0.9rem 0 0;
+  color: white;
+  font-size: 1.05rem;
+  line-height: 1.35;
+}
+
+.openapi-operation p {
+  margin: 0.55rem 0 0;
+  color: rgba(255,255,255,0.56);
+  font-size: 0.9rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.openapi-operation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.openapi-operation-meta span {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  padding: 0.42rem 0.62rem;
+  color: rgba(255,255,255,0.68);
+  font-size: 0.74rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.reference-doc-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.reference-terminal {
+  margin-top: 0;
+}
+
+.reference-scope-list {
+  display: grid;
+  gap: 0;
+  margin-top: 1.25rem;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.reference-scope-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(13rem, 0.55fr) minmax(0, 1fr);
+  gap: 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding: 0.95rem 0;
+}
+
+.reference-scope-row strong,
+.reference-scope-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.reference-scope-row strong {
+  color: white;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.88rem;
+}
+
+.reference-scope-row span {
+  color: rgba(255,255,255,0.58);
+  font-size: 0.9rem;
+}
+
+.reference-scope-table > p {
+  margin: 1rem 0 0;
+  color: rgba(255,255,255,0.56);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+@media (max-width: 900px) {
+  .openapi-auth-strip,
+  .reference-doc-grid,
+  .reference-scope-row {
+    grid-template-columns: 1fr;
+  }
+
+  .openapi-status a {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .openapi-reference-head,
+  .reference-table-head {
+    flex-direction: column;
+  }
+
+  .openapi-reference-head button,
+  .reference-action-row .text-link-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .openapi-operation header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

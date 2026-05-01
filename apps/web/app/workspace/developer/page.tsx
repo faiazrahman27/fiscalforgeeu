@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   BadgeCheck,
+  BookOpen,
   Braces,
   FileCode2,
   KeyRound,
@@ -28,6 +29,15 @@ const developerModules = [
       "Review sandbox developer API usage limits, current request windows, remaining counts, and rate-limit request logs.",
     href: "/workspace/developer/api-keys",
     icon: <ShieldCheck size={22} />
+  },
+  {
+    title: "API reference",
+    status: "active",
+    actionLabel: "Open",
+    description:
+      "Browse the current OpenAPI document, X-API-Key auth model, scopes, examples, response schemas, and rate-limit headers.",
+    href: "/developer-api/reference",
+    icon: <BookOpen size={22} />
   },
   {
     title: "Validation API",
@@ -103,7 +113,9 @@ export default function WorkspaceDeveloperPage() {
         <p>
           Manage organization-owned keys and review the safe boundaries for
           Invoice Lantern technical validation endpoints. API keys do not grant
-          workspace UI permissions.
+          workspace UI permissions. The API reference documents active
+          endpoints only; planned webhook, VIES, country-pack, and ViDA work
+          stays inactive until implemented.
         </p>
       </section>
 

@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import type { ChangeEvent, FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   BarChart3,
+  BookOpen,
   Code2,
   Copy,
   Eraser,
@@ -1194,6 +1196,16 @@ export default function WorkspaceApiKeysPage() {
           This is not an official filing API, not authority submission, and not
           a compliance guarantee.
         </p>
+        <div className="workspace-row-actions">
+          <Link href="/developer-api/reference" className="text-link-button">
+            <BookOpen size={16} />
+            API reference
+          </Link>
+          <Link href="/developer-api" className="text-link-button">
+            <Code2 size={16} />
+            Public API overview
+          </Link>
+        </div>
       </section>
 
       <section className="workspace-stat-strip">
@@ -1245,6 +1257,23 @@ export default function WorkspaceApiKeysPage() {
             <p>
               Do not use Invoice Lantern API responses as the sole basis for
               legal, tax, or accounting decisions.
+            </p>
+          </div>
+          <div className="alert-item">
+            <span />
+            <p>
+              Send organization API keys with the X-API-Key header, for example
+              X-API-Key: il_test_your_key_here. Full keys are visible once at
+              creation and are never listed again.
+            </p>
+          </div>
+          <div className="alert-item">
+            <span />
+            <p>
+              Scoped developer endpoints can return Retry-After,
+              X-RateLimit-Limit, X-RateLimit-Remaining, and X-RateLimit-Reset
+              headers. Sandbox limits protect shared resources and are not an
+              SLA.
             </p>
           </div>
         </div>

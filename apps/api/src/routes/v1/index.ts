@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { openApiDocument } from "../../openapi/openapi-document.js";
 import { healthRoutes } from "../health.js";
 import { apiKeyRoutes } from "./api-keys.js";
 import { apiRequestRoutes } from "./api-requests.js";
@@ -21,6 +22,12 @@ import { workspaceSettingsRoutes } from "./workspace-settings.js";
 import { xmlRoutes } from "./xml.js";
 
 export async function v1Routes(app: FastifyInstance) {
+  app.get("/openapi.json", async (_request, reply) => {
+    return reply
+      .header("Cache-Control", "public, max-age=300")
+      .send(openApiDocument);
+  });
+
   await app.register(healthRoutes, {
     prefix: "/health"
   });
