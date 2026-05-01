@@ -8,6 +8,7 @@ import {
   requireApiKey,
   requireApiKeyScopes
 } from "../../middleware/require-api-key.js";
+import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import {
   hasAuthenticatedVatNumberCheckContext,
   listAuthenticatedVatNumberCheckRecords,
@@ -107,7 +108,10 @@ export async function vatRoutes(app: FastifyInstance) {
   app.post(
     "/validate-format",
     {
-      preHandler: requireApiKeyScopes(["vat:validate_format"])
+      preHandler: [
+        requireApiKeyScopes(["vat:validate_format"]),
+        requireApiKeyRateLimitPolicy("vat_validate_format")
+      ]
     },
     async (request, reply) => {
       const parsedBody = vatFormatRequestSchema.safeParse(request.body);

@@ -74,6 +74,18 @@ export type RecordApiRequestInput = {
   errorCode?: string | null;
 };
 
+export type CountRecentApiRequestsInput = {
+  organizationId: string;
+  apiKeyId?: string;
+  sinceIso: string;
+  pathPrefix?: string;
+};
+
+export type RecentApiRequestWindow = {
+  count: number;
+  oldestRequestAt: string | null;
+};
+
 export type ApiRequestMetadata = {
   id: string;
   organizationId: string | null;
@@ -437,6 +449,25 @@ export async function verifyApiKey(
 
 export async function recordApiRequest(input: RecordApiRequestInput) {
   await getRepository().recordApiRequest(input);
+}
+
+export async function countRecentApiRequests(
+  input: CountRecentApiRequestsInput
+) {
+  const countInput: CountRecentApiRequestsInput = {
+    organizationId: input.organizationId,
+    sinceIso: input.sinceIso
+  };
+
+  if (input.apiKeyId) {
+    countInput.apiKeyId = input.apiKeyId;
+  }
+
+  if (input.pathPrefix) {
+    countInput.pathPrefix = input.pathPrefix;
+  }
+
+  return getRepository().countRecentApiRequests(countInput);
 }
 
 export async function listApiRequests(input: ListApiRequestsInput) {

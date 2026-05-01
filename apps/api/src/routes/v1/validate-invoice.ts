@@ -7,6 +7,7 @@ import {
   type ValidationFindingSeverity
 } from "@invoice-lantern/invoice-core";
 import { canonicalToUblInvoiceXml } from "@invoice-lantern/ubl";
+import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
 import {
   getAuthenticatedInvoiceDraftById,
@@ -258,7 +259,10 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
     "/validate",
     {
-      preHandler: requireApiKeyScopes(["invoices:validate"])
+      preHandler: [
+        requireApiKeyScopes(["invoices:validate"]),
+        requireApiKeyRateLimitPolicy("invoices_validate")
+      ]
     },
     async (request, reply) => {
       const parsedBody = validateCanonicalInvoice(request.body);
@@ -361,7 +365,10 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
     "/export/ubl",
     {
-      preHandler: requireApiKeyScopes(["invoices:export_ubl"])
+      preHandler: [
+        requireApiKeyScopes(["invoices:export_ubl"]),
+        requireApiKeyRateLimitPolicy("invoices_export_ubl")
+      ]
     },
     async (request, reply) => {
       let exportRequest: UblExportRequestPayload;

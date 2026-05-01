@@ -79,6 +79,26 @@ type ApiUsageSummary = {
   };
 };
 
+type ApiRateLimitPolicy = {
+  policyKey: string;
+  scope: string;
+  windowSeconds: number;
+  maxRequests: number;
+  description: string;
+  appliesTo: "api_key" | "organization";
+};
+
+type ApiRateLimitUsageStatus = {
+  apiKeyId: string | null;
+  policyKey: string;
+  windowSeconds: number;
+  maxRequests: number;
+  used: number;
+  remaining: number;
+  resetAt: string;
+  status: "ok" | "limited";
+};
+
 type ApiKeyFormState = {
   name: string;
   environment: ApiKeyEnvironment;
@@ -106,6 +126,12 @@ type ApiTestResult = {
   ok: boolean;
   message: string;
   data: unknown;
+  rateLimit: {
+    limit: string | null;
+    remaining: string | null;
+    reset: string | null;
+    retryAfter: string | null;
+  } | null;
 };
 
 const scopeOptions: {
@@ -462,6 +488,62 @@ function normalizeUsageSummary(value: unknown): ApiUsageSummary {
   };
 }
 
+function normalizeRateLimitPolicy(value: unknown): ApiRateLimitPolicy | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const policyKey = readStringField(value, "policyKey");
+  const scope = readStringField(value, "scope");
+  const description = readStringField(value, "description");
+  const appliesTo =
+    value.appliesTo === "organization" ? "organization" : "api_key";
+  const windowSeconds = readNumberField(value, "windowSeconds");
+  const maxRequests = readNumberField(value, "maxRequests");
+
+  if (!policyKey || !scope || !description || windowSeconds <= 0 || maxRequests <= 0) {
+    return null;
+  }
+
+  return {
+    policyKey,
+    scope,
+    windowSeconds,
+    maxRequests,
+    description,
+    appliesTo
+  };
+}
+
+function normalizeRateLimitUsage(
+  value: unknown
+): ApiRateLimitUsageStatus | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const policyKey = readStringField(value, "policyKey");
+  const resetAt = readStringField(value, "resetAt");
+  const status = value.status === "limited" ? "limited" : "ok";
+  const windowSeconds = readNumberField(value, "windowSeconds");
+  const maxRequests = readNumberField(value, "maxRequests");
+
+  if (!policyKey || !resetAt || windowSeconds <= 0 || maxRequests <= 0) {
+    return null;
+  }
+
+  return {
+    apiKeyId: readNullableStringField(value, "apiKeyId"),
+    policyKey,
+    windowSeconds,
+    maxRequests,
+    used: readNumberField(value, "used"),
+    remaining: readNumberField(value, "remaining"),
+    resetAt,
+    status
+  };
+}
+
 function getApiErrorMessage(data: unknown, fallback: string) {
   if (typeof data === "string" && data.trim()) {
     return data.slice(0, 240);
@@ -495,6 +577,25 @@ function formatDateTime(value: string | null) {
 
 function formatStatus(value: string) {
   return value.replaceAll("_", " ");
+}
+
+function formatPolicyLabel(value: string) {
+  return value
+    .replace(/^invoices_/, "invoice ")
+    .replace(/^vat_/, "VAT ")
+    .replace(/^validation_/, "validation ")
+    .replace(/^organization_/, "organization ")
+    .replaceAll("_", " ");
+}
+
+function formatWindowSeconds(value: number) {
+  if (value % 60 === 0) {
+    const minutes = value / 60;
+
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+
+  return `${value} seconds`;
 }
 
 function formatDuration(value: number | null) {
@@ -576,6 +677,24 @@ function isValidUrl(value: string) {
   }
 }
 
+function readResponseRateLimitHeaders(response: Response) {
+  const limit = response.headers.get("x-ratelimit-limit");
+  const remaining = response.headers.get("x-ratelimit-remaining");
+  const reset = response.headers.get("x-ratelimit-reset");
+  const retryAfter = response.headers.get("retry-after");
+
+  if (!limit && !remaining && !reset && !retryAfter) {
+    return null;
+  }
+
+  return {
+    limit,
+    remaining,
+    reset,
+    retryAfter
+  };
+}
+
 export default function WorkspaceApiKeysPage() {
   const [apiKeys, setApiKeys] = useState<ApiKeyRecord[]>([]);
   const [formState, setFormState] = useState<ApiKeyFormState>(defaultFormState);
@@ -590,6 +709,12 @@ export default function WorkspaceApiKeysPage() {
   const [requestLogs, setRequestLogs] = useState<ApiRequestRecord[]>([]);
   const [usageSummary, setUsageSummary] =
     useState<ApiUsageSummary>(emptyUsageSummary);
+  const [rateLimitPolicies, setRateLimitPolicies] = useState<
+    ApiRateLimitPolicy[]
+  >([]);
+  const [currentRateLimits, setCurrentRateLimits] = useState<
+    ApiRateLimitUsageStatus[]
+  >([]);
   const [usageMessage, setUsageMessage] = useState("");
   const [isUsageLoading, setIsUsageLoading] = useState(true);
   const [apiTestKey, setApiTestKey] = useState("");
@@ -687,14 +812,25 @@ export default function WorkspaceApiKeysPage() {
     const summaryParams = new URLSearchParams({
       sinceDays: "30"
     });
+    const currentUsageParams = new URLSearchParams();
 
     if (selectedApiKeyId) {
       requestParams.set("apiKeyId", selectedApiKeyId);
       summaryParams.set("apiKeyId", selectedApiKeyId);
+      currentUsageParams.set("apiKeyId", selectedApiKeyId);
     }
 
     try {
-      const [requestsResponse, summaryResponse] = await Promise.all([
+      const currentUsageQuery = currentUsageParams.toString();
+      const currentUsageUrl = currentUsageQuery
+        ? `/api/local/api-usage/current?${currentUsageQuery}`
+        : "/api/local/api-usage/current";
+      const [
+        requestsResponse,
+        summaryResponse,
+        policiesResponse,
+        currentUsageResponse
+      ] = await Promise.all([
         fetch(`/api/local/api-requests?${requestParams.toString()}`, {
           method: "GET",
           cache: "no-store"
@@ -702,16 +838,29 @@ export default function WorkspaceApiKeysPage() {
         fetch(`/api/local/api-requests/summary?${summaryParams.toString()}`, {
           method: "GET",
           cache: "no-store"
+        }),
+        fetch("/api/local/api-usage/policies", {
+          method: "GET",
+          cache: "no-store"
+        }),
+        fetch(currentUsageUrl, {
+          method: "GET",
+          cache: "no-store"
         })
       ]);
-      const [requestsData, summaryData] = await Promise.all([
-        readResponseBody(requestsResponse),
-        readResponseBody(summaryResponse)
-      ]);
+      const [requestsData, summaryData, policiesData, currentUsageData] =
+        await Promise.all([
+          readResponseBody(requestsResponse),
+          readResponseBody(summaryResponse),
+          readResponseBody(policiesResponse),
+          readResponseBody(currentUsageResponse)
+        ]);
 
       if (!requestsResponse.ok) {
         setRequestLogs([]);
         setUsageSummary(emptyUsageSummary);
+        setRateLimitPolicies([]);
+        setCurrentRateLimits([]);
         setUsageMessage(
           getApiErrorMessage(
             requestsData,
@@ -724,6 +873,8 @@ export default function WorkspaceApiKeysPage() {
       if (!summaryResponse.ok) {
         setRequestLogs([]);
         setUsageSummary(emptyUsageSummary);
+        setRateLimitPolicies([]);
+        setCurrentRateLimits([]);
         setUsageMessage(
           getApiErrorMessage(
             summaryData,
@@ -733,9 +884,40 @@ export default function WorkspaceApiKeysPage() {
         return;
       }
 
+      if (!policiesResponse.ok) {
+        setRateLimitPolicies([]);
+        setCurrentRateLimits([]);
+        setUsageMessage(
+          getApiErrorMessage(
+            policiesData,
+            "API usage policies could not be loaded for this workspace."
+          )
+        );
+        return;
+      }
+
+      if (!currentUsageResponse.ok) {
+        setCurrentRateLimits([]);
+        setUsageMessage(
+          getApiErrorMessage(
+            currentUsageData,
+            "Current API usage limits could not be loaded for this workspace."
+          )
+        );
+        return;
+      }
+
       const requestRecords =
         isPlainObject(requestsData) && Array.isArray(requestsData.apiRequests)
           ? requestsData.apiRequests
+          : [];
+      const policies =
+        isPlainObject(policiesData) && Array.isArray(policiesData.policies)
+          ? policiesData.policies
+          : [];
+      const currentUsage =
+        isPlainObject(currentUsageData) && Array.isArray(currentUsageData.usage)
+          ? currentUsageData.usage
           : [];
 
       setRequestLogs(
@@ -748,9 +930,23 @@ export default function WorkspaceApiKeysPage() {
           ? normalizeUsageSummary(summaryData.summary)
           : emptyUsageSummary
       );
+      setRateLimitPolicies(
+        policies
+          .map((record) => normalizeRateLimitPolicy(record))
+          .filter((record): record is ApiRateLimitPolicy => record !== null)
+      );
+      setCurrentRateLimits(
+        currentUsage
+          .map((record) => normalizeRateLimitUsage(record))
+          .filter(
+            (record): record is ApiRateLimitUsageStatus => record !== null
+          )
+      );
     } catch {
       setRequestLogs([]);
       setUsageSummary(emptyUsageSummary);
+      setRateLimitPolicies([]);
+      setCurrentRateLimits([]);
       setUsageMessage(
         "API usage logs are unavailable. Make sure apps/api and apps/web are both running."
       );
@@ -912,7 +1108,8 @@ export default function WorkspaceApiKeysPage() {
         status: null,
         ok: false,
         message: "Paste an API key before running a sandbox API test.",
-        data: null
+        data: null,
+        rateLimit: null
       });
       return;
     }
@@ -922,7 +1119,8 @@ export default function WorkspaceApiKeysPage() {
         status: null,
         ok: false,
         message: "Enter a valid API base URL, such as http://localhost:4000.",
-        data: null
+        data: null,
+        rateLimit: null
       });
       return;
     }
@@ -949,14 +1147,21 @@ export default function WorkspaceApiKeysPage() {
         cache: "no-store"
       });
       const responseData = await readResponseBody(response);
+      const rateLimit = readResponseRateLimitHeaders(response);
 
       setApiTestResult({
         status: response.status,
         ok: response.ok,
         message: response.ok
           ? "Request completed."
-          : getApiErrorMessage(responseData, "Sandbox API request failed."),
-        data: responseData
+          : response.status === 429 && rateLimit?.retryAfter
+            ? `${getApiErrorMessage(
+                responseData,
+                "Sandbox API request failed."
+              )} Retry after ${rateLimit.retryAfter} seconds.`
+            : getApiErrorMessage(responseData, "Sandbox API request failed."),
+        data: responseData,
+        rateLimit
       });
 
       void loadApiUsage();
@@ -966,7 +1171,8 @@ export default function WorkspaceApiKeysPage() {
         ok: false,
         message:
           "Request could not be sent. Check the API base URL and local CORS settings.",
-        data: null
+        data: null,
+        rateLimit: null
       });
     } finally {
       setIsTestingEndpoint(false);
@@ -1392,6 +1598,69 @@ export default function WorkspaceApiKeysPage() {
             ))
           )}
         </div>
+
+        <div className="api-rate-limit-section">
+          <div className="workspace-table-head api-rate-limit-head">
+            <div>
+              <p>Rate limits</p>
+              <h3>Current sandbox usage window</h3>
+            </div>
+          </div>
+
+          <p className="workspace-muted-copy">
+            Rate limits protect the sandbox API from abuse and unrestricted
+            resource consumption. They are not an SLA.
+          </p>
+
+          <div className="workspace-data-grid api-current-rate-grid">
+            {currentRateLimits.length === 0 ? (
+              <div className="workspace-data-card is-full">
+                <p>Current window</p>
+                <strong>{isUsageLoading ? "Loading" : "No usage yet"}</strong>
+                <span>
+                  Select an API key to inspect key-level limits or view the
+                  organization sandbox developer API total here.
+                </span>
+              </div>
+            ) : (
+              currentRateLimits.map((usage) => (
+                <div
+                  className={`workspace-data-card ${
+                    usage.status === "limited" ? "is-danger" : "is-good"
+                  }`}
+                  key={`${usage.policyKey}-${usage.apiKeyId ?? "org"}`}
+                >
+                  <p>{usage.apiKeyId ? "API key limit" : "Organization limit"}</p>
+                  <strong>
+                    {usage.remaining} / {usage.maxRequests} remaining
+                  </strong>
+                  <span>
+                    {formatPolicyLabel(usage.policyKey)} uses {usage.used} in{" "}
+                    {formatWindowSeconds(usage.windowSeconds)}. Resets{" "}
+                    {formatDateTime(usage.resetAt)}.
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="api-rate-policy-grid">
+            {rateLimitPolicies.map((policy) => (
+              <article className="api-rate-policy-card" key={policy.policyKey}>
+                <header>
+                  <strong>{formatPolicyLabel(policy.policyKey)}</strong>
+                  <span>{policy.appliesTo === "api_key" ? "per key" : "per organization"}</span>
+                </header>
+                <p>{policy.description}</p>
+                <div className="api-key-scope-list">
+                  <span>{policy.maxRequests} requests</span>
+                  <span>{formatWindowSeconds(policy.windowSeconds)}</span>
+                  <span>{policy.scope}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="workspace-table-shell" id="api-request-logs">
@@ -1457,7 +1726,12 @@ export default function WorkspaceApiKeysPage() {
             </article>
           ) : (
             requestLogs.map((requestLog) => (
-              <article className="api-request-log-row" key={requestLog.id}>
+              <article
+                className={`api-request-log-row ${
+                  requestLog.statusCode === 429 ? "is-rate-limited" : ""
+                }`}
+                key={requestLog.id}
+              >
                 <div>
                   <strong>
                     {requestLog.requestMethod} {requestLog.requestPath}
@@ -1474,9 +1748,13 @@ export default function WorkspaceApiKeysPage() {
                 <span
                   className={`api-status-code ${getStatusTone(
                     requestLog.statusCode
-                  )}`}
+                  )} ${
+                    requestLog.statusCode === 429 ? "is-rate-limited" : ""
+                  }`}
                 >
-                  {formatStatusCode(requestLog.statusCode)}
+                  {requestLog.statusCode === 429
+                    ? "429 rate limit"
+                    : formatStatusCode(requestLog.statusCode)}
                 </span>
 
                 <span>{formatDuration(requestLog.durationMs)}</span>
@@ -1608,6 +1886,18 @@ export default function WorkspaceApiKeysPage() {
             </div>
 
             <p className="workspace-muted-copy">{apiTestResult.message}</p>
+            {apiTestResult.rateLimit ? (
+              <div className="api-rate-limit-detail-grid">
+                <span>Limit: {apiTestResult.rateLimit.limit ?? "n/a"}</span>
+                <span>
+                  Remaining: {apiTestResult.rateLimit.remaining ?? "n/a"}
+                </span>
+                <span>Reset: {apiTestResult.rateLimit.reset ?? "n/a"}</span>
+                <span>
+                  Retry-After: {apiTestResult.rateLimit.retryAfter ?? "n/a"}
+                </span>
+              </div>
+            ) : null}
             {apiTestResult.data !== null ? (
               <pre>{formatJson(apiTestResult.data)}</pre>
             ) : null}

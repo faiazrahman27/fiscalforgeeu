@@ -42,7 +42,7 @@ function recordRequestLog(request: FastifyRequest, reply: FastifyReply) {
     durationMs: getDurationMs(request),
     ipAddress: request.ip,
     userAgent: readHeaderString(request.headers["user-agent"]),
-    errorCode: null
+    errorCode: request.apiKeyRequestErrorCode ?? null
   }).catch((error) => {
     request.log.warn(
       {

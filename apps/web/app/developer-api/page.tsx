@@ -37,6 +37,12 @@ const apiModules = [
       "Workspace admins can review API usage logs with method, path, status, duration, key prefix, IP, user agent, and timestamps. Request bodies, XML payloads, full API keys, and full VAT IDs are not stored."
   },
   {
+    icon: <ShieldCheck size={22} />,
+    title: "Rate limits",
+    description:
+      "Sandbox API usage limits protect developer endpoints from abuse and unrestricted resource consumption. Graceful 429 responses include Retry-After and X-RateLimit headers."
+  },
+  {
     icon: <RadioTower size={22} />,
     title: "Webhook simulator",
     description:
@@ -151,6 +157,44 @@ They are not official filing credentials and do not provide tax authority submis
 
 API usage logs store metadata only: method, path, status, duration, key prefix, IP, user agent, and timestamps.
 They do not store request bodies, XML payloads, full API keys, full VAT IDs, or key hashes.`}</pre>
+            </div>
+          </Reveal>
+
+          <Reveal>
+            <div className="terminal-shell subpage-terminal">
+              <div className="terminal-top">
+                <span />
+                <span />
+                <span />
+                <p>Rate limits</p>
+              </div>
+
+              <pre>{`Sandbox developer API limits:
+rules:read               120 requests per 15 minutes per API key
+vat:validate_format       60 requests per 15 minutes per API key
+invoices:validate         30 requests per 15 minutes per API key
+invoices:export_ubl       30 requests per 15 minutes per API key
+invoices:parse_ubl        30 requests per 15 minutes per API key
+organization total       300 requests per 15 minutes
+
+Rate limits protect the sandbox API from abuse and unrestricted resource consumption.
+They are not an SLA and are not a compliance guarantee.
+
+HTTP/1.1 429 Too Many Requests
+Retry-After: 123
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
+
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "This API key exceeded the sandbox rate limit for invoice validation.",
+    "limit": 30,
+    "windowSeconds": 900,
+    "retryAfterSeconds": 123
+  }
+}`}</pre>
             </div>
           </Reveal>
 

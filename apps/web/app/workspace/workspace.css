@@ -1211,6 +1211,12 @@
   color: #ffd6d3;
 }
 
+.api-status-code.is-rate-limited {
+  border-color: rgba(255,159,10,0.38);
+  background: rgba(255,159,10,0.13);
+  color: #ffe2ad;
+}
+
 .api-status-code.is-neutral {
   color: rgba(255,255,255,0.62);
 }
@@ -1244,6 +1250,14 @@
   align-items: center;
   border-bottom: 1px solid rgba(255,255,255,0.08);
   padding: 1rem 0;
+}
+
+.api-request-log-row.is-rate-limited {
+  background: linear-gradient(
+    90deg,
+    rgba(255,159,10,0.08),
+    transparent 46%
+  );
 }
 
 .api-request-log-row > * {
@@ -1326,6 +1340,95 @@
 .api-test-preview,
 .api-test-result {
   margin-top: 0;
+}
+
+.api-rate-limit-section {
+  margin-top: 1.5rem;
+}
+
+.api-rate-limit-head {
+  margin-top: 0;
+}
+
+.api-current-rate-grid {
+  margin-top: 1rem;
+}
+
+.api-rate-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+  min-width: 0;
+}
+
+.api-rate-policy-card {
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1rem;
+  background: rgba(0,0,0,0.24);
+  padding: 0.95rem;
+}
+
+.api-rate-policy-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.api-rate-policy-card strong,
+.api-rate-policy-card span,
+.api-rate-policy-card p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.api-rate-policy-card strong {
+  color: white;
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.api-rate-policy-card header > span {
+  border: 1px solid rgba(100,210,255,0.16);
+  border-radius: 999px;
+  background: rgba(100,210,255,0.07);
+  padding: 0.35rem 0.55rem;
+  color: #d8f6ff;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.api-rate-policy-card p {
+  margin: 0;
+  color: rgba(255,255,255,0.56);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.api-rate-limit-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
+.api-rate-limit-detail-grid span {
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.9rem;
+  background: rgba(255,255,255,0.04);
+  padding: 0.6rem 0.7rem;
+  color: rgba(255,255,255,0.66);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .workspace-xml-input-shell {
@@ -1955,6 +2058,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .api-rate-limit-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .api-test-grid {
     grid-template-columns: 1fr;
   }
@@ -1980,6 +2087,7 @@
   .api-key-meta-grid,
   .api-log-filters,
   .api-request-log-row,
+  .api-rate-limit-detail-grid,
   .api-usage-path-row {
     grid-template-columns: 1fr;
   }

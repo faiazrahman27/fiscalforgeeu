@@ -21,6 +21,15 @@ const developerModules = [
     icon: <KeyRound size={22} />
   },
   {
+    title: "Rate limits",
+    status: "active",
+    actionLabel: "View",
+    description:
+      "Review sandbox developer API usage limits, current request windows, remaining counts, and rate-limit request logs.",
+    href: "/workspace/developer/api-keys",
+    icon: <ShieldCheck size={22} />
+  },
+  {
     title: "Validation API",
     status: "active",
     actionLabel: "Open",

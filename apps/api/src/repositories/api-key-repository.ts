@@ -13,6 +13,8 @@ import type {
   ApiKeyStatus,
   ListApiRequestsInput,
   ApiKeyWorkspace,
+  CountRecentApiRequestsInput,
+  RecentApiRequestWindow,
   RecordApiRequestInput
 } from "../services/api-key-service.js";
 
@@ -49,6 +51,9 @@ export type ApiKeyRepository = {
     ipAddress: string | null;
   }): Promise<void>;
   recordApiRequest(input: RecordApiRequestInput): Promise<void>;
+  countRecentApiRequests(
+    input: CountRecentApiRequestsInput
+  ): Promise<RecentApiRequestWindow>;
   listApiRequests(input: ListApiRequestsInput): Promise<ApiRequestMetadata[]>;
   getApiUsageSummary(input: GetApiUsageSummaryInput): Promise<ApiUsageSummary>;
 };
@@ -514,6 +519,47 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
     if (error) {
       throw new Error(`Could not record API request: ${error.message}`);
     }
+  },
+
+  async countRecentApiRequests(input) {
+    const supabase = createServiceRoleClient();
+    let query = supabase
+      .from("api_requests")
+      .select("created_at", {
+        count: "exact"
+      })
+      .eq("organization_id", input.organizationId)
+      .gte("created_at", input.sinceIso)
+      .order("created_at", {
+        ascending: true
+      })
+      .limit(1);
+
+    if (input.apiKeyId) {
+      query = query.eq("api_key_id", input.apiKeyId);
+    }
+
+    if (input.pathPrefix) {
+      query = query.like("request_path", `${input.pathPrefix}%`);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      throw new Error(`Could not count recent API requests: ${error.message}`);
+    }
+
+    const oldestRow = Array.isArray(data) ? data[0] : null;
+    const oldestRequestAt =
+      oldestRow &&
+      typeof (oldestRow as { created_at?: unknown }).created_at === "string"
+        ? ((oldestRow as { created_at: string }).created_at ?? null)
+        : null;
+
+    return {
+      count: count ?? 0,
+      oldestRequestAt
+    };
   },
 
   async listApiRequests(input) {

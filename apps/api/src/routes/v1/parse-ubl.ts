@@ -11,6 +11,7 @@ import {
   ublInvoiceXmlToCanonicalInvoice
 } from "@invoice-lantern/ubl";
 import { env } from "../../config/env.js";
+import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
 import {
   createAuthenticatedWorkspaceActivityEvent,
@@ -222,7 +223,10 @@ export async function parseUblRoutes(app: FastifyInstance) {
   app.post(
     "/parse/ubl",
     {
-      preHandler: requireApiKeyScopes(["invoices:parse_ubl"])
+      preHandler: [
+        requireApiKeyScopes(["invoices:parse_ubl"]),
+        requireApiKeyRateLimitPolicy("invoices_parse_ubl")
+      ]
     },
     async (request, reply) => {
       const parsedRequest = readXmlFromRequest(request);

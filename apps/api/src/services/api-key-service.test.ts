@@ -4,6 +4,8 @@ import { buildApp } from "../app.js";
 import { env } from "../config/env.js";
 import type { ApiKeyRepository } from "../repositories/api-key-repository.js";
 import { apiRequestRoutes } from "../routes/v1/api-requests.js";
+import { apiUsageRoutes } from "../routes/v1/api-usage.js";
+import { requireApiKeyRateLimitPolicy } from "../middleware/require-api-rate-limit.js";
 import {
   createApiKey,
   getApiUsageSummary,
@@ -16,8 +18,14 @@ import {
   type ApiKeyScope,
   type ApiRequestMetadata,
   type ApiUsageSummary,
+  type CountRecentApiRequestsInput,
+  type RecentApiRequestWindow,
   type RecordApiRequestInput
 } from "./api-key-service.js";
+import {
+  API_RATE_LIMIT_POLICIES,
+  RATE_LIMIT_EXCEEDED_ERROR_CODE
+} from "./api-rate-limit-policy.js";
 
 type MemoryApiRequest = RecordApiRequestInput & {
   id: string;
@@ -191,6 +199,10 @@ function createMemoryRepository(): MemoryRepository {
       });
     },
 
+    async countRecentApiRequests(input) {
+      return countMemoryRecentApiRequests(records, requests, input);
+    },
+
     async listApiRequests(input) {
       return requests
         .filter((request) => request.organizationId === input.organizationId)
@@ -250,6 +262,33 @@ function createMemoryRepository(): MemoryRepository {
   };
 
   return memoryRepository;
+}
+
+function countMemoryRecentApiRequests(
+  _records: ApiKeyRecord[],
+  requests: MemoryApiRequest[],
+  input: CountRecentApiRequestsInput
+): RecentApiRequestWindow {
+  const sinceTime = new Date(input.sinceIso).getTime();
+  const relevantRequests = requests
+    .filter((request) => request.organizationId === input.organizationId)
+    .filter((request) =>
+      input.apiKeyId ? request.apiKeyId === input.apiKeyId : true
+    )
+    .filter((request) =>
+      input.pathPrefix ? request.requestPath.startsWith(input.pathPrefix) : true
+    )
+    .filter((request) => {
+      const createdTime = new Date(request.createdAt).getTime();
+
+      return Number.isFinite(createdTime) && createdTime >= sinceTime;
+    })
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+
+  return {
+    count: relevantRequests.length,
+    oldestRequestAt: relevantRequests[0]?.createdAt ?? null
+  };
 }
 
 function summarizeMemoryRequests(requests: MemoryApiRequest[]): ApiUsageSummary {
@@ -377,6 +416,28 @@ async function getApiRequestRouteHandler(path: "/" | "/summary") {
   return handler;
 }
 
+async function getApiUsageRouteHandler(path: "/policies" | "/current") {
+  const handlers = new Map<string, CapturedRouteHandler>();
+  const appStub = {
+    get(
+      routePath: string,
+      _options: unknown,
+      handler: CapturedRouteHandler
+    ) {
+      handlers.set(routePath, handler);
+      return appStub;
+    }
+  };
+
+  await apiUsageRoutes(appStub as never);
+
+  const handler = handlers.get(path);
+
+  assert.ok(handler);
+
+  return handler;
+}
+
 function createRouteReply() {
   return {
     statusCode: 200,
@@ -414,6 +475,67 @@ async function callApiRequestRoute(
   return {
     statusCode: reply.statusCode,
     body: reply.payload ?? result
+  };
+}
+
+async function callApiUsageRoute(
+  path: "/policies" | "/current",
+  query: Record<string, unknown> = {}
+) {
+  const handler = await getApiUsageRouteHandler(path);
+  const reply = createRouteReply();
+  const result = await handler(
+    {
+      query,
+      authenticatedUser: {
+        id: userId,
+        email: "admin@example.test",
+        role: "authenticated"
+      },
+      authenticatedAccessToken: "test-access-token"
+    },
+    reply
+  );
+
+  return {
+    statusCode: reply.statusCode,
+    body: reply.payload ?? result
+  };
+}
+
+async function callRateLimitPreHandler(input: {
+  authenticationMode: "organization_api_key" | "supabase_user" | "dev_api_key";
+  apiKey?: ApiKeyRecord;
+}) {
+  const handler = requireApiKeyRateLimitPolicy("invoices_validate");
+  const headers = new Map<string, string>();
+  const reply = {
+    statusCode: 200,
+    payload: undefined as unknown,
+    header(name: string, value: string) {
+      headers.set(name.toLowerCase(), value);
+      return this;
+    },
+    status(statusCode: number) {
+      this.statusCode = statusCode;
+      return this;
+    },
+    send(payload: unknown) {
+      this.payload = payload;
+      return payload;
+    }
+  };
+  const request = {
+    authenticationMode: input.authenticationMode,
+    authenticatedApiKey: input.apiKey
+  };
+  const result = await handler(request as never, reply as never);
+
+  return {
+    result,
+    statusCode: reply.statusCode,
+    body: reply.payload,
+    headers
   };
 }
 
@@ -548,6 +670,144 @@ test("valid API key can call a scoped developer endpoint", async (t) => {
 
   assert.equal(response.statusCode, 200);
   assert.equal(Array.isArray(response.json().ruleSets), true);
+});
+
+test("API rate-limit policy map exports expected sandbox policies", () => {
+  assert.equal(API_RATE_LIMIT_POLICIES.validation_rules_catalog.maxRequests, 120);
+  assert.equal(API_RATE_LIMIT_POLICIES.validation_rules_catalog.windowSeconds, 900);
+  assert.equal(API_RATE_LIMIT_POLICIES.validation_rules_catalog.scope, "rules:read");
+  assert.equal(API_RATE_LIMIT_POLICIES.vat_validate_format.maxRequests, 60);
+  assert.equal(API_RATE_LIMIT_POLICIES.invoices_validate.maxRequests, 30);
+  assert.equal(API_RATE_LIMIT_POLICIES.invoices_export_ubl.maxRequests, 30);
+  assert.equal(API_RATE_LIMIT_POLICIES.invoices_parse_ubl.maxRequests, 30);
+  assert.equal(
+    API_RATE_LIMIT_POLICIES.organization_developer_api_total.maxRequests,
+    300
+  );
+});
+
+test("API-key request under the endpoint limit succeeds with rate headers", async (t) => {
+  const created = await createKey(["rules:read"]);
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/v1/validation/rules",
+    headers: {
+      "x-api-key": created.secret
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers["x-ratelimit-limit"], "120");
+  assert.equal(response.headers["x-ratelimit-remaining"], "119");
+  assert.equal(typeof response.headers["x-ratelimit-reset"], "string");
+});
+
+test("API-key request over the endpoint limit returns graceful 429 and logs it", async (t) => {
+  const created = await createKey(["invoices:validate"]);
+  const app = await buildApp();
+
+  for (let index = 0; index < API_RATE_LIMIT_POLICIES.invoices_validate.maxRequests; index += 1) {
+    await repository.recordApiRequest({
+      organizationId,
+      apiKeyId: created.apiKey.id,
+      requestMethod: "POST",
+      requestPath: "/api/v1/invoices/validate",
+      statusCode: 200,
+      durationMs: 12,
+      ipAddress: "127.0.0.1",
+      userAgent: "rate-limit-test",
+      errorCode: null
+    });
+  }
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/invoices/validate",
+    headers: {
+      "x-api-key": created.secret,
+      "user-agent": "invoice-lantern-rate-limit-test"
+    },
+    payload: invoicePayload
+  });
+
+  assert.equal(response.statusCode, 429);
+
+  const body = response.json() as Record<string, unknown>;
+
+  assert.equal(isPlainObject(body.error), true);
+
+  const error = body.error as Record<string, unknown>;
+
+  assert.equal(error.code, RATE_LIMIT_EXCEEDED_ERROR_CODE);
+  assert.equal(error.limit, 30);
+  assert.equal(error.windowSeconds, 900);
+  assert.equal(typeof error.retryAfterSeconds, "number");
+  assert.match(String(error.message), /sandbox rate limit/i);
+  assert.equal(response.headers["x-ratelimit-limit"], "30");
+  assert.equal(response.headers["x-ratelimit-remaining"], "0");
+  assert.equal(typeof response.headers["x-ratelimit-reset"], "string");
+  assert.equal(typeof response.headers["retry-after"], "string");
+
+  await waitForRequestLogging();
+
+  const limitedLog = repository.requests.find(
+    (request) =>
+      request.statusCode === 429 &&
+      request.errorCode === RATE_LIMIT_EXCEEDED_ERROR_CODE
+  );
+
+  assert.ok(limitedLog);
+  assert.equal(limitedLog.requestMethod, "POST");
+  assert.equal(limitedLog.requestPath, "/api/v1/invoices/validate");
+  assert.equal(limitedLog.apiKeyId, created.apiKey.id);
+  assert.equal(limitedLog.organizationId, organizationId);
+
+  const serializedRequests = JSON.stringify(repository.requests);
+
+  assert.equal(serializedRequests.includes(created.secret), false);
+  assert.equal(serializedRequests.includes("keyHash"), false);
+  assert.equal(serializedRequests.includes("<Invoice"), false);
+  assert.equal(serializedRequests.includes("DE987654321"), false);
+});
+
+test("API-key limiter skips signed-in Supabase and development-key request modes", async () => {
+  const created = await createKey(["invoices:validate"]);
+
+  for (let index = 0; index < API_RATE_LIMIT_POLICIES.invoices_validate.maxRequests; index += 1) {
+    await repository.recordApiRequest({
+      organizationId,
+      apiKeyId: created.apiKey.id,
+      requestMethod: "POST",
+      requestPath: "/api/v1/invoices/validate",
+      statusCode: 200,
+      durationMs: 12,
+      ipAddress: "127.0.0.1",
+      userAgent: "rate-limit-test",
+      errorCode: null
+    });
+  }
+
+  const supabaseResult = await callRateLimitPreHandler({
+    authenticationMode: "supabase_user"
+  });
+  const devKeyResult = await callRateLimitPreHandler({
+    authenticationMode: "dev_api_key"
+  });
+
+  assert.equal(supabaseResult.statusCode, 200);
+  assert.equal(devKeyResult.statusCode, 200);
+  assert.equal(supabaseResult.body, undefined);
+  assert.equal(devKeyResult.body, undefined);
 });
 
 test("invoice validation and UBL export use their documented scopes", async (t) => {
@@ -837,6 +1097,93 @@ test("API request routes return safe metadata and summary responses", async () =
     ],
     1
   );
+});
+
+test("API usage policy route returns safe rate-limit policy data", async () => {
+  const response = await callApiUsageRoute("/policies");
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(isPlainObject(response.body), true);
+
+  const body = response.body as Record<string, unknown>;
+
+  assert.equal(Array.isArray(body.policies), true);
+  assert.match(String(body.disclaimer), /not a service-level agreement/i);
+
+  const policies = body.policies as Record<string, unknown>[];
+  const invoicePolicy = policies.find(
+    (policy) => policy.policyKey === "invoices_validate"
+  );
+
+  assert.ok(invoicePolicy);
+  assert.equal(invoicePolicy.scope, "invoices:validate");
+  assert.equal(invoicePolicy.maxRequests, 30);
+  assert.equal(invoicePolicy.windowSeconds, 900);
+
+  const serialized = JSON.stringify(body);
+
+  assert.equal(serialized.includes("keyHash"), false);
+  assert.equal(serialized.includes("il_test_"), false);
+  assert.equal(serialized.includes("<Invoice"), false);
+});
+
+test("API usage current route returns safe usage counts", async () => {
+  const created = await createKey(["invoices:validate"]);
+
+  await repository.recordApiRequest({
+    organizationId,
+    apiKeyId: created.apiKey.id,
+    requestMethod: "POST",
+    requestPath: "/api/v1/invoices/validate",
+    statusCode: 200,
+    durationMs: 20,
+    ipAddress: "127.0.0.1",
+    userAgent: "usage-current-test",
+    errorCode: null
+  });
+
+  const apiKeyResponse = await callApiUsageRoute("/current", {
+    apiKeyId: created.apiKey.id
+  });
+  const organizationResponse = await callApiUsageRoute("/current");
+
+  assert.equal(apiKeyResponse.statusCode, 200);
+  assert.equal(organizationResponse.statusCode, 200);
+
+  const apiKeyBody = apiKeyResponse.body as Record<string, unknown>;
+  const usage = apiKeyBody.usage as Record<string, unknown>[];
+  const invoiceUsage = usage.find(
+    (item) => item.policyKey === "invoices_validate"
+  );
+  const orgUsage = usage.find(
+    (item) => item.policyKey === "organization_developer_api_total"
+  );
+
+  assert.ok(invoiceUsage);
+  assert.equal(invoiceUsage.apiKeyId, created.apiKey.id);
+  assert.equal(invoiceUsage.used, 1);
+  assert.equal(invoiceUsage.remaining, 29);
+  assert.equal(invoiceUsage.status, "ok");
+  assert.ok(orgUsage);
+  assert.equal(orgUsage.apiKeyId, null);
+  assert.equal(orgUsage.used, 1);
+  assert.equal(orgUsage.remaining, 299);
+
+  const organizationBody = organizationResponse.body as Record<string, unknown>;
+  const organizationUsage = organizationBody.usage as Record<string, unknown>[];
+
+  assert.equal(organizationUsage.length, 1);
+  assert.equal(
+    organizationUsage[0]?.policyKey,
+    "organization_developer_api_total"
+  );
+
+  const serialized = JSON.stringify(apiKeyBody);
+
+  assert.equal(serialized.includes(created.secret), false);
+  assert.equal(serialized.includes("keyHash"), false);
+  assert.equal(serialized.includes("DE987654321"), false);
+  assert.equal(serialized.includes("<Invoice"), false);
 });
 
 test("API request routes follow existing owner or admin visibility rules", async () => {

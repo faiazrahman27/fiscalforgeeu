@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
 import { listPublishedValidationRules } from "../../repositories/validation-rule-repository.js";
 
@@ -18,7 +19,10 @@ export async function validationRuleRoutes(app: FastifyInstance) {
   app.get(
     "/rules",
     {
-      preHandler: requireApiKeyScopes(["rules:read"])
+      preHandler: [
+        requireApiKeyScopes(["rules:read"]),
+        requireApiKeyRateLimitPolicy("validation_rules_catalog")
+      ]
     },
     async (_request, reply) => {
       try {
