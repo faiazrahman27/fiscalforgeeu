@@ -73,6 +73,17 @@ const fallbackRows: EndpointRow[] = [
   },
   {
     method: "POST",
+    path: "/api/v1/xml/validation-jobs",
+    tag: "XML Validation Jobs",
+    summary: "Create an XML validation job",
+    description:
+      "Creates a metadata-only XML validation job and completes the worker-readiness stub. Real XSD/Schematron validation is not active.",
+    scope: "xml:validation_jobs",
+    auth: "X-API-Key",
+    responses: ["200", "400", "401", "403", "413", "429", "500"]
+  },
+  {
+    method: "POST",
     path: "/api/v1/vat/validate-format",
     tag: "VAT",
     summary: "Validate local VAT format",

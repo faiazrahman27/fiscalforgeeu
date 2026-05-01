@@ -680,6 +680,9 @@ test("API rate-limit policy map exports expected sandbox policies", () => {
   assert.equal(API_RATE_LIMIT_POLICIES.invoices_validate.maxRequests, 30);
   assert.equal(API_RATE_LIMIT_POLICIES.invoices_export_ubl.maxRequests, 30);
   assert.equal(API_RATE_LIMIT_POLICIES.invoices_parse_ubl.maxRequests, 30);
+  assert.equal(API_RATE_LIMIT_POLICIES.xml_validation_jobs.maxRequests, 15);
+  assert.equal(API_RATE_LIMIT_POLICIES.xml_validation_jobs.windowSeconds, 900);
+  assert.equal(API_RATE_LIMIT_POLICIES.xml_validation_jobs.scope, "xml:validation_jobs");
   assert.equal(
     API_RATE_LIMIT_POLICIES.organization_developer_api_total.maxRequests,
     300

@@ -24,6 +24,7 @@ type ApiKeyScope =
   | "invoices:export_ubl"
   | "invoices:parse_ubl"
   | "invoices:import_ubl"
+  | "xml:validation_jobs"
   | "vat:validate_format"
   | "validation_runs:read"
   | "rules:read";
@@ -112,7 +113,8 @@ type ApiTestEndpointId =
   | "validation-rules"
   | "vat-format"
   | "invoice-validation"
-  | "ubl-parse";
+  | "ubl-parse"
+  | "xml-validation-jobs";
 
 type ApiTestEndpoint = {
   id: ApiTestEndpointId;
@@ -160,6 +162,11 @@ const scopeOptions: {
     value: "invoices:import_ubl",
     label: "Import UBL",
     description: "Reserved until draft ownership is API-key safe"
+  },
+  {
+    value: "xml:validation_jobs",
+    label: "XML validation jobs",
+    description: "POST /api/v1/xml/validation-jobs"
   },
   {
     value: "vat:validate_format",
@@ -311,6 +318,23 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
     body: {
       xml: tinyUblXmlSample
     }
+  },
+  {
+    id: "xml-validation-jobs",
+    label: "XML validation job",
+    method: "POST",
+    path: "/api/v1/xml/validation-jobs",
+    scope: "xml:validation_jobs",
+    body: {
+      xml: tinyUblXmlSample,
+      filename: "api-worker-readiness.xml",
+      sourceType: "api_payload",
+      requestedChecks: [
+        "worker_readiness",
+        "xsd_ubl_placeholder",
+        "schematron_peppol_placeholder"
+      ]
+    }
   }
 ];
 
@@ -379,6 +403,7 @@ function isApiKeyScope(value: unknown): value is ApiKeyScope {
     value === "invoices:export_ubl" ||
     value === "invoices:parse_ubl" ||
     value === "invoices:import_ubl" ||
+    value === "xml:validation_jobs" ||
     value === "vat:validate_format" ||
     value === "validation_runs:read" ||
     value === "rules:read"

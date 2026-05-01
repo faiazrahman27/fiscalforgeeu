@@ -1,0 +1,22 @@
+{
+  "name": "invoice-lantern-xml-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:packages": "npm --prefix ../../packages/invoice-core run build && npm --prefix ../../packages/ubl run build",
+    "prebuild": "npm run build:packages",
+    "build": "tsc -p tsconfig.json",
+    "precheck": "npm run build:packages",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@invoice-lantern/ubl": "file:../../packages/ubl"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}

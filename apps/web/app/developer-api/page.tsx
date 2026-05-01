@@ -169,6 +169,7 @@ curl -X POST http://localhost:4000/api/v1/invoices/validate \\
               <pre>{`invoices:validate        POST /api/v1/invoices/validate
 invoices:export_ubl      POST /api/v1/invoices/export/ubl
 invoices:parse_ubl       POST /api/v1/invoices/parse/ubl
+xml:validation_jobs      POST /api/v1/xml/validation-jobs
 vat:validate_format      POST /api/v1/vat/validate-format
 rules:read               GET  /api/v1/validation/rules
 validation_runs:read     GET  /api/v1/validation-runs/:id
@@ -196,6 +197,7 @@ vat:validate_format       60 requests per 15 minutes per API key
 invoices:validate         30 requests per 15 minutes per API key
 invoices:export_ubl       30 requests per 15 minutes per API key
 invoices:parse_ubl        30 requests per 15 minutes per API key
+xml:validation_jobs       15 requests per 15 minutes per API key
 organization total       300 requests per 15 minutes
 
 Rate limits protect the sandbox API from abuse and unrestricted resource consumption.
@@ -203,14 +205,14 @@ They are not an SLA and are not a compliance guarantee.
 
 HTTP/1.1 429 Too Many Requests
 Retry-After: 123
-X-RateLimit-Limit: 30
+X-RateLimit-Limit: 15
 X-RateLimit-Remaining: 0
 X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
 
 {
   "error": {
     "code": "RATE_LIMIT_EXCEEDED",
-    "message": "This API key exceeded the sandbox rate limit for invoice validation.",
+    "message": "This API key exceeded the sandbox rate limit for XML validation jobs.",
     "limit": 30,
     "windowSeconds": 900,
     "retryAfterSeconds": 123

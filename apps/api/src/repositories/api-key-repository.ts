@@ -190,6 +190,7 @@ function normalizeScopes(value: unknown): ApiKeyScope[] {
         "invoices:export_ubl",
         "invoices:parse_ubl",
         "invoices:import_ubl",
+        "xml:validation_jobs",
         "vat:validate_format",
         "validation_runs:read",
         "rules:read"

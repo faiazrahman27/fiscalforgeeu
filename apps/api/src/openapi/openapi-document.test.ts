@@ -82,6 +82,8 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/invoices/validate",
     "/invoices/export/ubl",
     "/invoices/parse/ubl",
+    "/xml/validation-jobs",
+    "/xml/validation-jobs/{id}",
     "/vat/validate-format",
     "/validation/rules",
     "/validation-runs/{id}",
@@ -118,6 +120,8 @@ test("OpenAPI includes common errors and rate-limit headers", () => {
   assert.match(serialized, /Retry-After/);
   assert.match(serialized, /RATE_LIMIT_EXCEEDED/);
   assert.match(serialized, /INSUFFICIENT_SCOPE/);
+  assert.match(serialized, /xml:validation_jobs/);
+  assert.match(serialized, /Real XSD, Schematron, Peppol, and EN 16931 validation are not enabled yet/);
 });
 
 test("OpenAPI avoids sensitive key fields and only documents one-time create secret", () => {

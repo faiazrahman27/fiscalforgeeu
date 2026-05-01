@@ -1,7 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { inspectXmlSafety } from "@invoice-lantern/ubl";
 import { z } from "zod";
 import { env } from "../../config/env.js";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
+import {
+  requireApiKey,
+  requireApiKeyScopes
+} from "../../middleware/require-api-key.js";
 import {
   createAuthenticatedXmlUploadRecord,
   createXmlUploadRecord,
@@ -19,6 +24,35 @@ import {
   buildXmlUploadSummary,
   inspectXmlReadiness
 } from "../../services/xml-readiness-engine.js";
+import {
+  completeAuthenticatedJob,
+  completeJob,
+  completeOrganizationJob,
+  createAuthenticatedXmlValidationJob,
+  createOrganizationXmlValidationJob,
+  createXmlValidationJob,
+  getAuthenticatedXmlValidationJob,
+  getOrganizationXmlValidationJob,
+  getXmlValidationJob,
+  hasAuthenticatedXmlValidationJobContext,
+  listAuthenticatedXmlValidationJobs,
+  listOrganizationXmlValidationJobs,
+  listXmlValidationJobs,
+  markAuthenticatedJobRunning,
+  markJobRunning,
+  markOrganizationJobRunning,
+  type AuthenticatedXmlValidationJobContext,
+  type XmlValidationJobRecord,
+  type XmlValidationJobStatus
+} from "../../repositories/xml-validation-job-repository.js";
+import {
+  XML_VALIDATION_JOB_DISCLAIMER,
+  buildXmlValidationJobCompletion,
+  calculateXmlSha256,
+  detectXmlDocumentType,
+  detectXmlRootElement,
+  normalizeRequestedXmlValidationChecks
+} from "../../services/xml-validation-job-service.js";
 
 const xmlBodySchema = z.string().min(1, "XML body cannot be empty");
 
@@ -27,6 +61,50 @@ const xmlUploadParamsSchema = z
     id: z.string().trim().min(1).max(120)
   })
   .strict();
+
+const xmlValidationJobParamsSchema = xmlUploadParamsSchema;
+
+const xmlValidationJobStatusSchema = z.enum([
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled"
+]);
+
+const xmlValidationJobSourceTypeSchema = z.enum([
+  "uploaded_xml",
+  "pasted_xml",
+  "generated_ubl",
+  "api_payload"
+]);
+
+const xmlValidationJobCheckSchema = z.enum([
+  "worker_readiness",
+  "xsd_ubl_placeholder",
+  "schematron_peppol_placeholder"
+]);
+
+const xmlValidationJobBodySchema = z
+  .object({
+    xml: z.string().min(1, "XML body cannot be empty."),
+    filename: z.string().trim().max(180).optional(),
+    sourceType: xmlValidationJobSourceTypeSchema.optional(),
+    requestedChecks: z.array(xmlValidationJobCheckSchema).max(3).optional(),
+    xmlReadinessReportId: z.string().uuid().nullable().optional(),
+    invoiceDraftId: z.string().uuid().nullable().optional(),
+    validationRunId: z.string().uuid().nullable().optional()
+  })
+  .strict();
+
+const xmlValidationJobListQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    status: xmlValidationJobStatusSchema.optional()
+  })
+  .strict();
+
+const LOCAL_XML_VALIDATION_ORGANIZATION_ID = "local_development";
 
 function getAuthenticatedXmlUploadContext(
   request: FastifyRequest
@@ -45,6 +123,23 @@ function getAuthenticatedXmlUploadContext(
   return hasAuthenticatedXmlUploadContext(context) ? context : null;
 }
 
+function getAuthenticatedXmlValidationJobContext(
+  request: FastifyRequest
+): AuthenticatedXmlValidationJobContext | null {
+  const user = request.authenticatedUser;
+  const accessToken = request.authenticatedAccessToken;
+
+  const context =
+    user && accessToken
+      ? {
+          userId: user.id,
+          accessToken
+        }
+      : null;
+
+  return hasAuthenticatedXmlValidationJobContext(context) ? context : null;
+}
+
 function sendStorageError(reply: FastifyReply, error: unknown) {
   console.error("XML upload storage error:", error);
 
@@ -52,6 +147,18 @@ function sendStorageError(reply: FastifyReply, error: unknown) {
     error: {
       code: "XML_UPLOAD_STORAGE_ERROR",
       message: "Could not complete the XML upload storage operation.",
+      details: error instanceof Error ? error.message : null
+    }
+  });
+}
+
+function sendXmlValidationJobStorageError(reply: FastifyReply, error: unknown) {
+  console.error("XML validation job storage error:", error);
+
+  return reply.status(500).send({
+    error: {
+      code: "XML_VALIDATION_JOB_STORAGE_ERROR",
+      message: "Could not complete the XML validation job storage operation.",
       details: error instanceof Error ? error.message : null
     }
   });
@@ -128,7 +235,382 @@ function buildValidationError(message: string, details: unknown) {
   };
 }
 
+function sanitizeOptionalFileName(value: string | undefined) {
+  return value ? safeFileName(value) : null;
+}
+
+function formatXmlValidationJob(job: XmlValidationJobRecord) {
+  return {
+    id: job.id,
+    status: job.status,
+    sourceType: job.sourceType,
+    documentType: job.documentType,
+    filename: job.filename,
+    xmlSha256: job.xmlSha256,
+    xmlSizeBytes: job.xmlSizeBytes,
+    requestedChecks: job.requestedChecks,
+    completedChecks: job.completedChecks,
+    failedChecks: job.failedChecks,
+    workerName: job.workerName,
+    workerVersion: job.workerVersion,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
+    failedAt: job.failedAt,
+    errorCode: job.errorCode,
+    errorMessage: job.errorMessage,
+    resultSummary: job.resultSummary,
+    findings: job.findings,
+    disclaimer: job.disclaimer,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    xmlReadinessReportId: job.xmlReadinessReportId,
+    invoiceDraftId: job.invoiceDraftId,
+    validationRunId: job.validationRunId
+  };
+}
+
+async function listJobsForRequest(input: {
+  request: FastifyRequest;
+  limit: number | undefined;
+  status: XmlValidationJobStatus | undefined;
+}) {
+  const authenticatedContext = getAuthenticatedXmlValidationJobContext(
+    input.request
+  );
+
+  if (input.request.authenticatedApiKey) {
+    const listInput: {
+      organizationId: string;
+      limit?: number;
+      status?: XmlValidationJobStatus;
+    } = {
+      organizationId: input.request.authenticatedApiKey.organizationId
+    };
+
+    if (input.limit !== undefined) {
+      listInput.limit = input.limit;
+    }
+
+    if (input.status !== undefined) {
+      listInput.status = input.status;
+    }
+
+    return listOrganizationXmlValidationJobs(listInput);
+  }
+
+  if (authenticatedContext) {
+    const listInput: {
+      limit?: number;
+      status?: XmlValidationJobStatus;
+    } = {};
+
+    if (input.limit !== undefined) {
+      listInput.limit = input.limit;
+    }
+
+    if (input.status !== undefined) {
+      listInput.status = input.status;
+    }
+
+    return listAuthenticatedXmlValidationJobs(authenticatedContext, listInput);
+  }
+
+  const listInput: {
+    organizationId: string;
+    limit?: number;
+    status?: XmlValidationJobStatus;
+  } = {
+    organizationId: LOCAL_XML_VALIDATION_ORGANIZATION_ID
+  };
+
+  if (input.limit !== undefined) {
+    listInput.limit = input.limit;
+  }
+
+  if (input.status !== undefined) {
+    listInput.status = input.status;
+  }
+
+  return listXmlValidationJobs(listInput);
+}
+
+async function getJobForRequest(input: {
+  request: FastifyRequest;
+  jobId: string;
+}) {
+  const authenticatedContext = getAuthenticatedXmlValidationJobContext(
+    input.request
+  );
+
+  if (input.request.authenticatedApiKey) {
+    return getOrganizationXmlValidationJob({
+      organizationId: input.request.authenticatedApiKey.organizationId,
+      jobId: input.jobId
+    });
+  }
+
+  if (authenticatedContext) {
+    return getAuthenticatedXmlValidationJob(authenticatedContext, input.jobId);
+  }
+
+  return getXmlValidationJob({
+    organizationId: LOCAL_XML_VALIDATION_ORGANIZATION_ID,
+    jobId: input.jobId
+  });
+}
+
 export async function xmlRoutes(app: FastifyInstance) {
+  app.post(
+    "/validation-jobs",
+    {
+      preHandler: [
+        requireApiKeyScopes(["xml:validation_jobs"]),
+        requireApiKeyRateLimitPolicy("xml_validation_jobs")
+      ]
+    },
+    async (request, reply) => {
+      const parsedBody = xmlValidationJobBodySchema.safeParse(request.body);
+
+      if (!parsedBody.success) {
+        return reply.status(400).send(
+          buildValidationError(
+            "XML validation job request failed schema validation.",
+            formatZodIssues(parsedBody.error)
+          )
+        );
+      }
+
+      const xml = parsedBody.data.xml;
+
+      if (!xml.trim()) {
+        return reply.status(400).send({
+          error: {
+            code: "XML_BODY_INVALID",
+            message: "XML body cannot be empty.",
+            details: null
+          }
+        });
+      }
+
+      const xmlSizeBytes = getUtf8ByteLength(xml);
+
+      if (xmlSizeBytes > env.API_BODY_LIMIT_BYTES) {
+        return reply.status(413).send({
+          error: {
+            code: "XML_BODY_TOO_LARGE",
+            message: "XML body is too large.",
+            details: {
+              maxBytes: env.API_BODY_LIMIT_BYTES
+            }
+          }
+        });
+      }
+
+      const safety = inspectXmlSafety(xml, {
+        maxBytes: env.API_BODY_LIMIT_BYTES
+      });
+
+      if (!safety.safe) {
+        return reply.status(400).send({
+          error: {
+            code: safety.code ?? "XML_SAFETY_REJECTED",
+            message: safety.message,
+            details: {
+              byteLength: safety.byteLength,
+              maxBytes: safety.maxBytes ?? env.API_BODY_LIMIT_BYTES
+            }
+          },
+          disclaimer: XML_VALIDATION_JOB_DISCLAIMER
+        });
+      }
+
+      const requestedChecks = normalizeRequestedXmlValidationChecks(
+        parsedBody.data.requestedChecks
+      );
+      const rootElement = detectXmlRootElement(xml);
+      const documentType = detectXmlDocumentType(rootElement);
+      const xmlSha256 = calculateXmlSha256(xml);
+      const filename = sanitizeOptionalFileName(parsedBody.data.filename);
+
+      try {
+        const authenticatedContext = getAuthenticatedXmlValidationJobContext(
+          request
+        );
+        const createInput = {
+          xmlReadinessReportId: parsedBody.data.xmlReadinessReportId ?? null,
+          invoiceDraftId: parsedBody.data.invoiceDraftId ?? null,
+          validationRunId: parsedBody.data.validationRunId ?? null,
+          sourceType: parsedBody.data.sourceType ?? "uploaded_xml",
+          documentType,
+          filename,
+          xmlSha256,
+          xmlSizeBytes,
+          requestedChecks,
+          disclaimer: XML_VALIDATION_JOB_DISCLAIMER
+        };
+
+        let job: XmlValidationJobRecord;
+        let organizationId = LOCAL_XML_VALIDATION_ORGANIZATION_ID;
+
+        if (request.authenticatedApiKey) {
+          organizationId = request.authenticatedApiKey.organizationId;
+          job = await createOrganizationXmlValidationJob({
+            ...createInput,
+            organizationId,
+            createdBy: null
+          });
+          await markOrganizationJobRunning({
+            organizationId,
+            jobId: job.id
+          });
+        } else if (authenticatedContext) {
+          job = await createAuthenticatedXmlValidationJob(
+            authenticatedContext,
+            createInput
+          );
+          await markAuthenticatedJobRunning(authenticatedContext, {
+            jobId: job.id
+          });
+        } else {
+          job = await createXmlValidationJob({
+            ...createInput,
+            organizationId,
+            createdBy: null
+          });
+          await markJobRunning({
+            organizationId,
+            jobId: job.id
+          });
+        }
+
+        const completion = buildXmlValidationJobCompletion({
+          xmlSha256,
+          xmlSizeBytes,
+          requestedChecks,
+          safety,
+          rootElement,
+          documentType
+        });
+
+        const completedJob = request.authenticatedApiKey
+          ? await completeOrganizationJob({
+              organizationId,
+              jobId: job.id,
+              ...completion
+            })
+          : authenticatedContext
+            ? await completeAuthenticatedJob(authenticatedContext, {
+                jobId: job.id,
+                ...completion
+              })
+            : await completeJob({
+                organizationId,
+                jobId: job.id,
+                ...completion
+              });
+
+        if (!completedJob) {
+          return reply.status(500).send({
+            error: {
+              code: "XML_VALIDATION_JOB_COMPLETION_FAILED",
+              message: "XML validation job was created but could not be completed.",
+              details: null
+            }
+          });
+        }
+
+        return reply.status(200).send({
+          job: formatXmlValidationJob(completedJob)
+        });
+      } catch (error) {
+        return sendXmlValidationJobStorageError(reply, error);
+      }
+    }
+  );
+
+  app.get(
+    "/validation-jobs",
+    {
+      preHandler: [
+        requireApiKeyScopes(["xml:validation_jobs"]),
+        requireApiKeyRateLimitPolicy("xml_validation_jobs")
+      ]
+    },
+    async (request, reply) => {
+      const parsedQuery = xmlValidationJobListQuerySchema.safeParse(
+        request.query
+      );
+
+      if (!parsedQuery.success) {
+        return reply.status(400).send(
+          buildValidationError(
+            "XML validation job query failed schema validation.",
+            formatZodIssues(parsedQuery.error)
+          )
+        );
+      }
+
+      try {
+        const jobs = await listJobsForRequest({
+          request,
+          limit: parsedQuery.data.limit,
+          status: parsedQuery.data.status
+        });
+
+        return {
+          jobs: jobs.map(formatXmlValidationJob)
+        };
+      } catch (error) {
+        return sendXmlValidationJobStorageError(reply, error);
+      }
+    }
+  );
+
+  app.get(
+    "/validation-jobs/:id",
+    {
+      preHandler: [
+        requireApiKeyScopes(["xml:validation_jobs"]),
+        requireApiKeyRateLimitPolicy("xml_validation_jobs")
+      ]
+    },
+    async (request, reply) => {
+      const parsedParams = xmlValidationJobParamsSchema.safeParse(request.params);
+
+      if (!parsedParams.success) {
+        return reply.status(400).send(
+          buildValidationError(
+            "XML validation job ID failed schema validation.",
+            formatZodIssues(parsedParams.error)
+          )
+        );
+      }
+
+      try {
+        const job = await getJobForRequest({
+          request,
+          jobId: parsedParams.data.id
+        });
+
+        if (!job) {
+          return reply.status(404).send({
+            error: {
+              code: "XML_VALIDATION_JOB_NOT_FOUND",
+              message: "XML validation job was not found.",
+              details: null
+            }
+          });
+        }
+
+        return {
+          job: formatXmlValidationJob(job)
+        };
+      } catch (error) {
+        return sendXmlValidationJobStorageError(reply, error);
+      }
+    }
+  );
+
   app.get(
     "/uploads",
     {

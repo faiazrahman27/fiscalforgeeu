@@ -14,6 +14,7 @@ export const API_KEY_SCOPES = [
   "invoices:export_ubl",
   "invoices:parse_ubl",
   "invoices:import_ubl",
+  "xml:validation_jobs",
   "vat:validate_format",
   "validation_runs:read",
   "rules:read"

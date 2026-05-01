@@ -31,12 +31,34 @@ type XmlReadinessFilter =
 
 type XmlDocumentFilter = "all" | "invoice" | "credit_note" | "unknown";
 
+type XmlValidationJobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+type XmlValidationJobCheck =
+  | "worker_readiness"
+  | "xsd_ubl_placeholder"
+  | "schematron_peppol_placeholder";
+
 type XmlReadinessFinding = {
   code: string;
   severity: XmlFindingSeverity;
   field: string;
   message: string;
   confidence: "technical" | "readiness_simulation" | "review_required";
+};
+
+type XmlValidationJobFinding = {
+  code: string;
+  severity: XmlFindingSeverity;
+  checkType: XmlValidationJobCheck;
+  field: string;
+  message: string;
+  status: "completed" | "not_implemented";
+  legalConfidence: "technical" | "educational_simulation";
 };
 
 type XmlProfileSignal = {
@@ -195,6 +217,42 @@ type ApiXmlInspectResponse = {
   findings?: XmlReadinessFinding[];
   disclaimer: string;
   record?: ApiXmlUploadRecord;
+};
+
+type XmlValidationJob = {
+  id: string;
+  status: XmlValidationJobStatus;
+  sourceType: string;
+  documentType: string | null;
+  filename: string | null;
+  xmlSha256: string;
+  xmlSizeBytes: number;
+  requestedChecks: XmlValidationJobCheck[];
+  completedChecks: XmlValidationJobCheck[];
+  failedChecks: XmlValidationJobCheck[];
+  workerName: string | null;
+  workerVersion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  resultSummary: Record<string, unknown>;
+  findings: XmlValidationJobFinding[];
+  disclaimer: string;
+  createdAt: string;
+  updatedAt: string;
+  xmlReadinessReportId: string | null;
+  invoiceDraftId: string | null;
+  validationRunId: string | null;
+};
+
+type ApiXmlValidationJobResponse = {
+  job?: unknown;
+};
+
+type ApiXmlValidationJobListResponse = {
+  jobs?: unknown[];
 };
 
 type UblParseFindingSeverity = "info" | "warning" | "fatal" | "blocked";
@@ -361,6 +419,36 @@ const SAVED_REPORT_PREVIEW =
 const REPORT_DISCLAIMER =
   "Invoice Lantern performs a technical readiness simulation only. This result is not official XML, Peppol, EN 16931, ViDA, tax, legal, accounting, government, or authority validation.";
 
+const XML_VALIDATION_JOB_DISCLAIMER =
+  "This XML validation job is a technical sandbox worker-readiness result. Real XSD, Schematron, Peppol, and EN 16931 validation are not enabled yet.";
+
+const validationJobCheckOptions: {
+  value: XmlValidationJobCheck;
+  label: string;
+  description: string;
+  active: boolean;
+}[] = [
+  {
+    value: "worker_readiness",
+    label: "Worker readiness",
+    description: "Active stub check for the validation worker foundation.",
+    active: true
+  },
+  {
+    value: "xsd_ubl_placeholder",
+    label: "UBL XSD placeholder",
+    description: "Planned, inactive. This step does not perform XSD validation.",
+    active: false
+  },
+  {
+    value: "schematron_peppol_placeholder",
+    label: "Peppol Schematron placeholder",
+    description:
+      "Planned, inactive. This step does not perform Schematron validation.",
+    active: false
+  }
+];
+
 const emptyProfileSignal: XmlProfileSignal = {
   customizationId: "not_detected",
   profileId: "not_detected",
@@ -494,6 +582,24 @@ function isFindingSeverity(value: unknown): value is XmlFindingSeverity {
   return value === "info" || value === "warning" || value === "fatal";
 }
 
+function isXmlValidationJobStatus(value: unknown): value is XmlValidationJobStatus {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
+function isXmlValidationJobCheck(value: unknown): value is XmlValidationJobCheck {
+  return (
+    value === "worker_readiness" ||
+    value === "xsd_ubl_placeholder" ||
+    value === "schematron_peppol_placeholder"
+  );
+}
+
 function readStringField(
   record: Record<string, unknown>,
   key: string,
@@ -506,6 +612,14 @@ function readStringField(
   }
 
   return fallback;
+}
+
+function readNullableStringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }
 
 function readNumberField(
@@ -548,6 +662,19 @@ function readStringArrayField(record: Record<string, unknown>, key: string) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 40);
+}
+
+function readXmlValidationJobChecks(
+  record: Record<string, unknown>,
+  key: string
+) {
+  const value = record[key];
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(isXmlValidationJobCheck);
 }
 
 function buildFallbackUploadId(record: Record<string, unknown>) {
@@ -626,6 +753,108 @@ function normalizeFindings(value: unknown): XmlReadinessFinding[] {
   return value
     .map((item) => normalizeFinding(item))
     .filter((item): item is XmlReadinessFinding => item !== null);
+}
+
+function normalizeXmlValidationJobFinding(
+  value: unknown
+): XmlValidationJobFinding | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const code = readStringField(value, "code", "");
+  const checkType = readStringField(value, "checkType", "");
+
+  if (!code || !isXmlValidationJobCheck(checkType)) {
+    return null;
+  }
+
+  return {
+    code,
+    severity: isFindingSeverity(value.severity) ? value.severity : "info",
+    checkType,
+    field: readStringField(value, "field", "xml"),
+    message: readStringField(
+      value,
+      "message",
+      "XML validation job returned a finding without a message."
+    ),
+    status: value.status === "not_implemented" ? "not_implemented" : "completed",
+    legalConfidence:
+      value.legalConfidence === "educational_simulation"
+        ? "educational_simulation"
+        : "technical"
+  };
+}
+
+function normalizeXmlValidationJobFindings(
+  value: unknown
+): XmlValidationJobFinding[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => normalizeXmlValidationJobFinding(item))
+    .filter((item): item is XmlValidationJobFinding => item !== null);
+}
+
+function normalizeXmlValidationJob(value: unknown): XmlValidationJob | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id", "");
+  const xmlSha256 = readStringField(value, "xmlSha256", "");
+  const createdAt = readStringField(value, "createdAt", "");
+
+  if (!id || !xmlSha256 || !createdAt) {
+    return null;
+  }
+
+  return {
+    id,
+    status: isXmlValidationJobStatus(value.status) ? value.status : "queued",
+    sourceType: readStringField(value, "sourceType", "uploaded_xml"),
+    documentType: readNullableStringField(value, "documentType"),
+    filename: readNullableStringField(value, "filename"),
+    xmlSha256,
+    xmlSizeBytes: readNumberField(value, "xmlSizeBytes", 0),
+    requestedChecks: readXmlValidationJobChecks(value, "requestedChecks"),
+    completedChecks: readXmlValidationJobChecks(value, "completedChecks"),
+    failedChecks: readXmlValidationJobChecks(value, "failedChecks"),
+    workerName: readNullableStringField(value, "workerName"),
+    workerVersion: readNullableStringField(value, "workerVersion"),
+    startedAt: readNullableStringField(value, "startedAt"),
+    completedAt: readNullableStringField(value, "completedAt"),
+    failedAt: readNullableStringField(value, "failedAt"),
+    errorCode: readNullableStringField(value, "errorCode"),
+    errorMessage: readNullableStringField(value, "errorMessage"),
+    resultSummary: isPlainObject(value.resultSummary) ? value.resultSummary : {},
+    findings: normalizeXmlValidationJobFindings(value.findings),
+    disclaimer: readStringField(
+      value,
+      "disclaimer",
+      XML_VALIDATION_JOB_DISCLAIMER
+    ),
+    createdAt: formatDateTimeFromString(createdAt),
+    updatedAt: formatDateTimeFromString(readStringField(value, "updatedAt", "")),
+    xmlReadinessReportId: readNullableStringField(value, "xmlReadinessReportId"),
+    invoiceDraftId: readNullableStringField(value, "invoiceDraftId"),
+    validationRunId: readNullableStringField(value, "validationRunId")
+  };
+}
+
+function formatShortHash(value: string) {
+  return value.length > 12 ? `${value.slice(0, 12)}...` : value;
+}
+
+function formatValidationJobChecks(checks: XmlValidationJobCheck[]) {
+  if (checks.length === 0) {
+    return "None";
+  }
+
+  return checks.map((check) => formatStatus(check)).join(", ");
 }
 
 function isUblParseFindingSeverity(
@@ -1343,6 +1572,9 @@ function uploadMatchesFilters({
 export default function WorkspaceXmlUploadPage() {
   const router = useRouter();
   const [uploadHistory, setUploadHistory] = useState<XmlUploadRecord[]>([]);
+  const [validationJobs, setValidationJobs] = useState<XmlValidationJob[]>([]);
+  const [selectedValidationJob, setSelectedValidationJob] =
+    useState<XmlValidationJob | null>(null);
   const [analysis, setAnalysis] = useState<XmlAnalysis | null>(null);
   const [xmlInput, setXmlInput] = useState("");
   const [ublParsePreview, setUblParsePreview] =
@@ -1352,9 +1584,12 @@ export default function WorkspaceXmlUploadPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [ublParseMessage, setUblParseMessage] = useState("");
   const [uploadLoadMessage, setUploadLoadMessage] = useState("");
+  const [validationJobMessage, setValidationJobMessage] = useState("");
   const [isInspecting, setIsInspecting] = useState(false);
   const [isParsingUbl, setIsParsingUbl] = useState(false);
   const [isImportingUblDraft, setIsImportingUblDraft] = useState(false);
+  const [isCreatingValidationJob, setIsCreatingValidationJob] = useState(false);
+  const [isLoadingValidationJobs, setIsLoadingValidationJobs] = useState(true);
   const [isLoadingUploads, setIsLoadingUploads] = useState(true);
   const [deletingUploadId, setDeletingUploadId] = useState("");
   const [openingUploadId, setOpeningUploadId] = useState("");
@@ -1362,6 +1597,9 @@ export default function WorkspaceXmlUploadPage() {
   const [readinessFilter, setReadinessFilter] =
     useState<XmlReadinessFilter>("all");
   const [documentFilter, setDocumentFilter] = useState<XmlDocumentFilter>("all");
+  const [selectedValidationChecks, setSelectedValidationChecks] = useState<
+    XmlValidationJobCheck[]
+  >(["worker_readiness"]);
 
   const acceptedUploads = useMemo(() => {
     return uploadHistory.filter((upload) => upload.status === "accepted").length;
@@ -1381,6 +1619,10 @@ export default function WorkspaceXmlUploadPage() {
       })
     );
   }, [uploadHistory, historySearchQuery, readinessFilter, documentFilter]);
+
+  const completedValidationJobs = useMemo(() => {
+    return validationJobs.filter((job) => job.status === "completed").length;
+  }, [validationJobs]);
 
   const hasActiveHistoryFilters =
     historySearchQuery.trim().length > 0 ||
@@ -1441,6 +1683,64 @@ export default function WorkspaceXmlUploadPage() {
     }
 
     loadUploadHistory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadValidationJobs() {
+      setIsLoadingValidationJobs(true);
+      setValidationJobMessage("");
+
+      try {
+        const response = await fetch("/api/local/xml/validation-jobs?limit=10", {
+          method: "GET",
+          cache: "no-store"
+        });
+        const responseData = await readResponseBody(response);
+
+        if (!response.ok) {
+          if (isMounted) {
+            setValidationJobs([]);
+            setValidationJobMessage(
+              getApiErrorMessage(
+                responseData,
+                "Could not load XML validation jobs."
+              )
+            );
+          }
+
+          return;
+        }
+
+        const apiData = responseData as ApiXmlValidationJobListResponse;
+        const jobs = Array.isArray(apiData.jobs) ? apiData.jobs : [];
+        const normalizedJobs = jobs
+          .map((item) => normalizeXmlValidationJob(item))
+          .filter((item): item is XmlValidationJob => item !== null);
+
+        if (isMounted) {
+          setValidationJobs(normalizedJobs);
+        }
+      } catch {
+        if (isMounted) {
+          setValidationJobs([]);
+          setValidationJobMessage(
+            "Could not load XML validation jobs. Make sure apps/api and apps/web are both running."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingValidationJobs(false);
+        }
+      }
+    }
+
+    loadValidationJobs();
 
     return () => {
       isMounted = false;
@@ -1656,6 +1956,127 @@ export default function WorkspaceXmlUploadPage() {
       );
     } finally {
       setIsImportingUblDraft(false);
+    }
+  }
+
+  function toggleValidationCheck(check: XmlValidationJobCheck) {
+    setSelectedValidationChecks((current) => {
+      if (check === "worker_readiness") {
+        return current.includes(check) ? current : [check, ...current];
+      }
+
+      if (current.includes(check)) {
+        return current.filter((item) => item !== check);
+      }
+
+      return [...current, check];
+    });
+  }
+
+  async function createValidationJobWithApi() {
+    const xml = xmlInput.trim();
+
+    setValidationJobMessage("");
+    setSelectedValidationJob(null);
+
+    if (!xml) {
+      setValidationJobMessage(
+        "Paste XML or upload a file before creating an XML validation job."
+      );
+      return;
+    }
+
+    if (new TextEncoder().encode(xml).byteLength > MAX_XML_FILE_SIZE_BYTES) {
+      setValidationJobMessage("XML validation job input must be 2 MB or smaller.");
+      return;
+    }
+
+    setIsCreatingValidationJob(true);
+
+    try {
+      const response = await fetch("/api/local/xml/validation-jobs", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          xml,
+          filename: analysis?.fileName ?? "pasted-invoice.xml",
+          sourceType: analysis ? "uploaded_xml" : "pasted_xml",
+          requestedChecks: selectedValidationChecks
+        })
+      });
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setValidationJobMessage(
+          getApiErrorMessage(responseData, "The XML validation job request failed.")
+        );
+        return;
+      }
+
+      const apiData = responseData as ApiXmlValidationJobResponse;
+      const job = normalizeXmlValidationJob(apiData.job);
+
+      if (!job) {
+        setValidationJobMessage("The XML validation job response could not be read.");
+        return;
+      }
+
+      setSelectedValidationJob(job);
+      setValidationJobs((current) => {
+        const nextJobs = [job, ...current.filter((item) => item.id !== job.id)];
+
+        return nextJobs.slice(0, 10);
+      });
+      setValidationJobMessage(
+        "XML validation job completed a worker-readiness stub. XSD/Schematron validation is planned but not active yet."
+      );
+    } catch {
+      setValidationJobMessage(
+        "Could not create the XML validation job. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsCreatingValidationJob(false);
+    }
+  }
+
+  async function openValidationJob(job: XmlValidationJob) {
+    setValidationJobMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/xml/validation-jobs/${encodeURIComponent(job.id)}`,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setValidationJobMessage(
+          getApiErrorMessage(responseData, "Could not open XML validation job.")
+        );
+        return;
+      }
+
+      const apiData = responseData as ApiXmlValidationJobResponse;
+      const normalizedJob = normalizeXmlValidationJob(apiData.job);
+
+      if (!normalizedJob) {
+        setValidationJobMessage("The XML validation job record could not be read.");
+        return;
+      }
+
+      setSelectedValidationJob(normalizedJob);
+      setValidationJobs((current) =>
+        current.map((item) => (item.id === normalizedJob.id ? normalizedJob : item))
+      );
+    } catch {
+      setValidationJobMessage(
+        "Could not open XML validation job. Make sure apps/api and apps/web are both running."
+      );
     }
   }
 
@@ -1880,6 +2301,12 @@ export default function WorkspaceXmlUploadPage() {
           <strong>{filteredUploadHistory.length}</strong>
           <span>Reports currently matching the search and filters.</span>
         </div>
+
+        <div className="workspace-stat">
+          <p>Validation jobs</p>
+          <strong>{validationJobs.length}</strong>
+          <span>{completedValidationJobs} worker-readiness result(s) completed.</span>
+        </div>
       </section>
 
       <section className="developer-console">
@@ -1912,15 +2339,22 @@ export default function WorkspaceXmlUploadPage() {
 7. workspace displays the readiness report and API-owned upload history
 8. saved reports can be reopened from history without re-uploading XML
 9. current reports can be exported as JSON readiness reports
+10. XML validation jobs can be created as worker-readiness stubs without storing raw XML
 
 Backend endpoints:
 POST   /api/v1/xml/inspect
+POST   /api/v1/xml/validation-jobs
+GET    /api/v1/xml/validation-jobs
+GET    /api/v1/xml/validation-jobs/:id
 GET    /api/v1/xml/uploads
 GET    /api/v1/xml/uploads/:id
 DELETE /api/v1/xml/uploads/:id
 
 Proxy endpoints:
 POST   /api/local/xml/inspect
+POST   /api/local/xml/validation-jobs
+GET    /api/local/xml/validation-jobs
+GET    /api/local/xml/validation-jobs/:id
 GET    /api/local/xml/uploads
 GET    /api/local/xml/uploads/:id
 DELETE /api/local/xml/uploads/:id`}</pre>
@@ -2034,6 +2468,255 @@ DELETE /api/local/xml/uploads/:id`}</pre>
             </p>
           </div>
         ) : null}
+      </section>
+
+      <section className="workspace-table-shell">
+        <div className="workspace-table-head">
+          <div>
+            <p>XML validation jobs</p>
+            <h3>Validation worker foundation</h3>
+          </div>
+
+          <div className="workspace-row-actions">
+            <button
+              type="button"
+              onClick={createValidationJobWithApi}
+              disabled={isCreatingValidationJob || !xmlInput.trim()}
+            >
+              <FileSearch size={16} />
+              {isCreatingValidationJob ? "Creating..." : "Create validation job"}
+            </button>
+          </div>
+        </div>
+
+        <div className="workspace-data-grid">
+          {validationJobCheckOptions.map((option) => (
+            <label
+              className={
+                option.active
+                  ? "workspace-data-card is-good"
+                  : "workspace-data-card is-warn"
+              }
+              key={option.value}
+            >
+              <p>{option.active ? "Active" : "Planned inactive"}</p>
+              <strong>{option.label}</strong>
+              <span>{option.description}</span>
+              <span>
+                <input
+                  type="checkbox"
+                  checked={selectedValidationChecks.includes(option.value)}
+                  disabled={option.value === "worker_readiness"}
+                  onChange={() => toggleValidationCheck(option.value)}
+                />{" "}
+                Request {formatStatus(option.value)}
+              </span>
+            </label>
+          ))}
+
+          <div className="workspace-data-card is-full">
+            <p>Boundary notice</p>
+            <strong>XSD/Schematron validation is planned but not active yet.</strong>
+            <span>
+              This XML validation job is not official validation, Peppol
+              certification, EN 16931 certification, authority acceptance,
+              tax/legal/accounting advice, or a compliance guarantee.
+            </span>
+          </div>
+        </div>
+
+        {validationJobMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{validationJobMessage}</p>
+          </div>
+        ) : null}
+
+        {selectedValidationJob ? (
+          <div className="workspace-table">
+            <div className="workspace-table-row">
+              <div>
+                <strong>Selected job</strong>
+                <span>{selectedValidationJob.id}</span>
+              </div>
+
+              <div>
+                <span className="status-pill">
+                  {formatStatus(selectedValidationJob.status)}
+                </span>
+              </div>
+
+              <div>
+                <span>{formatShortHash(selectedValidationJob.xmlSha256)}</span>
+              </div>
+
+              <strong>{formatBytes(selectedValidationJob.xmlSizeBytes)}</strong>
+
+              <FileCode2 size={17} />
+            </div>
+
+            <div className="workspace-table-row">
+              <div>
+                <strong>Requested checks</strong>
+                <span>
+                  {formatValidationJobChecks(selectedValidationJob.requestedChecks)}
+                </span>
+              </div>
+
+              <div>
+                <span>Completed</span>
+                <span>
+                  {formatValidationJobChecks(
+                    selectedValidationJob.completedChecks
+                  )}
+                </span>
+              </div>
+
+              <div>
+                <span>Not active</span>
+                <span>
+                  {formatValidationJobChecks(selectedValidationJob.failedChecks)}
+                </span>
+              </div>
+
+              <strong>{selectedValidationJob.documentType ?? "unknown"}</strong>
+
+              <ShieldAlert size={17} />
+            </div>
+          </div>
+        ) : null}
+
+        {selectedValidationJob ? (
+          <div className="finding-console-list">
+            {selectedValidationJob.findings.map((finding) => (
+              <div
+                className="finding-console-row"
+                key={`${selectedValidationJob.id}-${finding.code}`}
+              >
+                {finding.severity === "info" ? (
+                  <BadgeCheck size={18} />
+                ) : (
+                  <AlertTriangle size={18} />
+                )}
+
+                <div>
+                  <strong>{finding.code}</strong>
+                  <p>{finding.message}</p>
+                  <p>
+                    Check: {formatStatus(finding.checkType)}. Status:{" "}
+                    {formatStatus(finding.status)}. Legal confidence:{" "}
+                    {formatStatus(finding.legalConfidence)}.
+                  </p>
+                </div>
+
+                <span>{finding.severity}</span>
+              </div>
+            ))}
+
+            <div className="finding-console-row">
+              <ShieldAlert size={18} />
+              <div>
+                <strong>XML_VALIDATION_JOB_DISCLAIMER</strong>
+                <p>{selectedValidationJob.disclaimer}</p>
+              </div>
+              <span>notice</span>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="workspace-table-shell">
+        <div className="workspace-table-head">
+          <div>
+            <p>Recent validation jobs</p>
+            <h3>Metadata-only job history</h3>
+          </div>
+
+          <div className="confidence-label">
+            <FileSearch size={17} />
+            {validationJobs.length} loaded
+          </div>
+        </div>
+
+        <div className="workspace-table">
+          {isLoadingValidationJobs ? (
+            <div className="workspace-table-row">
+              <div>
+                <strong>Loading validation jobs</strong>
+                <span>Reading metadata from the local API proxy.</span>
+              </div>
+
+              <div>
+                <span className="status-pill">loading</span>
+              </div>
+
+              <div>
+                <span>pending</span>
+              </div>
+
+              <strong>0 B</strong>
+
+              <FileCode2 size={17} />
+            </div>
+          ) : validationJobs.length === 0 ? (
+            <div className="workspace-table-row">
+              <div>
+                <strong>No validation jobs yet</strong>
+                <span>Create a job from pasted or uploaded XML.</span>
+              </div>
+
+              <div>
+                <span className="status-pill">empty</span>
+              </div>
+
+              <div>
+                <span>metadata only</span>
+              </div>
+
+              <strong>0 B</strong>
+
+              <FileCode2 size={17} />
+            </div>
+          ) : (
+            validationJobs.map((job) => (
+              <div className="workspace-table-row" key={job.id}>
+                <div className="workspace-history-summary">
+                  <strong>{job.filename ?? job.id}</strong>
+                  <span>
+                    Hash {formatShortHash(job.xmlSha256)}. Size{" "}
+                    {formatBytes(job.xmlSizeBytes)}.
+                  </span>
+                  <span>
+                    Requested: {formatValidationJobChecks(job.requestedChecks)}.
+                  </span>
+
+                  <div className="workspace-row-actions">
+                    <button
+                      type="button"
+                      className="text-link-button"
+                      onClick={() => openValidationJob(job)}
+                    >
+                      <FileSearch size={16} />
+                      Open job
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="status-pill">{formatStatus(job.status)}</span>
+                </div>
+
+                <div>
+                  <span>{job.documentType ?? "unknown"}</span>
+                </div>
+
+                <strong>{job.completedAt ?? job.createdAt}</strong>
+
+                <FileCode2 size={17} />
+              </div>
+            ))
+          )}
+        </div>
       </section>
 
       {ublParsePreview ? (

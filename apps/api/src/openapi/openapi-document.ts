@@ -188,6 +188,7 @@ function scopedApiKeyOperation(input: {
   description: string;
   scope: string;
   requestBody?: Record<string, unknown>;
+  parameters?: Record<string, unknown>[];
   responses: Record<string, unknown>;
 }) {
   return {
@@ -200,6 +201,7 @@ function scopedApiKeyOperation(input: {
       }
     ],
     "x-required-scope": input.scope,
+    ...(input.parameters ? { parameters: input.parameters } : {}),
     ...(input.requestBody ? { requestBody: input.requestBody } : {}),
     responses: apiKeyResponses(input.responses)
   };
@@ -260,6 +262,11 @@ const openApiDocument = {
       name: "UBL",
       description:
         "Technical UBL XML export and parse endpoints. These are not official XML validation or authority submission."
+    },
+    {
+      name: "XML Validation Jobs",
+      description:
+        "Metadata-only XML validation job endpoints for the validation worker foundation. Real XSD, Schematron, Peppol, and EN 16931 validation are not active yet."
     },
     {
       name: "VAT",
@@ -674,6 +681,104 @@ const openApiDocument = {
         }
       })
     },
+    "/xml/validation-jobs": {
+      get: scopedApiKeyOperation({
+        tags: ["XML Validation Jobs"],
+        summary: "List XML validation jobs",
+        description:
+          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. These jobs are worker-readiness sandbox records, not official validation, Peppol certification, EN 16931 certification, authority acceptance, or a compliance guarantee.",
+        scope: "xml:validation_jobs",
+        parameters: [
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 25
+            }
+          },
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["queued", "running", "completed", "failed", "cancelled"]
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "XML validation job metadata.",
+            headers: rateLimitHeaders,
+            content: jsonContent(ref("XmlValidationJobListResponse"))
+          }
+        }
+      }),
+      post: scopedApiKeyOperation({
+        tags: ["XML Validation Jobs"],
+        summary: "Create an XML validation job",
+        description:
+          "Creates a metadata-only XML validation job and completes a worker-readiness stub synchronously. The request may ask for placeholder XSD or Schematron checks, but they are returned as planned and inactive. This endpoint does not perform real XSD, Schematron, Peppol, or EN 16931 validation.",
+        scope: "xml:validation_jobs",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("XmlValidationJobCreateRequest"), {
+            workerReadiness: {
+              value: {
+                xml: tinyUblXml,
+                filename: "invoice-lantern-worker-readiness.xml",
+                sourceType: "api_payload",
+                requestedChecks: [
+                  "worker_readiness",
+                  "xsd_ubl_placeholder",
+                  "schematron_peppol_placeholder"
+                ]
+              }
+            }
+          })
+        },
+        responses: {
+          "200": {
+            description: "Completed worker-readiness XML validation job.",
+            headers: rateLimitHeaders,
+            content: jsonContent(ref("XmlValidationJobResponse"))
+          },
+          "413": errorResponse("XML body is too large.", "XML_BODY_TOO_LARGE")
+        }
+      })
+    },
+    "/xml/validation-jobs/{id}": {
+      get: scopedApiKeyOperation({
+        tags: ["XML Validation Jobs"],
+        summary: "Get XML validation job detail",
+        description:
+          "Returns metadata, requested/completed/failed check names, result summary, findings, and the non-official disclaimer for one XML validation job. Raw XML is never returned.",
+        scope: "xml:validation_jobs",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          }
+        ],
+        responses: {
+          "200": {
+            description: "XML validation job detail.",
+            headers: rateLimitHeaders,
+            content: jsonContent(ref("XmlValidationJobResponse"))
+          }
+        }
+      })
+    },
     "/vat/validate-format": {
       post: scopedApiKeyOperation({
         tags: ["VAT"],
@@ -1002,6 +1107,7 @@ const openApiDocument = {
           "invoices:export_ubl",
           "invoices:parse_ubl",
           "invoices:import_ubl",
+          "xml:validation_jobs",
           "vat:validate_format",
           "validation_runs:read",
           "rules:read"
@@ -1678,6 +1784,233 @@ const openApiDocument = {
           },
           disclaimer: {
             type: "string"
+          }
+        }
+      },
+      XmlValidationJobCreateRequest: {
+        type: "object",
+        required: ["xml"],
+        additionalProperties: false,
+        properties: {
+          xml: {
+            type: "string",
+            minLength: 1,
+            description:
+              "XML string used to create a validation job. The raw XML is not stored in xml_validation_jobs or API request logs."
+          },
+          filename: {
+            type: "string",
+            maxLength: 180
+          },
+          sourceType: {
+            type: "string",
+            enum: ["uploaded_xml", "pasted_xml", "generated_ubl", "api_payload"],
+            default: "uploaded_xml"
+          },
+          requestedChecks: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: [
+                "worker_readiness",
+                "xsd_ubl_placeholder",
+                "schematron_peppol_placeholder"
+              ]
+            },
+            default: ["worker_readiness"]
+          },
+          xmlReadinessReportId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          invoiceDraftId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          validationRunId: {
+            type: ["string", "null"],
+            format: "uuid"
+          }
+        }
+      },
+      XmlValidationJobFinding: {
+        type: "object",
+        required: [
+          "code",
+          "severity",
+          "checkType",
+          "field",
+          "message",
+          "status",
+          "legalConfidence"
+        ],
+        properties: {
+          code: {
+            type: "string",
+            example: "XML_VALIDATION_WORKER_READY"
+          },
+          severity: {
+            type: "string",
+            enum: ["info", "warning", "fatal"]
+          },
+          checkType: {
+            type: "string",
+            enum: [
+              "worker_readiness",
+              "xsd_ubl_placeholder",
+              "schematron_peppol_placeholder"
+            ]
+          },
+          field: {
+            type: "string",
+            example: "xml"
+          },
+          message: {
+            type: "string"
+          },
+          status: {
+            type: "string",
+            enum: ["completed", "not_implemented"]
+          },
+          legalConfidence: {
+            type: "string",
+            enum: ["technical", "educational_simulation"]
+          }
+        }
+      },
+      XmlValidationJob: {
+        type: "object",
+        required: [
+          "id",
+          "status",
+          "sourceType",
+          "xmlSha256",
+          "xmlSizeBytes",
+          "requestedChecks",
+          "completedChecks",
+          "failedChecks",
+          "resultSummary",
+          "findings",
+          "disclaimer",
+          "createdAt",
+          "updatedAt"
+        ],
+        properties: {
+          id: {
+            type: "string"
+          },
+          status: {
+            type: "string",
+            enum: ["queued", "running", "completed", "failed", "cancelled"]
+          },
+          sourceType: {
+            type: "string"
+          },
+          documentType: {
+            type: ["string", "null"],
+            example: "invoice"
+          },
+          filename: {
+            type: ["string", "null"]
+          },
+          xmlSha256: {
+            type: "string",
+            description: "SHA-256 hash of the XML body. Raw XML is not stored."
+          },
+          xmlSizeBytes: {
+            type: "integer"
+          },
+          requestedChecks: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          completedChecks: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          failedChecks: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          workerName: {
+            type: ["string", "null"]
+          },
+          workerVersion: {
+            type: ["string", "null"]
+          },
+          startedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          completedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          failedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          errorCode: {
+            type: ["string", "null"]
+          },
+          errorMessage: {
+            type: ["string", "null"]
+          },
+          resultSummary: {
+            type: "object",
+            additionalProperties: true
+          },
+          findings: {
+            type: "array",
+            items: ref("XmlValidationJobFinding")
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "This XML validation job is a technical sandbox worker-readiness result. Real XSD, Schematron, Peppol, and EN 16931 validation are not enabled yet."
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          xmlReadinessReportId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          invoiceDraftId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          validationRunId: {
+            type: ["string", "null"],
+            format: "uuid"
+          }
+        }
+      },
+      XmlValidationJobResponse: {
+        type: "object",
+        required: ["job"],
+        properties: {
+          job: ref("XmlValidationJob")
+        }
+      },
+      XmlValidationJobListResponse: {
+        type: "object",
+        required: ["jobs"],
+        properties: {
+          jobs: {
+            type: "array",
+            items: ref("XmlValidationJob")
           }
         }
       },

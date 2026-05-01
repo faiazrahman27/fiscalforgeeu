@@ -16,6 +16,7 @@ const scopeRows = [
   ["invoices:validate", "POST /api/v1/invoices/validate"],
   ["invoices:export_ubl", "POST /api/v1/invoices/export/ubl"],
   ["invoices:parse_ubl", "POST /api/v1/invoices/parse/ubl"],
+  ["xml:validation_jobs", "POST/GET /api/v1/xml/validation-jobs"],
   ["vat:validate_format", "POST /api/v1/vat/validate-format"],
   ["rules:read", "GET /api/v1/validation/rules"],
   ["validation_runs:read", "GET /api/v1/validation-runs/:id"]

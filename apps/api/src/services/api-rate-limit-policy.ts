@@ -60,6 +60,15 @@ export const API_RATE_LIMIT_POLICIES = {
     appliesTo: "api_key",
     requestPathPrefix: "/api/v1/invoices/parse/ubl"
   },
+  xml_validation_jobs: {
+    policyKey: "xml_validation_jobs",
+    windowSeconds: 15 * 60,
+    maxRequests: 15,
+    scope: "xml:validation_jobs",
+    description: "Sandbox XML validation job API limit.",
+    appliesTo: "api_key",
+    requestPathPrefix: "/api/v1/xml/validation-jobs"
+  },
   organization_developer_api_total: {
     policyKey: "organization_developer_api_total",
     windowSeconds: 15 * 60,
@@ -123,6 +132,10 @@ export function getSandboxRateLimitMessage(policy: ApiRateLimitPolicy) {
 
   if (policy.policyKey === "invoices_parse_ubl") {
     return "This API key exceeded the sandbox rate limit for UBL parsing.";
+  }
+
+  if (policy.policyKey === "xml_validation_jobs") {
+    return "This API key exceeded the sandbox rate limit for XML validation jobs.";
   }
 
   return "This API key exceeded the sandbox developer API rate limit.";
