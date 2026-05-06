@@ -1,16 +1,32 @@
 export type XmlWorkerCheck =
   | "worker_readiness"
-  | "xsd_ubl_placeholder"
+  | "xsd_ubl"
   | "schematron_peppol_placeholder";
+
+export type XmlWorkerCheckStatus =
+  | "passed"
+  | "failed"
+  | "completed"
+  | "not_configured"
+  | "not_implemented"
+  | "error";
+
+export type XmlWorkerFindingSeverity = "info" | "warning" | "fatal";
+
+export type XmlWorkerLegalConfidence =
+  | "technical"
+  | "educational_simulation";
 
 export type XmlWorkerFinding = {
   code: string;
-  severity: "info" | "warning" | "fatal";
+  severity: XmlWorkerFindingSeverity;
   checkType: XmlWorkerCheck;
   field: string;
   message: string;
-  status: "completed" | "not_implemented";
-  legalConfidence: "technical" | "educational_simulation";
+  status: XmlWorkerCheckStatus;
+  legalConfidence: XmlWorkerLegalConfidence;
+  fixSuggestion?: string;
+  sourceLabels?: string[];
 };
 
 export type XmlWorkerRequest = {
@@ -18,14 +34,32 @@ export type XmlWorkerRequest = {
   requestedChecks: XmlWorkerCheck[];
 };
 
+export type XmlWorkerArtifactInfo = {
+  configured: boolean;
+  rootPath?: string;
+  invoiceXsdPath?: string;
+  creditNoteXsdPath?: string;
+  artifactVersion?: string;
+  validatorName?: string;
+};
+
+export type XmlWorkerCheckResult = {
+  checkType: XmlWorkerCheck;
+  status: XmlWorkerCheckStatus;
+  durationMs?: number;
+  artifactInfo?: XmlWorkerArtifactInfo;
+  findings: XmlWorkerFinding[];
+  summary?: Record<string, unknown>;
+};
+
 export type XmlWorkerResult = {
-  status: "completed";
-  checkType: "worker_readiness";
+  status: "completed" | "failed";
   rootElement: string;
   documentType: string;
   xmlSizeBytes: number;
   completedChecks: XmlWorkerCheck[];
   failedChecks: XmlWorkerCheck[];
+  checkResults: XmlWorkerCheckResult[];
   findings: XmlWorkerFinding[];
   resultSummary: Record<string, unknown>;
   disclaimer: string;

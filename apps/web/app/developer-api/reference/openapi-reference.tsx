@@ -77,10 +77,32 @@ const fallbackRows: EndpointRow[] = [
     tag: "XML Validation Jobs",
     summary: "Create an XML validation job",
     description:
-      "Creates a metadata-only XML validation job and completes the worker-readiness stub. Real XSD/Schematron validation is not active.",
+      "Creates a metadata-only XML validation job. UBL XSD checks are configuration-gated and return not_configured until local UBL XSD artefacts are available; Schematron remains planned/inactive.",
     scope: "xml:validation_jobs",
     auth: "X-API-Key",
     responses: ["200", "400", "401", "403", "413", "429", "500"]
+  },
+  {
+    method: "GET",
+    path: "/api/v1/xml/validation-jobs",
+    tag: "XML Validation Jobs",
+    summary: "List XML validation jobs",
+    description:
+      "Lists metadata-only XML validation jobs for the caller organization. Raw XML is never returned.",
+    scope: "xml:validation_jobs",
+    auth: "X-API-Key",
+    responses: ["200", "400", "401", "403", "429", "500"]
+  },
+  {
+    method: "GET",
+    path: "/api/v1/xml/validation-jobs/:id",
+    tag: "XML Validation Jobs",
+    summary: "Get XML validation job detail",
+    description:
+      "Returns one XML validation job with requested checks, check statuses, findings, and safe non-official disclaimers.",
+    scope: "xml:validation_jobs",
+    auth: "X-API-Key",
+    responses: ["200", "400", "401", "403", "404", "429", "500"]
   },
   {
     method: "POST",

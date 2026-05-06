@@ -101,6 +101,36 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
   assert.doesNotMatch(documentedPathNames, /vida/);
 });
 
+test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const xmlValidationJobs = readRecord(paths, "/xml/validation-jobs");
+  const post = readRecord(xmlValidationJobs, "post");
+  const responses = readRecord(post, "responses");
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+  const createRequest = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobCreateRequest")
+  );
+  const findingSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobFinding")
+  );
+  const jobSchema = JSON.stringify(readRecord(schemas, "XmlValidationJob"));
+  const serializedPost = JSON.stringify(post);
+
+  assert.ok(responses["200"], "Expected XML validation job success response");
+  assert.match(serializedPost, /xsd_ubl/);
+  assert.match(serializedPost, /not_configured/i);
+  assert.match(serializedPost, /local UBL XSD artefacts/i);
+  assert.match(serializedPost, /Schematron remains planned\/inactive/i);
+  assert.match(createRequest, /"xsd_ubl"/);
+  assert.doesNotMatch(createRequest, /xsd_ubl_placeholder/);
+  assert.match(findingSchema, /not_configured/);
+  assert.match(findingSchema, /not_implemented/);
+  assert.match(jobSchema, /xsd_ubl/);
+  assert.doesNotMatch(jobSchema, /xsd_ubl_placeholder/);
+});
+
 test("OpenAPI includes common errors and rate-limit headers", () => {
   const document = getOpenApiDocument(openApiDocument);
   const paths = getPaths(document);
@@ -121,7 +151,9 @@ test("OpenAPI includes common errors and rate-limit headers", () => {
   assert.match(serialized, /RATE_LIMIT_EXCEEDED/);
   assert.match(serialized, /INSUFFICIENT_SCOPE/);
   assert.match(serialized, /xml:validation_jobs/);
-  assert.match(serialized, /Real XSD, Schematron, Peppol, and EN 16931 validation are not enabled yet/);
+  assert.match(serialized, /UBL XSD checks are configuration-gated/);
+  assert.match(serialized, /not_configured/);
+  assert.match(serialized, /does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance/);
 });
 
 test("OpenAPI avoids sensitive key fields and only documents one-time create secret", () => {

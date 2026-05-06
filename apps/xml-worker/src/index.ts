@@ -4,7 +4,7 @@ import type { XmlWorkerCheck } from "./worker-types.js";
 
 const allowedChecks = new Set<XmlWorkerCheck>([
   "worker_readiness",
-  "xsd_ubl_placeholder",
+  "xsd_ubl",
   "schematron_peppol_placeholder"
 ]);
 
@@ -28,7 +28,7 @@ async function main() {
 
   if (!xmlPath) {
     console.log(
-      "XML worker foundation is ready. Pass an XML file path to run the local stub validator."
+      "XML worker foundation is ready. Pass an XML file path to run the local validator. Supported checks: worker_readiness, xsd_ubl, schematron_peppol_placeholder."
     );
     return;
   }

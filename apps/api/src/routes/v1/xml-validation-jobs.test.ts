@@ -150,7 +150,7 @@ test("XML validation job rejects unsafe XML before storage", async (t) => {
   assert.equal(await readOptionalFile(xmlValidationJobDataPath), beforeData);
 });
 
-test("XML validation job stores metadata, SHA-256, and completed worker-readiness stub", async () => {
+test("XML validation job stores metadata, SHA-256, and completed worker-readiness result", async () => {
   const response = await createXmlValidationJob();
 
   assert.equal(response.statusCode, 200);
@@ -167,7 +167,7 @@ test("XML validation job stores metadata, SHA-256, and completed worker-readines
   assert.deepEqual(job.requestedChecks, ["worker_readiness"]);
   assert.deepEqual(job.completedChecks, ["worker_readiness"]);
   assert.deepEqual(job.failedChecks, []);
-  assert.match(String(job.disclaimer), /Real XSD, Schematron, Peppol, and EN 16931 validation are not enabled yet/i);
+  assert.match(String(job.disclaimer), /does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance/i);
   assert.equal(response.body.includes(simpleUblInvoiceXml), false);
   assert.equal(response.body.includes("<Invoice"), false);
 
@@ -179,10 +179,10 @@ test("XML validation job stores metadata, SHA-256, and completed worker-readines
   assert.match(storedData ?? "", /xmlSha256/);
 });
 
-test("XML validation job marks placeholder checks as inactive safely", async () => {
+test("XML validation job marks UBL XSD as not configured without pretending it passed", async () => {
   const response = await createXmlValidationJob([
     "worker_readiness",
-    "xsd_ubl_placeholder",
+    "xsd_ubl",
     "schematron_peppol_placeholder"
   ]);
 
@@ -191,11 +191,8 @@ test("XML validation job marks placeholder checks as inactive safely", async () 
   const body = response.json() as Record<string, unknown>;
   const job = body.job as Record<string, unknown>;
 
-  assert.deepEqual(job.completedChecks, ["worker_readiness"]);
-  assert.deepEqual(job.failedChecks, [
-    "xsd_ubl_placeholder",
-    "schematron_peppol_placeholder"
-  ]);
+  assert.deepEqual(job.completedChecks, ["worker_readiness", "xsd_ubl"]);
+  assert.deepEqual(job.failedChecks, ["schematron_peppol_placeholder"]);
   assert.equal(Array.isArray(job.findings), true);
 
   const findings = job.findings as Record<string, unknown>[];
@@ -203,8 +200,8 @@ test("XML validation job marks placeholder checks as inactive safely", async () 
   assert.equal(
     findings.some(
       (finding) =>
-        finding.code === "UBL_XSD_VALIDATION_NOT_ENABLED" &&
-        finding.status === "not_implemented"
+        finding.code === "UBL_XSD_NOT_CONFIGURED" &&
+        finding.status === "not_configured"
     ),
     true
   );
@@ -216,10 +213,47 @@ test("XML validation job marks placeholder checks as inactive safely", async () 
     ),
     true
   );
+
+  const resultSummary = job.resultSummary as Record<string, unknown>;
+  const checkStatuses = resultSummary.checkStatuses as Record<string, unknown>;
+  const xsdUbl = resultSummary.xsdUbl as Record<string, unknown>;
+
+  assert.equal(checkStatuses.xsd_ubl, "not_configured");
+  assert.equal(xsdUbl.configured, false);
+  assert.equal(xsdUbl.validationExecuted, false);
+  assert.equal(xsdUbl.markedValid, false);
+
   assert.doesNotMatch(
     JSON.stringify(job),
-    /\bXSD valid\b|\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b/i
+    /\bXSD valid\b|\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bofficially valid\b|\blegally compliant\b|\baccepted by authority\b/i
   );
+});
+
+test("legacy XSD placeholder check is rejected by schema instead of silently accepted", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/xml/validation-jobs",
+    headers: {
+      "x-api-key": env.DEV_API_KEY,
+      "content-type": "application/json"
+    },
+    payload: {
+      xml: simpleUblInvoiceXml,
+      filename: "legacy-placeholder.xml",
+      sourceType: "api_payload",
+      requestedChecks: ["xsd_ubl_placeholder"]
+    }
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.body, /XML validation job request failed schema validation/i);
+  assert.match(response.body, /xsd_ubl_placeholder/);
 });
 
 test("XML validation job list and read endpoints return metadata only", async (t) => {

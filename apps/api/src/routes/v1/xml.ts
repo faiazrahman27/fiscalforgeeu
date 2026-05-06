@@ -81,7 +81,7 @@ const xmlValidationJobSourceTypeSchema = z.enum([
 
 const xmlValidationJobCheckSchema = z.enum([
   "worker_readiness",
-  "xsd_ubl_placeholder",
+  "xsd_ubl",
   "schematron_peppol_placeholder"
 ]);
 

@@ -26,6 +26,12 @@ const apiModules = [
       "POST structured invoice JSON and receive a validation run ID, status fields, rule-based findings, confidence labels, and safe disclaimers."
   },
   {
+    icon: <Braces size={22} />,
+    title: "XML validation jobs",
+    description:
+      "Create metadata-only XML validation jobs for worker readiness, configuration-gated UBL XSD checks, and planned Schematron checks. Raw XML is not stored in job records."
+  },
+  {
     icon: <ShieldCheck size={22} />,
     title: "Rule catalog endpoint",
     description:
@@ -163,6 +169,61 @@ curl -X POST http://localhost:4000/api/v1/invoices/validate \\
                 <span />
                 <span />
                 <span />
+                <p>XML validation jobs</p>
+              </div>
+
+              <pre>{`# Create a metadata-only XML validation job.
+# Raw XML is accepted for processing but is not stored in job records or API request logs.
+# UBL XSD returns not_configured until local UBL XSD artefacts are configured.
+
+curl -X POST http://localhost:4000/api/v1/xml/validation-jobs \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d '{
+    "xml": "<Invoice>...</Invoice>",
+    "filename": "sandbox-invoice.xml",
+    "sourceType": "api_payload",
+    "requestedChecks": [
+      "worker_readiness",
+      "xsd_ubl",
+      "schematron_peppol_placeholder"
+    ]
+  }'
+
+{
+  "job": {
+    "status": "completed",
+    "requestedChecks": [
+      "worker_readiness",
+      "xsd_ubl",
+      "schematron_peppol_placeholder"
+    ],
+    "completedChecks": [
+      "worker_readiness",
+      "xsd_ubl"
+    ],
+    "failedChecks": [
+      "schematron_peppol_placeholder"
+    ],
+    "findings": [
+      {
+        "code": "UBL_XSD_NOT_CONFIGURED",
+        "status": "not_configured",
+        "message": "UBL XSD validation was requested, but local UBL XSD artefacts are not configured in this environment."
+      }
+    ],
+    "disclaimer": "This job does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance."
+  }
+}`}</pre>
+            </div>
+          </Reveal>
+
+          <Reveal>
+            <div className="terminal-shell subpage-terminal">
+              <div className="terminal-top">
+                <span />
+                <span />
+                <span />
                 <p>Scopes</p>
               </div>
 
@@ -170,6 +231,8 @@ curl -X POST http://localhost:4000/api/v1/invoices/validate \\
 invoices:export_ubl      POST /api/v1/invoices/export/ubl
 invoices:parse_ubl       POST /api/v1/invoices/parse/ubl
 xml:validation_jobs      POST /api/v1/xml/validation-jobs
+xml:validation_jobs      GET  /api/v1/xml/validation-jobs
+xml:validation_jobs      GET  /api/v1/xml/validation-jobs/:id
 vat:validate_format      POST /api/v1/vat/validate-format
 rules:read               GET  /api/v1/validation/rules
 validation_runs:read     GET  /api/v1/validation-runs/:id
@@ -213,7 +276,7 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
   "error": {
     "code": "RATE_LIMIT_EXCEEDED",
     "message": "This API key exceeded the sandbox rate limit for XML validation jobs.",
-    "limit": 30,
+    "limit": 15,
     "windowSeconds": 900,
     "retryAfterSeconds": 123
   }

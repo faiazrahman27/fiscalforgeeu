@@ -266,7 +266,7 @@ const openApiDocument = {
     {
       name: "XML Validation Jobs",
       description:
-        "Metadata-only XML validation job endpoints for the validation worker foundation. Real XSD, Schematron, Peppol, and EN 16931 validation are not active yet."
+        "Metadata-only XML validation job endpoints for the validation worker foundation. UBL XSD checks are configuration-gated and return not_configured until local UBL XSD artefacts are available. Schematron, Peppol, and EN 16931 validation remain inactive/planned."
     },
     {
       name: "VAT",
@@ -686,7 +686,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "List XML validation jobs",
         description:
-          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. These jobs are worker-readiness sandbox records, not official validation, Peppol certification, EN 16931 certification, authority acceptance, or a compliance guarantee.",
+          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results may report not_configured when local UBL XSD artefacts are unavailable. These jobs are technical sandbox records, not official validation, Peppol certification, EN 16931 certification, authority acceptance, or a compliance guarantee.",
         scope: "xml:validation_jobs",
         parameters: [
           {
@@ -722,19 +722,19 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "Create an XML validation job",
         description:
-          "Creates a metadata-only XML validation job and completes a worker-readiness stub synchronously. The request may ask for placeholder XSD or Schematron checks, but they are returned as planned and inactive. This endpoint does not perform real XSD, Schematron, Peppol, or EN 16931 validation.",
+          "Creates a metadata-only XML validation job. The request may ask for worker readiness, UBL XSD, and planned Schematron checks. UBL XSD returns not_configured until local UBL XSD artefacts are configured. Schematron remains planned/inactive. This endpoint does not perform Peppol certification, EN 16931 certification, authority acceptance, filing, or legal/tax/accounting compliance validation.",
         scope: "xml:validation_jobs",
         requestBody: {
           required: true,
           content: jsonContent(ref("XmlValidationJobCreateRequest"), {
-            workerReadiness: {
+            workerReadinessAndXsdBoundary: {
               value: {
                 xml: tinyUblXml,
                 filename: "invoice-lantern-worker-readiness.xml",
                 sourceType: "api_payload",
                 requestedChecks: [
                   "worker_readiness",
-                  "xsd_ubl_placeholder",
+                  "xsd_ubl",
                   "schematron_peppol_placeholder"
                 ]
               }
@@ -743,7 +743,7 @@ const openApiDocument = {
         },
         responses: {
           "200": {
-            description: "Completed worker-readiness XML validation job.",
+            description: "Completed XML validation job metadata.",
             headers: rateLimitHeaders,
             content: jsonContent(ref("XmlValidationJobResponse"))
           },
@@ -1813,11 +1813,11 @@ const openApiDocument = {
               type: "string",
               enum: [
                 "worker_readiness",
-                "xsd_ubl_placeholder",
+                "xsd_ubl",
                 "schematron_peppol_placeholder"
               ]
             },
-            default: ["worker_readiness"]
+            default: ["worker_readiness", "xsd_ubl"]
           },
           xmlReadinessReportId: {
             type: ["string", "null"],
@@ -1847,7 +1847,7 @@ const openApiDocument = {
         properties: {
           code: {
             type: "string",
-            example: "XML_VALIDATION_WORKER_READY"
+            example: "UBL_XSD_NOT_CONFIGURED"
           },
           severity: {
             type: "string",
@@ -1857,7 +1857,7 @@ const openApiDocument = {
             type: "string",
             enum: [
               "worker_readiness",
-              "xsd_ubl_placeholder",
+              "xsd_ubl",
               "schematron_peppol_placeholder"
             ]
           },
@@ -1870,11 +1870,27 @@ const openApiDocument = {
           },
           status: {
             type: "string",
-            enum: ["completed", "not_implemented"]
+            enum: [
+              "passed",
+              "failed",
+              "completed",
+              "not_configured",
+              "not_implemented",
+              "error"
+            ]
           },
           legalConfidence: {
             type: "string",
             enum: ["technical", "educational_simulation"]
+          },
+          fixSuggestion: {
+            type: "string"
+          },
+          sourceLabels: {
+            type: "array",
+            items: {
+              type: "string"
+            }
           }
         }
       },
@@ -1923,19 +1939,34 @@ const openApiDocument = {
           requestedChecks: {
             type: "array",
             items: {
-              type: "string"
+              type: "string",
+              enum: [
+                "worker_readiness",
+                "xsd_ubl",
+                "schematron_peppol_placeholder"
+              ]
             }
           },
           completedChecks: {
             type: "array",
             items: {
-              type: "string"
+              type: "string",
+              enum: [
+                "worker_readiness",
+                "xsd_ubl",
+                "schematron_peppol_placeholder"
+              ]
             }
           },
           failedChecks: {
             type: "array",
             items: {
-              type: "string"
+              type: "string",
+              enum: [
+                "worker_readiness",
+                "xsd_ubl",
+                "schematron_peppol_placeholder"
+              ]
             }
           },
           workerName: {
@@ -1964,7 +1995,21 @@ const openApiDocument = {
           },
           resultSummary: {
             type: "object",
-            additionalProperties: true
+            additionalProperties: true,
+            example: {
+              workerReady: true,
+              checkStatuses: {
+                worker_readiness: "completed",
+                xsd_ubl: "not_configured",
+                schematron_peppol_placeholder: "not_implemented"
+              },
+              xsdUbl: {
+                requested: true,
+                configured: false,
+                validationExecuted: false,
+                markedValid: false
+              }
+            }
           },
           findings: {
             type: "array",
@@ -1973,7 +2018,7 @@ const openApiDocument = {
           disclaimer: {
             type: "string",
             example:
-              "This XML validation job is a technical sandbox worker-readiness result. Real XSD, Schematron, Peppol, and EN 16931 validation are not enabled yet."
+              "This XML validation job is a technical sandbox worker-readiness and configured-check result. It does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance."
           },
           createdAt: {
             type: "string",

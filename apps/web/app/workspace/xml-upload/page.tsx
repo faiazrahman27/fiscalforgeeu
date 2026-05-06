@@ -40,8 +40,16 @@ type XmlValidationJobStatus =
 
 type XmlValidationJobCheck =
   | "worker_readiness"
-  | "xsd_ubl_placeholder"
+  | "xsd_ubl"
   | "schematron_peppol_placeholder";
+
+type XmlValidationJobCheckStatus =
+  | "passed"
+  | "failed"
+  | "completed"
+  | "not_configured"
+  | "not_implemented"
+  | "error";
 
 type XmlReadinessFinding = {
   code: string;
@@ -57,8 +65,10 @@ type XmlValidationJobFinding = {
   checkType: XmlValidationJobCheck;
   field: string;
   message: string;
-  status: "completed" | "not_implemented";
+  status: XmlValidationJobCheckStatus;
   legalConfidence: "technical" | "educational_simulation";
+  fixSuggestion?: string;
+  sourceLabels?: string[];
 };
 
 type XmlProfileSignal = {
@@ -420,7 +430,7 @@ const REPORT_DISCLAIMER =
   "Invoice Lantern performs a technical readiness simulation only. This result is not official XML, Peppol, EN 16931, ViDA, tax, legal, accounting, government, or authority validation.";
 
 const XML_VALIDATION_JOB_DISCLAIMER =
-  "This XML validation job is a technical sandbox worker-readiness result. Real XSD, Schematron, Peppol, and EN 16931 validation are not enabled yet.";
+  "This XML validation job is a technical sandbox worker-readiness and configured-check result. It does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance.";
 
 const validationJobCheckOptions: {
   value: XmlValidationJobCheck;
@@ -431,14 +441,15 @@ const validationJobCheckOptions: {
   {
     value: "worker_readiness",
     label: "Worker readiness",
-    description: "Active stub check for the validation worker foundation.",
+    description: "Active technical check for the validation worker foundation.",
     active: true
   },
   {
-    value: "xsd_ubl_placeholder",
-    label: "UBL XSD placeholder",
-    description: "Planned, inactive. This step does not perform XSD validation.",
-    active: false
+    value: "xsd_ubl",
+    label: "UBL XSD check",
+    description:
+      "Available check. Returns not configured until local UBL XSD artefacts are configured.",
+    active: true
   },
   {
     value: "schematron_peppol_placeholder",
@@ -595,8 +606,21 @@ function isXmlValidationJobStatus(value: unknown): value is XmlValidationJobStat
 function isXmlValidationJobCheck(value: unknown): value is XmlValidationJobCheck {
   return (
     value === "worker_readiness" ||
-    value === "xsd_ubl_placeholder" ||
+    value === "xsd_ubl" ||
     value === "schematron_peppol_placeholder"
+  );
+}
+
+function isXmlValidationJobCheckStatus(
+  value: unknown
+): value is XmlValidationJobCheckStatus {
+  return (
+    value === "passed" ||
+    value === "failed" ||
+    value === "completed" ||
+    value === "not_configured" ||
+    value === "not_implemented" ||
+    value === "error"
   );
 }
 
@@ -764,12 +788,13 @@ function normalizeXmlValidationJobFinding(
 
   const code = readStringField(value, "code", "");
   const checkType = readStringField(value, "checkType", "");
+  const status = readStringField(value, "status", "completed");
 
   if (!code || !isXmlValidationJobCheck(checkType)) {
     return null;
   }
 
-  return {
+  const finding: XmlValidationJobFinding = {
     code,
     severity: isFindingSeverity(value.severity) ? value.severity : "info",
     checkType,
@@ -779,12 +804,25 @@ function normalizeXmlValidationJobFinding(
       "message",
       "XML validation job returned a finding without a message."
     ),
-    status: value.status === "not_implemented" ? "not_implemented" : "completed",
+    status: isXmlValidationJobCheckStatus(status) ? status : "completed",
     legalConfidence:
       value.legalConfidence === "educational_simulation"
         ? "educational_simulation"
         : "technical"
   };
+
+  const fixSuggestion = readStringField(value, "fixSuggestion", "");
+  const sourceLabels = readStringArrayField(value, "sourceLabels");
+
+  if (fixSuggestion) {
+    finding.fixSuggestion = fixSuggestion;
+  }
+
+  if (sourceLabels.length > 0) {
+    finding.sourceLabels = sourceLabels;
+  }
+
+  return finding;
 }
 
 function normalizeXmlValidationJobFindings(
@@ -1133,7 +1171,7 @@ function normalizeUblParsePreview(value: unknown): UblParsePreview {
     disclaimer:
       typeof record.disclaimer === "string" && record.disclaimer.trim()
         ? record.disclaimer.trim()
-      : "This UBL parse result is a technical sandbox preview. It is not official XML validation, Peppol certification, tax advice, legal advice, accounting advice, or authority acceptance."
+        : "This UBL parse result is a technical sandbox preview. It is not official XML validation, Peppol certification, tax advice, legal advice, accounting advice, or authority acceptance."
   };
 }
 
@@ -1599,7 +1637,7 @@ export default function WorkspaceXmlUploadPage() {
   const [documentFilter, setDocumentFilter] = useState<XmlDocumentFilter>("all");
   const [selectedValidationChecks, setSelectedValidationChecks] = useState<
     XmlValidationJobCheck[]
-  >(["worker_readiness"]);
+  >(["worker_readiness", "xsd_ubl"]);
 
   const acceptedUploads = useMemo(() => {
     return uploadHistory.filter((upload) => upload.status === "accepted").length;
@@ -2030,7 +2068,7 @@ export default function WorkspaceXmlUploadPage() {
         return nextJobs.slice(0, 10);
       });
       setValidationJobMessage(
-        "XML validation job completed a worker-readiness stub. XSD/Schematron validation is planned but not active yet."
+        "XML validation job completed. UBL XSD reports not configured until local XSD artefacts are available; Schematron remains planned."
       );
     } catch {
       setValidationJobMessage(
@@ -2305,7 +2343,7 @@ export default function WorkspaceXmlUploadPage() {
         <div className="workspace-stat">
           <p>Validation jobs</p>
           <strong>{validationJobs.length}</strong>
-          <span>{completedValidationJobs} worker-readiness result(s) completed.</span>
+          <span>{completedValidationJobs} XML worker result(s) completed.</span>
         </div>
       </section>
 
@@ -2339,7 +2377,9 @@ export default function WorkspaceXmlUploadPage() {
 7. workspace displays the readiness report and API-owned upload history
 8. saved reports can be reopened from history without re-uploading XML
 9. current reports can be exported as JSON readiness reports
-10. XML validation jobs can be created as worker-readiness stubs without storing raw XML
+10. XML validation jobs can be created without storing raw XML
+11. UBL XSD check reports not configured until local artefacts are configured
+12. Schematron and Peppol validation remain planned and inactive
 
 Backend endpoints:
 POST   /api/v1/xml/inspect
@@ -2499,7 +2539,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               }
               key={option.value}
             >
-              <p>{option.active ? "Active" : "Planned inactive"}</p>
+              <p>{option.active ? "Available" : "Planned inactive"}</p>
               <strong>{option.label}</strong>
               <span>{option.description}</span>
               <span>
@@ -2516,11 +2556,13 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
           <div className="workspace-data-card is-full">
             <p>Boundary notice</p>
-            <strong>XSD/Schematron validation is planned but not active yet.</strong>
+            <strong>UBL XSD is configuration-gated. Schematron is planned.</strong>
             <span>
-              This XML validation job is not official validation, Peppol
-              certification, EN 16931 certification, authority acceptance,
-              tax/legal/accounting advice, or a compliance guarantee.
+              The UBL XSD check must not be treated as valid until local UBL XSD
+              artefacts are configured and the worker reports a passed check.
+              This is not official validation, Peppol certification, EN 16931
+              certification, authority acceptance, tax/legal/accounting advice,
+              or a compliance guarantee.
             </span>
           </div>
         </div>
@@ -2564,7 +2606,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               </div>
 
               <div>
-                <span>Completed</span>
+                <span>Completed check handlers</span>
                 <span>
                   {formatValidationJobChecks(
                     selectedValidationJob.completedChecks
@@ -2573,7 +2615,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               </div>
 
               <div>
-                <span>Not active</span>
+                <span>Inactive/failed handlers</span>
                 <span>
                   {formatValidationJobChecks(selectedValidationJob.failedChecks)}
                 </span>
@@ -2602,6 +2644,10 @@ DELETE /api/local/xml/uploads/:id`}</pre>
                 <div>
                   <strong>{finding.code}</strong>
                   <p>{finding.message}</p>
+                  {finding.fixSuggestion ? <p>{finding.fixSuggestion}</p> : null}
+                  {finding.sourceLabels && finding.sourceLabels.length > 0 ? (
+                    <p>Sources: {finding.sourceLabels.join(", ")}.</p>
+                  ) : null}
                   <p>
                     Check: {formatStatus(finding.checkType)}. Status:{" "}
                     {formatStatus(finding.status)}. Legal confidence:{" "}

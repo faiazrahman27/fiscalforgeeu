@@ -2,18 +2,26 @@ import { createHash } from "node:crypto";
 import type { XmlSafetyInspection } from "@invoice-lantern/ubl";
 
 export const XML_VALIDATION_JOB_DISCLAIMER =
-  "This XML validation job is a technical sandbox worker-readiness result. Real XSD, Schematron, Peppol, and EN 16931 validation are not enabled yet.";
+  "This XML validation job is a technical sandbox worker-readiness and configured-check result. It does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance.";
 
-export const XML_VALIDATION_JOB_WORKER_NAME = "invoice-lantern-xml-worker-stub";
-export const XML_VALIDATION_JOB_WORKER_VERSION = "0.1.0";
+export const XML_VALIDATION_JOB_WORKER_NAME = "invoice-lantern-xml-worker";
+export const XML_VALIDATION_JOB_WORKER_VERSION = "0.2.0";
 
 export const XML_VALIDATION_JOB_CHECKS = [
   "worker_readiness",
-  "xsd_ubl_placeholder",
+  "xsd_ubl",
   "schematron_peppol_placeholder"
 ] as const;
 
 export type XmlValidationJobCheck = (typeof XML_VALIDATION_JOB_CHECKS)[number];
+
+export type XmlValidationJobCheckStatus =
+  | "passed"
+  | "failed"
+  | "completed"
+  | "not_configured"
+  | "not_implemented"
+  | "error";
 
 export type XmlValidationJobFinding = {
   code: string;
@@ -21,8 +29,17 @@ export type XmlValidationJobFinding = {
   checkType: XmlValidationJobCheck;
   field: string;
   message: string;
-  status: "completed" | "not_implemented";
+  status: XmlValidationJobCheckStatus;
   legalConfidence: "technical" | "educational_simulation";
+  fixSuggestion?: string;
+  sourceLabels?: string[];
+};
+
+export type XmlValidationJobCheckResult = {
+  checkType: XmlValidationJobCheck;
+  status: XmlValidationJobCheckStatus;
+  findings: XmlValidationJobFinding[];
+  summary?: Record<string, unknown>;
 };
 
 export type XmlValidationJobCompletion = {
@@ -100,30 +117,97 @@ function buildWorkerReadinessFinding(): XmlValidationJobFinding {
     checkType: "worker_readiness",
     field: "xml",
     message:
-      "The validation worker foundation accepted this XML for technical sandbox processing. Real XSD/Schematron validation is not enabled yet.",
+      "The validation worker foundation accepted this XML for technical sandbox processing.",
     status: "completed",
     legalConfidence: "technical"
   };
 }
 
-function buildPlaceholderFinding(
-  checkType: Exclude<XmlValidationJobCheck, "worker_readiness">
-): XmlValidationJobFinding {
+function buildUblXsdNotConfiguredFinding(): XmlValidationJobFinding {
   return {
-    code:
-      checkType === "xsd_ubl_placeholder"
-        ? "UBL_XSD_VALIDATION_NOT_ENABLED"
-        : "PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED",
+    code: "UBL_XSD_NOT_CONFIGURED",
     severity: "warning",
-    checkType,
+    checkType: "xsd_ubl",
     field: "xml",
     message:
-      checkType === "xsd_ubl_placeholder"
-        ? "UBL XSD validation is planned but not active in this worker foundation step."
-        : "Peppol Schematron validation is planned but not active in this worker foundation step.",
-    status: "not_implemented",
-    legalConfidence: "educational_simulation"
+      "UBL XSD validation was requested, but local UBL XSD artefacts are not configured in this environment. The XML has not been marked as XSD-valid.",
+    status: "not_configured",
+    legalConfidence: "technical",
+    fixSuggestion:
+      "Configure local UBL 2.1 XSD artefact paths for the XML validation worker before relying on technical UBL XSD validation.",
+    sourceLabels: ["Local UBL XSD artefacts required"]
   };
+}
+
+function buildSchematronPlaceholderFinding(): XmlValidationJobFinding {
+  return {
+    code: "PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED",
+    severity: "warning",
+    checkType: "schematron_peppol_placeholder",
+    field: "xml",
+    message:
+      "Peppol Schematron validation is planned but not active in this worker foundation step.",
+    status: "not_implemented",
+    legalConfidence: "educational_simulation",
+    fixSuggestion:
+      "Enable a future Schematron validation worker with local reviewed artefacts before using Peppol-style business-rule checks.",
+    sourceLabels: ["Planned validation layer"]
+  };
+}
+
+function buildWorkerReadinessResult(): XmlValidationJobCheckResult {
+  const finding = buildWorkerReadinessFinding();
+
+  return {
+    checkType: "worker_readiness",
+    status: "completed",
+    findings: [finding],
+    summary: {
+      workerReady: true,
+      validationExecuted: true
+    }
+  };
+}
+
+function buildUblXsdNotConfiguredResult(): XmlValidationJobCheckResult {
+  const finding = buildUblXsdNotConfiguredFinding();
+
+  return {
+    checkType: "xsd_ubl",
+    status: "not_configured",
+    findings: [finding],
+    summary: {
+      configured: false,
+      validationExecuted: false,
+      markedValid: false,
+      reason: "local_ubl_xsd_artifacts_not_configured"
+    }
+  };
+}
+
+function buildSchematronPlaceholderResult(): XmlValidationJobCheckResult {
+  const finding = buildSchematronPlaceholderFinding();
+
+  return {
+    checkType: "schematron_peppol_placeholder",
+    status: "not_implemented",
+    findings: [finding],
+    summary: {
+      implemented: false,
+      validationExecuted: false,
+      markedValid: false,
+      reason: "schematron_peppol_not_implemented"
+    }
+  };
+}
+
+function summarizeCheckStatuses(
+  checkResults: readonly XmlValidationJobCheckResult[]
+) {
+  return checkResults.reduce<Record<string, string>>((summary, result) => {
+    summary[result.checkType] = result.status;
+    return summary;
+  }, {});
 }
 
 export function buildXmlValidationJobCompletion(input: {
@@ -137,19 +221,31 @@ export function buildXmlValidationJobCompletion(input: {
   const completedChecks: XmlValidationJobCheck[] = [];
   const failedChecks: XmlValidationJobCheck[] = [];
   const findings: XmlValidationJobFinding[] = [];
-
-  if (input.requestedChecks.includes("worker_readiness")) {
-    completedChecks.push("worker_readiness");
-    findings.push(buildWorkerReadinessFinding());
-  }
+  const checkResults: XmlValidationJobCheckResult[] = [];
 
   for (const check of input.requestedChecks) {
     if (check === "worker_readiness") {
+      const result = buildWorkerReadinessResult();
+      completedChecks.push(check);
+      checkResults.push(result);
+      findings.push(...result.findings);
       continue;
     }
 
-    failedChecks.push(check);
-    findings.push(buildPlaceholderFinding(check));
+    if (check === "xsd_ubl") {
+      const result = buildUblXsdNotConfiguredResult();
+      completedChecks.push(check);
+      checkResults.push(result);
+      findings.push(...result.findings);
+      continue;
+    }
+
+    if (check === "schematron_peppol_placeholder") {
+      const result = buildSchematronPlaceholderResult();
+      failedChecks.push(check);
+      checkResults.push(result);
+      findings.push(...result.findings);
+    }
   }
 
   return {
@@ -158,8 +254,7 @@ export function buildXmlValidationJobCompletion(input: {
     workerName: XML_VALIDATION_JOB_WORKER_NAME,
     workerVersion: XML_VALIDATION_JOB_WORKER_VERSION,
     resultSummary: {
-      checkType: "worker_readiness",
-      workerReady: true,
+      workerReady: completedChecks.includes("worker_readiness"),
       xmlSha256: input.xmlSha256,
       xmlSizeBytes: input.xmlSizeBytes,
       rootElement: input.rootElement,
@@ -169,11 +264,25 @@ export function buildXmlValidationJobCompletion(input: {
       completedChecks,
       failedChecks,
       inactiveChecks: failedChecks,
+      checkResults,
+      checkStatuses: summarizeCheckStatuses(checkResults),
       activeValidation: {
         xsd: false,
         schematron: false,
         peppolArtifacts: false,
         en16931Certification: false
+      },
+      xsdUbl: {
+        requested: input.requestedChecks.includes("xsd_ubl"),
+        configured: false,
+        validationExecuted: false,
+        markedValid: false
+      },
+      schematronPeppol: {
+        requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
+        implemented: false,
+        validationExecuted: false,
+        markedValid: false
       }
     },
     findings,
