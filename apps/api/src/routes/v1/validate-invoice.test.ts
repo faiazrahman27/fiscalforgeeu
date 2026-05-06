@@ -173,7 +173,7 @@ test("invoice validation returns richer rule metadata on findings", async (t) =>
   );
   assert.equal(finding.legalConfidence, "technical");
   assert.equal(finding.ruleSetCode, "INVOICE_LANTERN_CORE");
-  assert.equal(finding.ruleVersion, "2026.04.1");
+  assert.equal(finding.ruleVersion, "2026.05.1");
   assert.deepEqual(finding.sourceLabels, [
     "Invoice Lantern internal technical validation policy"
   ]);
@@ -574,7 +574,7 @@ test("rule catalog endpoint returns published core technical rules", async (t) =
   assert.ok(coreRuleSet);
   assert.equal(isPlainObject(coreRuleSet), true);
   const coreRuleSetRecord = coreRuleSet as Record<string, unknown>;
-  assert.equal(coreRuleSetRecord.version, "2026.04.1");
+  assert.equal(coreRuleSetRecord.version, "2026.05.1");
   assert.equal(Array.isArray(coreRuleSetRecord.rules), true);
 
   const rules = coreRuleSetRecord.rules as unknown[];
