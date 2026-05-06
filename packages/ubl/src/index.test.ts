@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   canonicalInvoiceSchema,
@@ -6,6 +9,7 @@ import {
 } from "@invoice-lantern/invoice-core";
 import {
   canonicalToUblInvoiceXml,
+  validateUblXsd,
   ublInvoiceXmlToCanonicalInvoice
 } from "./index.js";
 
@@ -184,4 +188,103 @@ test("rejects DTD and ENTITY XML before UBL parsing", () => {
     ),
     true
   );
+});
+
+test("UBL XSD adapter returns not_configured without artefact configuration", () => {
+  const result = validateUblXsd({
+    xml: buildUblInvoiceXml(),
+    rootElement: "Invoice",
+    documentType: "invoice"
+  });
+
+  assert.equal(result.status, "not_configured");
+  assert.equal(result.validationExecuted, false);
+  assert.equal(result.markedValid, false);
+  assert.equal(result.artifactInfo.configured, false);
+  assert.equal(
+    result.artifactInfo.validatorName,
+    "Invoice Lantern local UBL XSD adapter"
+  );
+  assert.equal(
+    result.findings.some(
+      (finding) =>
+        finding.code === "UBL_XSD_NOT_CONFIGURED" &&
+        finding.status === "not_configured"
+    ),
+    true
+  );
+});
+
+test("UBL XSD adapter derives standard root artefact paths and stays safe when missing", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-ubl-xsd-"));
+
+  try {
+    const result = validateUblXsd({
+      xml: buildUblInvoiceXml(),
+      rootElement: "Invoice",
+      documentType: "invoice",
+      artifactConfig: {
+        rootDir: tempRoot,
+        artifactVersion: "2.1"
+      }
+    });
+
+    assert.equal(result.status, "not_configured");
+    assert.equal(result.validationExecuted, false);
+    assert.equal(result.markedValid, false);
+    assert.equal(result.artifactInfo.configured, false);
+    assert.match(
+      result.artifactInfo.invoiceXsdPath ?? "",
+      /xsd[\\/]+maindoc[\\/]+UBL-Invoice-2\.1\.xsd$/
+    );
+    assert.match(
+      result.artifactInfo.creditNoteXsdPath ?? "",
+      /xsd[\\/]+maindoc[\\/]+UBL-CreditNote-2\.1\.xsd$/
+    );
+    assert.equal(result.findings[0]?.code, "UBL_XSD_ARTIFACT_UNREADABLE");
+    assert.equal(result.summary.configuredPathReadable, false);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("UBL XSD adapter reports controlled error for readable artefacts until a real validator is wired", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-ubl-xsd-"));
+  const invoiceXsdPath = join(tempRoot, "UBL-Invoice-2.1.xsd");
+
+  try {
+    await writeFile(
+      invoiceXsdPath,
+      `<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"></xs:schema>`,
+      "utf8"
+    );
+
+    const result = validateUblXsd({
+      xml: buildUblInvoiceXml(),
+      rootElement: "Invoice",
+      documentType: "invoice",
+      artifactConfig: {
+        invoiceXsdPath,
+        artifactVersion: "2.1"
+      }
+    });
+
+    assert.equal(result.status, "error");
+    assert.equal(result.validationExecuted, false);
+    assert.equal(result.markedValid, false);
+    assert.equal(result.artifactInfo.configured, true);
+    assert.equal(result.artifactInfo.invoiceXsdPath, invoiceXsdPath);
+    assert.equal(result.artifactInfo.artifactVersion, "2.1");
+    assert.equal(result.findings[0]?.code, "UBL_XSD_VALIDATOR_UNAVAILABLE");
+    assert.equal(result.summary.configuredPathReadable, true);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
 });

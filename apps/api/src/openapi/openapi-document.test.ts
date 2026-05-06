@@ -112,6 +112,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const createRequest = JSON.stringify(
     readRecord(schemas, "XmlValidationJobCreateRequest")
   );
+  const artifactInfoSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobArtifactInfo")
+  );
   const findingSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobFinding")
   );
@@ -121,13 +124,26 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.ok(responses["200"], "Expected XML validation job success response");
   assert.match(serializedPost, /xsd_ubl/);
   assert.match(serializedPost, /not_configured/i);
+  assert.match(serializedPost, /passed or failed only after a real local XSD validation operation executes/i);
+  assert.match(serializedPost, /error for controlled validator\/runtime failures/i);
   assert.match(serializedPost, /local UBL XSD artefacts/i);
+  assert.match(serializedPost, /UBL_XSD_ROOT_DIR/);
+  assert.match(serializedPost, /UBL_INVOICE_XSD_PATH/);
+  assert.match(serializedPost, /UBL_CREDIT_NOTE_XSD_PATH/);
+  assert.match(serializedPost, /UBL_XSD_ARTIFACT_VERSION/);
   assert.match(serializedPost, /Schematron remains planned\/inactive/i);
   assert.match(createRequest, /"xsd_ubl"/);
   assert.doesNotMatch(createRequest, /xsd_ubl_placeholder/);
+  assert.match(artifactInfoSchema, /validatorName/);
+  assert.match(artifactInfoSchema, /invoiceXsdPath/);
+  assert.match(artifactInfoSchema, /creditNoteXsdPath/);
   assert.match(findingSchema, /not_configured/);
+  assert.match(findingSchema, /passed/);
+  assert.match(findingSchema, /failed/);
+  assert.match(findingSchema, /error/);
   assert.match(findingSchema, /not_implemented/);
   assert.match(jobSchema, /xsd_ubl/);
+  assert.match(jobSchema, /artifactInfo/);
   assert.doesNotMatch(jobSchema, /xsd_ubl_placeholder/);
 });
 

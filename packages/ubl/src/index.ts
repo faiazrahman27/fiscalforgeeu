@@ -12,6 +12,8 @@ import {
   type ValidationFindingSeverity
 } from "@invoice-lantern/invoice-core";
 
+export * from "./xsd-validation-adapter.js";
+
 const UBL_INVOICE_NAMESPACE =
   "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
 const UBL_CAC_NAMESPACE =

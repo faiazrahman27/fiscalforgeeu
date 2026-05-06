@@ -1,4 +1,9 @@
-import { inspectXmlSafety } from "@invoice-lantern/ubl";
+import {
+  inspectXmlSafety,
+  readUblXsdArtifactConfigFromEnv,
+  validateUblXsd,
+  type UblXsdValidationFinding
+} from "@invoice-lantern/ubl";
 import type {
   XmlWorkerCheck,
   XmlWorkerCheckResult,
@@ -55,22 +60,6 @@ function buildWorkerReadinessFinding(): XmlWorkerFinding {
   };
 }
 
-function buildUblXsdNotConfiguredFinding(): XmlWorkerFinding {
-  return {
-    code: "UBL_XSD_NOT_CONFIGURED",
-    severity: "warning",
-    checkType: "xsd_ubl",
-    field: "xml",
-    message:
-      "UBL XSD validation was requested, but local UBL XSD artefacts are not configured in this environment. The XML has not been marked as XSD-valid.",
-    status: "not_configured",
-    legalConfidence: "technical",
-    fixSuggestion:
-      "Configure local UBL 2.1 XSD artefact paths in the XML worker environment before relying on technical UBL XSD validation.",
-    sourceLabels: ["Local UBL XSD artefacts required"]
-  };
-}
-
 function buildSchematronPlaceholderFinding(): XmlWorkerFinding {
   return {
     code: "PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED",
@@ -101,26 +90,6 @@ function buildWorkerReadinessResult(): XmlWorkerCheckResult {
   };
 }
 
-function buildUblXsdNotConfiguredResult(): XmlWorkerCheckResult {
-  const finding = buildUblXsdNotConfiguredFinding();
-
-  return {
-    checkType: "xsd_ubl",
-    status: "not_configured",
-    artifactInfo: {
-      configured: false,
-      validatorName: "Invoice Lantern XML worker UBL XSD adapter"
-    },
-    findings: [finding],
-    summary: {
-      configured: false,
-      validationExecuted: false,
-      markedValid: false,
-      reason: "local_ubl_xsd_artifacts_not_configured"
-    }
-  };
-}
-
 function buildSchematronPlaceholderResult(): XmlWorkerCheckResult {
   const finding = buildSchematronPlaceholderFinding();
 
@@ -142,6 +111,61 @@ function summarizeCheckStatuses(checkResults: readonly XmlWorkerCheckResult[]) {
     summary[result.checkType] = result.status;
     return summary;
   }, {});
+}
+
+function buildUblXsdFinding(finding: UblXsdValidationFinding): XmlWorkerFinding {
+  return {
+    code: finding.code,
+    severity: finding.severity,
+    checkType: "xsd_ubl",
+    field: finding.field,
+    message: finding.message,
+    status: finding.status,
+    legalConfidence: "technical",
+    ...(finding.fixSuggestion
+      ? { fixSuggestion: finding.fixSuggestion }
+      : {}),
+    ...(finding.sourceLabels ? { sourceLabels: finding.sourceLabels } : {})
+  };
+}
+
+function buildUblXsdResult(input: {
+  xml: string;
+  rootElement: string;
+  documentType: string;
+}): XmlWorkerCheckResult {
+  const result = validateUblXsd({
+    xml: input.xml,
+    rootElement: input.rootElement,
+    documentType: input.documentType,
+    artifactConfig: readUblXsdArtifactConfigFromEnv()
+  });
+
+  return {
+    checkType: "xsd_ubl",
+    status: result.status,
+    artifactInfo: result.artifactInfo,
+    findings: result.findings.map((finding) => buildUblXsdFinding(finding)),
+    summary: {
+      ...result.summary,
+      artifactInfo: result.artifactInfo
+    }
+  };
+}
+
+function isCompletedCheckResult(result: XmlWorkerCheckResult) {
+  return result.status === "passed" || result.status === "completed";
+}
+
+function getXsdUblResult(checkResults: readonly XmlWorkerCheckResult[]) {
+  return checkResults.find((result) => result.checkType === "xsd_ubl");
+}
+
+function getBooleanSummaryValue(
+  summary: Record<string, unknown> | undefined,
+  key: string
+) {
+  return summary?.[key] === true;
 }
 
 export function runStubXmlValidator(
@@ -167,8 +191,21 @@ export function runStubXmlValidator(
     }
 
     if (check === "xsd_ubl") {
-      const result = buildUblXsdNotConfiguredResult();
-      completedChecks.push(check);
+      const result = buildUblXsdResult({
+        xml: request.xml,
+        rootElement,
+        documentType
+      });
+
+      if (
+        isCompletedCheckResult(result) ||
+        result.status === "not_configured"
+      ) {
+        completedChecks.push(check);
+      } else {
+        failedChecks.push(check);
+      }
+
       checkResults.push(result);
       findings.push(...result.findings);
       continue;
@@ -181,6 +218,9 @@ export function runStubXmlValidator(
       findings.push(...result.findings);
     }
   }
+
+  const xsdUblResult = getXsdUblResult(checkResults);
+  const xsdUblSummary = xsdUblResult?.summary;
 
   return {
     status: "completed",
@@ -202,16 +242,23 @@ export function runStubXmlValidator(
       failedChecks,
       checkStatuses: summarizeCheckStatuses(checkResults),
       activeValidation: {
-        xsd: false,
+        xsd: getBooleanSummaryValue(xsdUblSummary, "validationExecuted"),
         schematron: false,
         peppolArtifacts: false,
         en16931Certification: false
       },
       xsdUbl: {
         requested: requestedChecks.includes("xsd_ubl"),
-        configured: false,
-        validationExecuted: false,
-        markedValid: false
+        configured: getBooleanSummaryValue(xsdUblSummary, "configured"),
+        validationExecuted: getBooleanSummaryValue(
+          xsdUblSummary,
+          "validationExecuted"
+        ),
+        markedValid: getBooleanSummaryValue(xsdUblSummary, "markedValid"),
+        ...(xsdUblResult ? { status: xsdUblResult.status } : {}),
+        ...(xsdUblResult?.artifactInfo
+          ? { artifactInfo: xsdUblResult.artifactInfo }
+          : {})
       },
       schematronPeppol: {
         requested: requestedChecks.includes("schematron_peppol_placeholder"),

@@ -484,6 +484,7 @@ export async function xmlRoutes(app: FastifyInstance) {
         }
 
         const completion = buildXmlValidationJobCompletion({
+          xml,
           xmlSha256,
           xmlSizeBytes,
           requestedChecks,

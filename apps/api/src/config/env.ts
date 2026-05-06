@@ -19,6 +19,7 @@ const optionalUrlSchema = z
   });
 
 const optionalSecretSchema = z.string().trim().default("");
+const optionalLocalPathSchema = z.string().trim().default("");
 
 const envSchema = z.object({
   APP_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -42,6 +43,16 @@ const envSchema = z.object({
     .min(1024)
     .max(10 * 1024 * 1024)
     .default(2 * 1024 * 1024),
+
+  /*
+   * Optional local UBL XSD artefacts for metadata-only XML validation jobs.
+   * These paths stay server-side and are only used to decide whether the
+   * xsd_ubl check can attempt a local technical XSD validation operation.
+   */
+  UBL_XSD_ROOT_DIR: optionalLocalPathSchema,
+  UBL_INVOICE_XSD_PATH: optionalLocalPathSchema,
+  UBL_CREDIT_NOTE_XSD_PATH: optionalLocalPathSchema,
+  UBL_XSD_ARTIFACT_VERSION: optionalLocalPathSchema,
 
   /*
    * Supabase server-side configuration.

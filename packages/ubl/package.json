@@ -12,8 +12,11 @@
     }
   },
   "scripts": {
+    "prebuild": "npm --prefix ../invoice-core run build",
     "build": "tsc -p tsconfig.json",
+    "precheck": "npm --prefix ../invoice-core run build",
     "check": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm --prefix ../invoice-core run build",
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {

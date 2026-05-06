@@ -709,7 +709,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "List XML validation jobs",
         description:
-          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results may report not_configured when local UBL XSD artefacts are unavailable. These jobs are technical sandbox records, not official validation, Peppol certification, EN 16931 certification, authority acceptance, or a compliance guarantee.",
+          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results may report not_configured when local UBL XSD artefacts are unavailable, passed or failed only after a real local XSD validation operation executes, or error for controlled validator/runtime failures. These jobs are technical sandbox records, not official validation, Peppol certification, EN 16931 certification, authority acceptance, or a compliance guarantee.",
         scope: "xml:validation_jobs",
         parameters: [
           {
@@ -745,7 +745,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "Create an XML validation job",
         description:
-          "Creates a metadata-only XML validation job. The request may ask for worker readiness, UBL XSD, and planned Schematron checks. UBL XSD returns not_configured until local UBL XSD artefacts are configured. Schematron remains planned/inactive. This endpoint does not perform Peppol certification, EN 16931 certification, authority acceptance, filing, or legal/tax/accounting compliance validation.",
+          "Creates a metadata-only XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, and planned Schematron checks. UBL XSD returns not_configured when local UBL XSD artefacts for Invoice or CreditNote are missing or unreadable, passed or failed only after a real local XSD validation operation executes, and error for controlled validator/runtime failures. Server-side artefact configuration uses UBL_XSD_ROOT_DIR, UBL_INVOICE_XSD_PATH, UBL_CREDIT_NOTE_XSD_PATH, and UBL_XSD_ARTIFACT_VERSION. Schematron remains planned/inactive. This endpoint does not perform Peppol certification, EN 16931 certification, authority acceptance, filing, or legal/tax/accounting compliance validation.",
         scope: "xml:validation_jobs",
         requestBody: {
           required: true,
@@ -1882,6 +1882,40 @@ const openApiDocument = {
           }
         }
       },
+      XmlValidationJobArtifactInfo: {
+        type: "object",
+        required: ["configured", "validatorName"],
+        properties: {
+          configured: {
+            type: "boolean",
+            description:
+              "True only when the artefact needed for the detected document type is configured and readable."
+          },
+          rootPath: {
+            type: "string",
+            description:
+              "Optional server-side UBL XSD root directory used to derive standard maindoc paths."
+          },
+          invoiceXsdPath: {
+            type: "string",
+            description:
+              "Optional server-side path to the local UBL Invoice XSD artefact."
+          },
+          creditNoteXsdPath: {
+            type: "string",
+            description:
+              "Optional server-side path to the local UBL CreditNote XSD artefact."
+          },
+          artifactVersion: {
+            type: "string",
+            example: "2.1"
+          },
+          validatorName: {
+            type: "string",
+            example: "Invoice Lantern local UBL XSD adapter"
+          }
+        }
+      },
       XmlValidationJobFinding: {
         type: "object",
         required: [
@@ -2056,7 +2090,12 @@ const openApiDocument = {
                 requested: true,
                 configured: false,
                 validationExecuted: false,
-                markedValid: false
+                markedValid: false,
+                status: "not_configured",
+                artifactInfo: {
+                  configured: false,
+                  validatorName: "Invoice Lantern local UBL XSD adapter"
+                }
               }
             }
           },
