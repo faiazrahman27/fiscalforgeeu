@@ -115,6 +115,12 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const artifactInfoSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobArtifactInfo")
   );
+  const schemaArtifactSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchemaArtifact")
+  );
+  const dependencyGraphSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobDependencyGraph")
+  );
   const findingSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobFinding")
   );
@@ -125,8 +131,15 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /xsd_ubl/);
   assert.match(serializedPost, /not_configured/i);
   assert.match(serializedPost, /passed or failed only after a real local XSD validation operation executes/i);
-  assert.match(serializedPost, /error for controlled validator\/runtime failures/i);
+  assert.match(
+    serializedPost,
+    /error for controlled validator\/runtime or schema dependency failures/i
+  );
   assert.match(serializedPost, /local UBL XSD artefacts/i);
+  assert.match(serializedPost, /mapped Invoice Lantern findings/i);
+  assert.match(serializedPost, /UBL_XSD_ELEMENT_INVALID/);
+  assert.match(serializedPost, /UBL_XSD_REQUIRED_ELEMENT_MISSING/);
+  assert.match(serializedPost, /UBL_XSD_VALUE_INVALID/);
   assert.match(serializedPost, /UBL_XSD_ROOT_DIR/);
   assert.match(serializedPost, /UBL_INVOICE_XSD_PATH/);
   assert.match(serializedPost, /UBL_CREDIT_NOTE_XSD_PATH/);
@@ -135,13 +148,30 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(createRequest, /"xsd_ubl"/);
   assert.doesNotMatch(createRequest, /xsd_ubl_placeholder/);
   assert.match(artifactInfoSchema, /validatorName/);
+  assert.match(artifactInfoSchema, /validatorAvailable/);
+  assert.match(artifactInfoSchema, /artifactVersion/);
   assert.match(artifactInfoSchema, /invoiceXsdPath/);
   assert.match(artifactInfoSchema, /creditNoteXsdPath/);
+  assert.match(artifactInfoSchema, /invoiceSchema/);
+  assert.match(artifactInfoSchema, /creditNoteSchema/);
+  assert.match(schemaArtifactSchema, /sha256/);
+  assert.match(schemaArtifactSchema, /available/);
+  assert.match(schemaArtifactSchema, /missing/);
+  assert.match(schemaArtifactSchema, /unreadable/);
+  assert.match(schemaArtifactSchema, /out_of_root/);
+  assert.match(artifactInfoSchema, /dependencyGraph/);
+  assert.match(dependencyGraphSchema, /dependencyCount/);
+  assert.match(dependencyGraphSchema, /external_reference_blocked/);
+  assert.match(artifactInfoSchema, /checkedAt/);
   assert.match(findingSchema, /not_configured/);
   assert.match(findingSchema, /passed/);
   assert.match(findingSchema, /failed/);
   assert.match(findingSchema, /error/);
   assert.match(findingSchema, /not_implemented/);
+  assert.match(findingSchema, /technicalMessage/);
+  assert.match(findingSchema, /technicalCode/);
+  assert.match(findingSchema, /xmlLine/);
+  assert.match(findingSchema, /never raw XML/);
   assert.match(jobSchema, /xsd_ubl/);
   assert.match(jobSchema, /artifactInfo/);
   assert.doesNotMatch(jobSchema, /xsd_ubl_placeholder/);

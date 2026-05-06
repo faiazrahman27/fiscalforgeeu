@@ -1,3 +1,5 @@
+import type { UblXsdArtifactInfo } from "@invoice-lantern/ubl";
+
 export type XmlWorkerCheck =
   | "worker_readiness"
   | "xsd_ubl"
@@ -27,6 +29,9 @@ export type XmlWorkerFinding = {
   legalConfidence: XmlWorkerLegalConfidence;
   fixSuggestion?: string;
   sourceLabels?: string[];
+  technicalMessage?: string;
+  technicalCode?: string;
+  xmlLine?: number;
 };
 
 export type XmlWorkerRequest = {
@@ -34,14 +39,7 @@ export type XmlWorkerRequest = {
   requestedChecks: XmlWorkerCheck[];
 };
 
-export type XmlWorkerArtifactInfo = {
-  configured: boolean;
-  rootPath?: string;
-  invoiceXsdPath?: string;
-  creditNoteXsdPath?: string;
-  artifactVersion?: string;
-  validatorName?: string;
-};
+export type XmlWorkerArtifactInfo = UblXsdArtifactInfo;
 
 export type XmlWorkerCheckResult = {
   checkType: XmlWorkerCheck;

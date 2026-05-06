@@ -483,7 +483,7 @@ export async function xmlRoutes(app: FastifyInstance) {
           });
         }
 
-        const completion = buildXmlValidationJobCompletion({
+        const completion = await buildXmlValidationJobCompletion({
           xml,
           xmlSha256,
           xmlSizeBytes,

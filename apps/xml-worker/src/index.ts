@@ -34,7 +34,7 @@ async function main() {
   }
 
   const xml = await readFile(xmlPath, "utf8");
-  const result = runStubXmlValidator({
+  const result = await runStubXmlValidator({
     xml,
     requestedChecks: normalizeChecks(rawChecks)
   });

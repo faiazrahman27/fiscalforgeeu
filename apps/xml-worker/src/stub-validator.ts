@@ -125,16 +125,21 @@ function buildUblXsdFinding(finding: UblXsdValidationFinding): XmlWorkerFinding 
     ...(finding.fixSuggestion
       ? { fixSuggestion: finding.fixSuggestion }
       : {}),
-    ...(finding.sourceLabels ? { sourceLabels: finding.sourceLabels } : {})
+    ...(finding.sourceLabels ? { sourceLabels: finding.sourceLabels } : {}),
+    ...(finding.technicalMessage
+      ? { technicalMessage: finding.technicalMessage }
+      : {}),
+    ...(finding.technicalCode ? { technicalCode: finding.technicalCode } : {}),
+    ...(finding.xmlLine ? { xmlLine: finding.xmlLine } : {})
   };
 }
 
-function buildUblXsdResult(input: {
+async function buildUblXsdResult(input: {
   xml: string;
   rootElement: string;
   documentType: string;
-}): XmlWorkerCheckResult {
-  const result = validateUblXsd({
+}): Promise<XmlWorkerCheckResult> {
+  const result = await validateUblXsd({
     xml: input.xml,
     rootElement: input.rootElement,
     documentType: input.documentType,
@@ -168,9 +173,9 @@ function getBooleanSummaryValue(
   return summary?.[key] === true;
 }
 
-export function runStubXmlValidator(
+export async function runStubXmlValidator(
   request: XmlWorkerRequest
-): XmlWorkerResult {
+): Promise<XmlWorkerResult> {
   const requestedChecks = uniqueRequestedChecks(request.requestedChecks);
   const safety = inspectXmlSafety(request.xml);
   const rootElement = detectRootElement(request.xml);
@@ -191,7 +196,7 @@ export function runStubXmlValidator(
     }
 
     if (check === "xsd_ubl") {
-      const result = buildUblXsdResult({
+      const result = await buildUblXsdResult({
         xml: request.xml,
         rootElement,
         documentType

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -88,6 +89,31 @@ async function readOptionalFile(path: string) {
 
 function sha256(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+async function writeTestOnlyInvoiceXsdFixture(tempRoot: string) {
+  const maindocPath = join(tempRoot, "xsd", "maindoc");
+  const invoiceXsdPath = join(maindocPath, "UBL-Invoice-2.1.xsd");
+
+  await mkdir(maindocPath, {
+    recursive: true
+  });
+  await writeFile(
+    invoiceXsdPath,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="Invoice">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="ID" type="xs:string"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>`,
+    "utf8"
+  );
+
+  return invoiceXsdPath;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -244,9 +270,21 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(xsdUbl.status, "not_configured");
   assert.equal(isPlainObject(artifactInfo), true);
   assert.equal(artifactInfo.configured, false);
+  assert.equal(artifactInfo.validatorName, "xmllint-wasm");
+  assert.equal(artifactInfo.validatorAvailable, true);
+  assert.equal(artifactInfo.artifactVersion, null);
+  assert.match(String(artifactInfo.checkedAt), /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(
-    artifactInfo.validatorName,
-    "Invoice Lantern local UBL XSD adapter"
+    (artifactInfo.invoiceSchema as Record<string, unknown>).status,
+    "not_configured"
+  );
+  assert.equal(
+    (artifactInfo.creditNoteSchema as Record<string, unknown>).status,
+    "not_configured"
+  );
+  assert.equal(
+    (artifactInfo.dependencyGraph as Record<string, unknown>).status,
+    "not_inspected"
   );
 
   assert.doesNotMatch(
@@ -255,7 +293,7 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   );
 });
 
-test("configured missing UBL XSD artefact paths produce safe not_configured metadata", () => {
+test("configured missing UBL XSD artefact paths produce safe not_configured metadata", async () => {
   const rootElement = detectXmlRootElement(simpleUblInvoiceXml);
   const documentType = detectXmlDocumentType(rootElement);
   const missingInvoiceXsdPath = join(
@@ -263,7 +301,7 @@ test("configured missing UBL XSD artefact paths produce safe not_configured meta
     ".missing-test-artifacts",
     "UBL-Invoice-2.1.xsd"
   );
-  const completion = buildXmlValidationJobCompletion({
+  const completion = await buildXmlValidationJobCompletion({
     xml: simpleUblInvoiceXml,
     xmlSha256: sha256(simpleUblInvoiceXml),
     xmlSizeBytes: Buffer.byteLength(simpleUblInvoiceXml, "utf8"),
@@ -298,15 +336,153 @@ test("configured missing UBL XSD artefact paths produce safe not_configured meta
   assert.equal(artifactInfo.invoiceXsdPath, missingInvoiceXsdPath);
   assert.equal(artifactInfo.artifactVersion, "2.1");
   assert.equal(
+    (artifactInfo.invoiceSchema as Record<string, unknown>).configured,
+    true
+  );
+  assert.equal(
+    (artifactInfo.invoiceSchema as Record<string, unknown>).status,
+    "missing"
+  );
+  assert.equal(
+    (artifactInfo.invoiceSchema as Record<string, unknown>).sha256,
+    null
+  );
+  assert.equal(
+    (artifactInfo.dependencyGraph as Record<string, unknown>).status,
+    "not_inspected"
+  );
+  assert.equal(
     completion.findings.some(
       (finding) =>
-        finding.code === "UBL_XSD_ARTIFACT_UNREADABLE" &&
+        finding.code === "UBL_XSD_NOT_CONFIGURED" &&
         finding.status === "not_configured"
     ),
     true
   );
   assert.equal(JSON.stringify(completion).includes(simpleUblInvoiceXml), false);
   assert.equal(JSON.stringify(completion).includes("<Invoice"), false);
+});
+
+test("configured readable UBL Invoice XSD artefact metadata is returned safely", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-api-xsd-"));
+  const tinyInvoiceXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice><ID>INV-XSD-API-001</ID></Invoice>`;
+
+  try {
+    const invoiceXsdPath = await writeTestOnlyInvoiceXsdFixture(tempRoot);
+    const rootElement = detectXmlRootElement(tinyInvoiceXml);
+    const documentType = detectXmlDocumentType(rootElement);
+    const completion = await buildXmlValidationJobCompletion({
+      xml: tinyInvoiceXml,
+      xmlSha256: sha256(tinyInvoiceXml),
+      xmlSizeBytes: Buffer.byteLength(tinyInvoiceXml, "utf8"),
+      requestedChecks: ["xsd_ubl"],
+      safety: inspectXmlSafety(tinyInvoiceXml),
+      rootElement,
+      documentType,
+      xsdArtifactConfig: {
+        rootDir: tempRoot,
+        invoiceXsdPath,
+        artifactVersion: "test-only"
+      }
+    });
+
+    assert.deepEqual(completion.completedChecks, ["xsd_ubl"]);
+    assert.deepEqual(completion.failedChecks, []);
+
+    const xsdUbl = completion.resultSummary.xsdUbl as Record<string, unknown>;
+    const artifactInfo = xsdUbl.artifactInfo as Record<string, unknown>;
+    const invoiceSchema = artifactInfo.invoiceSchema as Record<string, unknown>;
+    const dependencyGraph = artifactInfo.dependencyGraph as Record<string, unknown>;
+
+    assert.equal(xsdUbl.status, "passed");
+    assert.equal(xsdUbl.configured, true);
+    assert.equal(xsdUbl.validationExecuted, true);
+    assert.equal(xsdUbl.markedValid, true);
+    assert.equal(artifactInfo.configured, true);
+    assert.equal(artifactInfo.validatorName, "xmllint-wasm");
+    assert.equal(artifactInfo.validatorAvailable, true);
+    assert.equal(artifactInfo.artifactVersion, "test-only");
+    assert.equal(invoiceSchema.status, "available");
+    assert.equal(invoiceSchema.readable, true);
+    assert.match(String(invoiceSchema.sha256), /^[a-f0-9]{64}$/);
+    assert.equal(dependencyGraph.status, "ready");
+    assert.equal(dependencyGraph.dependencyCount, 0);
+    assert.equal(JSON.stringify(completion).includes(tinyInvoiceXml), false);
+    assert.equal(JSON.stringify(completion).includes("<Invoice"), false);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("configured readable UBL Invoice XSD failure returns mapped findings safely", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-api-xsd-"));
+  const invalidInvoiceXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice><Unexpected>INV-XSD-API-RAW-SECRET</Unexpected></Invoice>`;
+
+  try {
+    const invoiceXsdPath = await writeTestOnlyInvoiceXsdFixture(tempRoot);
+    const rootElement = detectXmlRootElement(invalidInvoiceXml);
+    const documentType = detectXmlDocumentType(rootElement);
+    const completion = await buildXmlValidationJobCompletion({
+      xml: invalidInvoiceXml,
+      xmlSha256: sha256(invalidInvoiceXml),
+      xmlSizeBytes: Buffer.byteLength(invalidInvoiceXml, "utf8"),
+      requestedChecks: ["xsd_ubl"],
+      safety: inspectXmlSafety(invalidInvoiceXml),
+      rootElement,
+      documentType,
+      xsdArtifactConfig: {
+        rootDir: tempRoot,
+        invoiceXsdPath,
+        artifactVersion: "test-only"
+      }
+    });
+
+    assert.deepEqual(completion.completedChecks, []);
+    assert.deepEqual(completion.failedChecks, ["xsd_ubl"]);
+
+    const xsdUbl = completion.resultSummary.xsdUbl as Record<string, unknown>;
+    const checkResults = completion.resultSummary.checkResults as Record<
+      string,
+      unknown
+    >[];
+    const xsdCheckResult = checkResults.find(
+      (result) => result.checkType === "xsd_ubl"
+    ) as Record<string, unknown>;
+    const checkFindings = xsdCheckResult.findings as Record<string, unknown>[];
+    const mappedFinding = checkFindings[0] as Record<string, unknown>;
+
+    assert.equal(xsdUbl.status, "failed");
+    assert.equal(xsdUbl.configured, true);
+    assert.equal(xsdUbl.validationExecuted, true);
+    assert.equal(xsdUbl.markedValid, false);
+    assert.equal(isPlainObject(xsdCheckResult.artifactInfo), true);
+    assert.equal(mappedFinding.code, "UBL_XSD_ELEMENT_INVALID");
+    assert.equal(mappedFinding.severity, "fatal");
+    assert.equal(mappedFinding.checkType, "xsd_ubl");
+    assert.equal(mappedFinding.field, "xml");
+    assert.equal(mappedFinding.status, "failed");
+    assert.equal(mappedFinding.legalConfidence, "technical");
+    assert.equal(mappedFinding.technicalCode, "element_invalid");
+    assert.equal(typeof mappedFinding.technicalMessage, "string");
+    assert.equal(Array.isArray(mappedFinding.sourceLabels), true);
+    assert.equal(
+      (mappedFinding.sourceLabels as string[]).includes("xmllint-wasm"),
+      true
+    );
+    assert.equal(JSON.stringify(completion).includes(invalidInvoiceXml), false);
+    assert.equal(JSON.stringify(completion).includes("<Invoice"), false);
+    assert.equal(JSON.stringify(completion).includes("INV-XSD-API-RAW-SECRET"), false);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
 });
 
 test("legacy XSD placeholder check is rejected by schema instead of silently accepted", async (t) => {

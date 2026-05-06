@@ -40,6 +40,9 @@ export type XmlValidationJobFinding = {
   legalConfidence: "technical" | "educational_simulation";
   fixSuggestion?: string;
   sourceLabels?: string[];
+  technicalMessage?: string;
+  technicalCode?: string;
+  xmlLine?: number;
 };
 
 export type XmlValidationJobCheckResult = {
@@ -209,17 +212,22 @@ function buildUblXsdFinding(
     ...(finding.fixSuggestion
       ? { fixSuggestion: finding.fixSuggestion }
       : {}),
-    ...(finding.sourceLabels ? { sourceLabels: finding.sourceLabels } : {})
+    ...(finding.sourceLabels ? { sourceLabels: finding.sourceLabels } : {}),
+    ...(finding.technicalMessage
+      ? { technicalMessage: finding.technicalMessage }
+      : {}),
+    ...(finding.technicalCode ? { technicalCode: finding.technicalCode } : {}),
+    ...(finding.xmlLine ? { xmlLine: finding.xmlLine } : {})
   };
 }
 
-function buildUblXsdResult(input: {
+async function buildUblXsdResult(input: {
   xml: string;
   rootElement: string;
   documentType: string;
   artifactConfig?: UblXsdArtifactConfigInput;
-}): XmlValidationJobCheckResult {
-  const result = validateUblXsd({
+}): Promise<XmlValidationJobCheckResult> {
+  const result = await validateUblXsd({
     xml: input.xml,
     rootElement: input.rootElement,
     documentType: input.documentType,
@@ -255,7 +263,7 @@ function getBooleanSummaryValue(
   return summary?.[key] === true;
 }
 
-export function buildXmlValidationJobCompletion(input: {
+export async function buildXmlValidationJobCompletion(input: {
   xml: string;
   xmlSha256: string;
   xmlSizeBytes: number;
@@ -264,7 +272,7 @@ export function buildXmlValidationJobCompletion(input: {
   rootElement: string;
   documentType: string;
   xsdArtifactConfig?: UblXsdArtifactConfigInput;
-}): XmlValidationJobCompletion {
+}): Promise<XmlValidationJobCompletion> {
   const completedChecks: XmlValidationJobCheck[] = [];
   const failedChecks: XmlValidationJobCheck[] = [];
   const findings: XmlValidationJobFinding[] = [];
@@ -280,7 +288,7 @@ export function buildXmlValidationJobCompletion(input: {
     }
 
     if (check === "xsd_ubl") {
-      const result = buildUblXsdResult({
+      const result = await buildUblXsdResult({
         xml: input.xml,
         rootElement: input.rootElement,
         documentType: input.documentType,

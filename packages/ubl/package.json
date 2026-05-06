@@ -22,7 +22,8 @@
   "dependencies": {
     "@invoice-lantern/invoice-core": "file:../invoice-core",
     "fast-xml-parser": "^5.7.2",
-    "xmlbuilder2": "^3.1.1"
+    "xmlbuilder2": "^3.1.1",
+    "xmllint-wasm": "^5.2.0"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",

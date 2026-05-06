@@ -286,7 +286,7 @@ const openApiDocument = {
     {
       name: "XML Validation Jobs",
       description:
-        "Metadata-only XML validation job endpoints for the validation worker foundation. UBL XSD checks are configuration-gated and return not_configured until local UBL XSD artefacts are available. Schematron, Peppol, and EN 16931 validation remain inactive/planned."
+        "Metadata-only XML validation job endpoints for the validation worker foundation. UBL XSD checks are configuration-gated local technical XSD validation when local artefacts are available. Schematron, Peppol, and EN 16931 validation remain inactive/planned."
     },
     {
       name: "VAT",
@@ -709,7 +709,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "List XML validation jobs",
         description:
-          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results may report not_configured when local UBL XSD artefacts are unavailable, passed or failed only after a real local XSD validation operation executes, or error for controlled validator/runtime failures. These jobs are technical sandbox records, not official validation, Peppol certification, EN 16931 certification, authority acceptance, or a compliance guarantee.",
+          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results include safe local artefact metadata such as configured paths, artefact version, schema readability, schema hashes, validator name/availability, and dependency graph status where inspected. Failed UBL XSD checks return mapped Invoice Lantern findings with stable codes, safe fields, source labels, sanitized technical messages, and technical confidence only. UBL XSD may report not_configured when local UBL XSD artefacts are unavailable, passed or failed only after a real local XSD validation operation executes, or error for controlled validator/runtime failures. These jobs are technical sandbox records, not official validation, Peppol certification, EN 16931 certification, authority acceptance, or a compliance guarantee.",
         scope: "xml:validation_jobs",
         parameters: [
           {
@@ -745,7 +745,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "Create an XML validation job",
         description:
-          "Creates a metadata-only XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, and planned Schematron checks. UBL XSD returns not_configured when local UBL XSD artefacts for Invoice or CreditNote are missing or unreadable, passed or failed only after a real local XSD validation operation executes, and error for controlled validator/runtime failures. Server-side artefact configuration uses UBL_XSD_ROOT_DIR, UBL_INVOICE_XSD_PATH, UBL_CREDIT_NOTE_XSD_PATH, and UBL_XSD_ARTIFACT_VERSION. Schematron remains planned/inactive. This endpoint does not perform Peppol certification, EN 16931 certification, authority acceptance, filing, or legal/tax/accounting compliance validation.",
+          "Creates a metadata-only XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, and planned Schematron checks. UBL XSD returns not_configured when local UBL XSD artefacts for Invoice or CreditNote are missing, unreadable, outside the configured root, or not configured; passed or failed only after a real local XSD validation operation executes; and error for controlled validator/runtime or schema dependency failures. Failed UBL XSD results map xmllint-wasm messages into mapped Invoice Lantern findings with stable codes such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, and UBL_XSD_VALUE_INVALID. Server-side artefact configuration uses UBL_XSD_ROOT_DIR, UBL_INVOICE_XSD_PATH, UBL_CREDIT_NOTE_XSD_PATH, and UBL_XSD_ARTIFACT_VERSION. Results expose safe artefact metadata including artifactVersion, validatorName, validatorAvailable, schema SHA-256 hashes, and dependency graph status where inspected. Schematron remains planned/inactive. This endpoint does not perform Peppol certification, EN 16931 certification, authority acceptance, filing, or legal/tax/accounting compliance validation.",
         scope: "xml:validation_jobs",
         requestBody: {
           required: true,
@@ -1882,42 +1882,146 @@ const openApiDocument = {
           }
         }
       },
-      XmlValidationJobArtifactInfo: {
+      XmlValidationJobSchemaArtifact: {
         type: "object",
-        required: ["configured", "validatorName"],
+        required: ["configured", "readable", "usable", "path", "sha256", "status"],
         properties: {
           configured: {
             type: "boolean",
             description:
-              "True only when the artefact needed for the detected document type is configured and readable."
+              "True when a local schema path is configured for this artefact slot."
+          },
+          readable: {
+            type: "boolean"
+          },
+          usable: {
+            type: "boolean",
+            description:
+              "True only when the configured schema path is readable and within the configured root when a root is set."
+          },
+          path: {
+            type: ["string", "null"],
+            description:
+              "Server-side local schema path, returned for auditability. This is never XML payload content."
+          },
+          sha256: {
+            type: ["string", "null"],
+            description: "SHA-256 hash of the readable schema file when available."
+          },
+          status: {
+            type: "string",
+            enum: [
+              "available",
+              "missing",
+              "unreadable",
+              "out_of_root",
+              "not_configured"
+            ]
+          },
+          reason: {
+            type: "string"
+          }
+        }
+      },
+      XmlValidationJobDependencyGraph: {
+        type: "object",
+        required: [
+          "inspected",
+          "dependencyCount",
+          "status",
+          "schemaResolutionRoot"
+        ],
+        properties: {
+          inspected: {
+            type: "boolean"
+          },
+          dependencyCount: {
+            type: "integer",
+            minimum: 0
+          },
+          status: {
+            type: "string",
+            enum: [
+              "not_inspected",
+              "ready",
+              "missing_dependency",
+              "unreadable_dependency",
+              "external_reference_blocked",
+              "error"
+            ]
+          },
+          schemaResolutionRoot: {
+            type: ["string", "null"]
+          },
+          reason: {
+            type: "string"
+          }
+        }
+      },
+      XmlValidationJobArtifactInfo: {
+        type: "object",
+        required: [
+          "configured",
+          "usable",
+          "rootPath",
+          "invoiceXsdPath",
+          "creditNoteXsdPath",
+          "artifactVersion",
+          "validatorName",
+          "validatorAvailable",
+          "invoiceSchema",
+          "creditNoteSchema",
+          "dependencyGraph",
+          "checkedAt"
+        ],
+        properties: {
+          configured: {
+            type: "boolean",
+            description:
+              "For xsd_ubl check results, true only when the artefact needed for the detected document type is configured, readable, and usable."
+          },
+          usable: {
+            type: "boolean"
           },
           rootPath: {
-            type: "string",
+            type: ["string", "null"],
             description:
               "Optional server-side UBL XSD root directory used to derive standard maindoc paths."
           },
           invoiceXsdPath: {
-            type: "string",
+            type: ["string", "null"],
             description:
               "Optional server-side path to the local UBL Invoice XSD artefact."
           },
           creditNoteXsdPath: {
-            type: "string",
+            type: ["string", "null"],
             description:
               "Optional server-side path to the local UBL CreditNote XSD artefact."
           },
           artifactVersion: {
-            type: "string",
+            type: ["string", "null"],
             example: "2.1"
           },
           validatorName: {
             type: "string",
-            example: "Invoice Lantern local UBL XSD adapter"
+            example: "xmllint-wasm"
+          },
+          validatorAvailable: {
+            type: "boolean"
+          },
+          invoiceSchema: ref("XmlValidationJobSchemaArtifact"),
+          creditNoteSchema: ref("XmlValidationJobSchemaArtifact"),
+          dependencyGraph: ref("XmlValidationJobDependencyGraph"),
+          checkedAt: {
+            type: "string",
+            format: "date-time"
           }
         }
       },
       XmlValidationJobFinding: {
         type: "object",
+        description:
+          "Structured technical sandbox finding. xsd_ubl findings are mapped from local XSD validator messages and may include sanitized technical detail, but never raw XML.",
         required: [
           "code",
           "severity",
@@ -1930,7 +2034,9 @@ const openApiDocument = {
         properties: {
           code: {
             type: "string",
-            example: "UBL_XSD_NOT_CONFIGURED"
+            example: "UBL_XSD_ELEMENT_INVALID",
+            description:
+              "Stable Invoice Lantern finding code, such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, UBL_XSD_VALUE_INVALID, UBL_XSD_NOT_CONFIGURED, UBL_XSD_VALIDATOR_ERROR, or UBL_XSD_VALIDATION_PASSED."
           },
           severity: {
             type: "string",
@@ -1949,7 +2055,9 @@ const openApiDocument = {
             example: "xml"
           },
           message: {
-            type: "string"
+            type: "string",
+            description:
+              "User-understandable technical message. It does not claim legal, tax, accounting, Peppol, EN 16931, or authority acceptance."
           },
           status: {
             type: "string",
@@ -1974,6 +2082,23 @@ const openApiDocument = {
             items: {
               type: "string"
             }
+          },
+          technicalMessage: {
+            type: "string",
+            description:
+              "Sanitized validator detail for troubleshooting. Raw XML fragments, raw XML payload values, local file URLs, and control characters are not included."
+          },
+          technicalCode: {
+            type: "string",
+            description:
+              "Stable technical mapping bucket for the normalized validator message.",
+            example: "element_invalid"
+          },
+          xmlLine: {
+            type: "integer",
+            minimum: 1,
+            description:
+              "XML line reported by the local validator when available. The XML body itself is not returned."
           }
         }
       },
@@ -2094,7 +2219,36 @@ const openApiDocument = {
                 status: "not_configured",
                 artifactInfo: {
                   configured: false,
-                  validatorName: "Invoice Lantern local UBL XSD adapter"
+                  usable: false,
+                  rootPath: null,
+                  invoiceXsdPath: null,
+                  creditNoteXsdPath: null,
+                  artifactVersion: null,
+                  validatorName: "xmllint-wasm",
+                  validatorAvailable: true,
+                  invoiceSchema: {
+                    configured: false,
+                    readable: false,
+                    usable: false,
+                    path: null,
+                    sha256: null,
+                    status: "not_configured"
+                  },
+                  creditNoteSchema: {
+                    configured: false,
+                    readable: false,
+                    usable: false,
+                    path: null,
+                    sha256: null,
+                    status: "not_configured"
+                  },
+                  dependencyGraph: {
+                    inspected: false,
+                    dependencyCount: 0,
+                    status: "not_inspected",
+                    schemaResolutionRoot: null
+                  },
+                  checkedAt: "2026-05-06T12:00:00.000Z"
                 }
               }
             }
