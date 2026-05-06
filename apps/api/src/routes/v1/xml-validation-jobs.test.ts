@@ -253,7 +253,13 @@ test("legacy XSD placeholder check is rejected by schema instead of silently acc
 
   assert.equal(response.statusCode, 400);
   assert.match(response.body, /XML validation job request failed schema validation/i);
-  assert.match(response.body, /xsd_ubl_placeholder/);
+  assert.match(response.body, /VALIDATION_ERROR/);
+  assert.match(response.body, /requestedChecks\.0/);
+  assert.match(response.body, /worker_readiness/);
+  assert.match(response.body, /xsd_ubl/);
+  assert.match(response.body, /schematron_peppol_placeholder/);
+  assert.doesNotMatch(response.body, /UBL_XSD_NOT_CONFIGURED/);
+  assert.doesNotMatch(response.body, /XML_VALIDATION_WORKER_READY/);
 });
 
 test("XML validation job list and read endpoints return metadata only", async (t) => {

@@ -331,7 +331,7 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
       sourceType: "api_payload",
       requestedChecks: [
         "worker_readiness",
-        "xsd_ubl_placeholder",
+        "xsd_ubl",
         "schematron_peppol_placeholder"
       ]
     }

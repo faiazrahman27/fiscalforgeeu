@@ -200,21 +200,72 @@ function normalizeSourceType(value: string): XmlValidationJobRecord["sourceType"
   return "uploaded_xml";
 }
 
+function normalizeCheck(value: unknown): XmlValidationJobCheck | null {
+  if (value === "worker_readiness") {
+    return "worker_readiness";
+  }
+
+  if (value === "xsd_ubl") {
+    return "xsd_ubl";
+  }
+
+  if (value === "schematron_peppol_placeholder") {
+    return "schematron_peppol_placeholder";
+  }
+
+  /*
+   * Legacy records created before Step 37 used xsd_ubl_placeholder.
+   * New API requests must use xsd_ubl, but old stored metadata should still
+   * read back safely instead of silently dropping the check.
+   */
+  if (value === "xsd_ubl_placeholder") {
+    return "xsd_ubl";
+  }
+
+  return null;
+}
+
 function normalizeChecks(value: unknown): XmlValidationJobCheck[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
-  return value.filter(
-    (check): check is XmlValidationJobCheck =>
-      check === "worker_readiness" ||
-      check === "xsd_ubl_placeholder" ||
-      check === "schematron_peppol_placeholder"
-  );
+  const normalizedChecks: XmlValidationJobCheck[] = [];
+
+  for (const item of value) {
+    const check = normalizeCheck(item);
+
+    if (check && !normalizedChecks.includes(check)) {
+      normalizedChecks.push(check);
+    }
+  }
+
+  return normalizedChecks;
 }
 
 function normalizeResultSummary(value: unknown): Record<string, unknown> {
   return isPlainObject(value) ? value : {};
+}
+
+function normalizeFinding(value: unknown): XmlValidationJobFinding | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const checkType = normalizeCheck(value.checkType);
+
+  if (!checkType) {
+    return null;
+  }
+
+  if (value.checkType !== checkType) {
+    return {
+      ...value,
+      checkType
+    } as XmlValidationJobFinding;
+  }
+
+  return value as XmlValidationJobFinding;
 }
 
 function normalizeFindings(value: unknown): XmlValidationJobFinding[] {
@@ -222,7 +273,9 @@ function normalizeFindings(value: unknown): XmlValidationJobFinding[] {
     return [];
   }
 
-  return value.filter(isPlainObject) as XmlValidationJobFinding[];
+  return value
+    .map((finding) => normalizeFinding(finding))
+    .filter((finding): finding is XmlValidationJobFinding => finding !== null);
 }
 
 function sortJobsByCreatedAt(records: XmlValidationJobRecord[]) {
