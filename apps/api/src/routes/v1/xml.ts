@@ -47,6 +47,8 @@ import {
 } from "../../repositories/xml-validation-job-repository.js";
 import {
   XML_VALIDATION_JOB_DISCLAIMER,
+  XML_VALIDATION_JOB_WORKER_NAME,
+  XML_VALIDATION_JOB_WORKER_VERSION,
   buildXmlValidationJobCompletion,
   calculateXmlSha256,
   detectXmlDocumentType,
@@ -461,7 +463,9 @@ export async function xmlRoutes(app: FastifyInstance) {
           });
           await markOrganizationJobRunning({
             organizationId,
-            jobId: job.id
+            jobId: job.id,
+            workerName: XML_VALIDATION_JOB_WORKER_NAME,
+            workerVersion: XML_VALIDATION_JOB_WORKER_VERSION
           });
         } else if (authenticatedContext) {
           job = await createAuthenticatedXmlValidationJob(
@@ -469,7 +473,9 @@ export async function xmlRoutes(app: FastifyInstance) {
             createInput
           );
           await markAuthenticatedJobRunning(authenticatedContext, {
-            jobId: job.id
+            jobId: job.id,
+            workerName: XML_VALIDATION_JOB_WORKER_NAME,
+            workerVersion: XML_VALIDATION_JOB_WORKER_VERSION
           });
         } else {
           job = await createXmlValidationJob({
@@ -479,7 +485,9 @@ export async function xmlRoutes(app: FastifyInstance) {
           });
           await markJobRunning({
             organizationId,
-            jobId: job.id
+            jobId: job.id,
+            workerName: XML_VALIDATION_JOB_WORKER_NAME,
+            workerVersion: XML_VALIDATION_JOB_WORKER_VERSION
           });
         }
 
@@ -490,7 +498,9 @@ export async function xmlRoutes(app: FastifyInstance) {
           requestedChecks,
           safety,
           rootElement,
-          documentType
+          documentType,
+          queueMode: "inline",
+          queueClaimedBy: XML_VALIDATION_JOB_WORKER_NAME
         });
 
         const completedJob = request.authenticatedApiKey

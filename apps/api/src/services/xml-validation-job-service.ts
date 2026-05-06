@@ -14,6 +14,11 @@ export const XML_VALIDATION_JOB_DISCLAIMER =
 export const XML_VALIDATION_JOB_WORKER_NAME = "invoice-lantern-xml-worker";
 export const XML_VALIDATION_JOB_WORKER_VERSION = "0.2.0";
 
+export const XML_VALIDATION_JOB_QUEUE_VERSION = "2026.05.1";
+export const XML_VALIDATION_JOB_QUEUE_LEASE_SECONDS = 120;
+export const XML_VALIDATION_JOB_QUEUE_TIMEOUT_SECONDS = 300;
+export const XML_VALIDATION_JOB_QUEUE_MAX_ATTEMPTS = 3;
+
 export const XML_VALIDATION_JOB_CHECKS = [
   "worker_readiness",
   "xsd_ubl",
@@ -29,6 +34,15 @@ export type XmlValidationJobCheckStatus =
   | "not_configured"
   | "not_implemented"
   | "error";
+
+export type XmlValidationJobQueueMode = "inline" | "async_worker";
+
+export type XmlValidationJobQueueLifecycleStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export type XmlValidationJobFinding = {
   code: string;
@@ -53,6 +67,28 @@ export type XmlValidationJobCheckResult = {
   summary?: Record<string, unknown>;
 };
 
+export type XmlValidationJobQueueLifecycle = {
+  queueVersion: string;
+  mode: XmlValidationJobQueueMode;
+  status: XmlValidationJobQueueLifecycleStatus;
+  attempt: number;
+  maxAttempts: number;
+  leaseSeconds: number;
+  timeoutSeconds: number;
+  retryable: boolean;
+  queuedAt: string;
+  nextAttemptAt?: string;
+  claimedBy?: string;
+  claimedAt?: string;
+  leaseExpiresAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+  cancelledAt?: string;
+  failureCode?: string;
+  failureMessage?: string;
+};
+
 export type XmlValidationJobCompletion = {
   completedChecks: XmlValidationJobCheck[];
   failedChecks: XmlValidationJobCheck[];
@@ -62,6 +98,211 @@ export type XmlValidationJobCompletion = {
   findings: XmlValidationJobFinding[];
   disclaimer: string;
 };
+
+function normalizePositiveInteger(value: number | undefined, fallback: number) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : fallback;
+}
+
+function toIsoDateTime(value: Date | string | undefined) {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value;
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+
+  return new Date().toISOString();
+}
+
+function addSecondsToIsoDateTime(value: string, seconds: number) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return new Date(Date.now() + seconds * 1000).toISOString();
+  }
+
+  date.setSeconds(date.getSeconds() + seconds);
+
+  return date.toISOString();
+}
+
+export function buildQueuedXmlValidationJobLifecycle(
+  input: {
+    now?: Date | string;
+    attempt?: number;
+    maxAttempts?: number;
+    leaseSeconds?: number;
+    timeoutSeconds?: number;
+  } = {}
+): XmlValidationJobQueueLifecycle {
+  const queuedAt = toIsoDateTime(input.now);
+  const leaseSeconds = normalizePositiveInteger(
+    input.leaseSeconds,
+    XML_VALIDATION_JOB_QUEUE_LEASE_SECONDS
+  );
+  const timeoutSeconds = normalizePositiveInteger(
+    input.timeoutSeconds,
+    XML_VALIDATION_JOB_QUEUE_TIMEOUT_SECONDS
+  );
+  const maxAttempts = normalizePositiveInteger(
+    input.maxAttempts,
+    XML_VALIDATION_JOB_QUEUE_MAX_ATTEMPTS
+  );
+  const attempt = normalizePositiveInteger(input.attempt, 1);
+
+  return {
+    queueVersion: XML_VALIDATION_JOB_QUEUE_VERSION,
+    mode: "async_worker",
+    status: "queued",
+    attempt,
+    maxAttempts,
+    leaseSeconds,
+    timeoutSeconds,
+    retryable: attempt < maxAttempts,
+    queuedAt,
+    nextAttemptAt: queuedAt
+  };
+}
+
+export function buildRunningXmlValidationJobLifecycle(input: {
+  queuedAt?: Date | string;
+  now?: Date | string;
+  attempt?: number;
+  maxAttempts?: number;
+  leaseSeconds?: number;
+  timeoutSeconds?: number;
+  claimedBy?: string;
+}): XmlValidationJobQueueLifecycle {
+  const startedAt = toIsoDateTime(input.now);
+  const queuedAt = toIsoDateTime(input.queuedAt ?? startedAt);
+  const leaseSeconds = normalizePositiveInteger(
+    input.leaseSeconds,
+    XML_VALIDATION_JOB_QUEUE_LEASE_SECONDS
+  );
+  const timeoutSeconds = normalizePositiveInteger(
+    input.timeoutSeconds,
+    XML_VALIDATION_JOB_QUEUE_TIMEOUT_SECONDS
+  );
+  const maxAttempts = normalizePositiveInteger(
+    input.maxAttempts,
+    XML_VALIDATION_JOB_QUEUE_MAX_ATTEMPTS
+  );
+  const attempt = normalizePositiveInteger(input.attempt, 1);
+
+  return {
+    queueVersion: XML_VALIDATION_JOB_QUEUE_VERSION,
+    mode: "async_worker",
+    status: "running",
+    attempt,
+    maxAttempts,
+    leaseSeconds,
+    timeoutSeconds,
+    retryable: attempt < maxAttempts,
+    queuedAt,
+    claimedAt: startedAt,
+    leaseExpiresAt: addSecondsToIsoDateTime(startedAt, leaseSeconds),
+    startedAt,
+    ...(input.claimedBy ? { claimedBy: input.claimedBy } : {})
+  };
+}
+
+export function buildCompletedXmlValidationJobLifecycle(input: {
+  mode?: XmlValidationJobQueueMode;
+  queuedAt?: Date | string;
+  startedAt?: Date | string;
+  completedAt?: Date | string;
+  attempt?: number;
+  maxAttempts?: number;
+  leaseSeconds?: number;
+  timeoutSeconds?: number;
+  claimedBy?: string;
+}): XmlValidationJobQueueLifecycle {
+  const completedAt = toIsoDateTime(input.completedAt);
+  const queuedAt = toIsoDateTime(input.queuedAt ?? completedAt);
+  const startedAt = toIsoDateTime(input.startedAt ?? completedAt);
+  const leaseSeconds = normalizePositiveInteger(
+    input.leaseSeconds,
+    XML_VALIDATION_JOB_QUEUE_LEASE_SECONDS
+  );
+  const timeoutSeconds = normalizePositiveInteger(
+    input.timeoutSeconds,
+    XML_VALIDATION_JOB_QUEUE_TIMEOUT_SECONDS
+  );
+  const maxAttempts = normalizePositiveInteger(
+    input.maxAttempts,
+    XML_VALIDATION_JOB_QUEUE_MAX_ATTEMPTS
+  );
+  const attempt = normalizePositiveInteger(input.attempt, 1);
+
+  return {
+    queueVersion: XML_VALIDATION_JOB_QUEUE_VERSION,
+    mode: input.mode ?? "async_worker",
+    status: "completed",
+    attempt,
+    maxAttempts,
+    leaseSeconds,
+    timeoutSeconds,
+    retryable: false,
+    queuedAt,
+    startedAt,
+    completedAt,
+    ...(input.claimedBy ? { claimedBy: input.claimedBy } : {})
+  };
+}
+
+export function buildFailedXmlValidationJobLifecycle(input: {
+  mode?: XmlValidationJobQueueMode;
+  queuedAt?: Date | string;
+  startedAt?: Date | string;
+  failedAt?: Date | string;
+  attempt?: number;
+  maxAttempts?: number;
+  leaseSeconds?: number;
+  timeoutSeconds?: number;
+  claimedBy?: string;
+  failureCode: string;
+  failureMessage: string;
+  retryable?: boolean;
+}): XmlValidationJobQueueLifecycle {
+  const failedAt = toIsoDateTime(input.failedAt);
+  const queuedAt = toIsoDateTime(input.queuedAt ?? failedAt);
+  const startedAt = toIsoDateTime(input.startedAt ?? failedAt);
+  const leaseSeconds = normalizePositiveInteger(
+    input.leaseSeconds,
+    XML_VALIDATION_JOB_QUEUE_LEASE_SECONDS
+  );
+  const timeoutSeconds = normalizePositiveInteger(
+    input.timeoutSeconds,
+    XML_VALIDATION_JOB_QUEUE_TIMEOUT_SECONDS
+  );
+  const maxAttempts = normalizePositiveInteger(
+    input.maxAttempts,
+    XML_VALIDATION_JOB_QUEUE_MAX_ATTEMPTS
+  );
+  const attempt = normalizePositiveInteger(input.attempt, 1);
+  const retryable = input.retryable ?? attempt < maxAttempts;
+
+  return {
+    queueVersion: XML_VALIDATION_JOB_QUEUE_VERSION,
+    mode: input.mode ?? "async_worker",
+    status: "failed",
+    attempt,
+    maxAttempts,
+    leaseSeconds,
+    timeoutSeconds,
+    retryable,
+    queuedAt,
+    startedAt,
+    failedAt,
+    failureCode: input.failureCode,
+    failureMessage: input.failureMessage,
+    ...(retryable ? { nextAttemptAt: addSecondsToIsoDateTime(failedAt, 60) } : {}),
+    ...(input.claimedBy ? { claimedBy: input.claimedBy } : {})
+  };
+}
 
 export function isXmlValidationJobCheck(
   value: string
@@ -147,6 +388,24 @@ function buildSchematronPlaceholderFinding(): XmlValidationJobFinding {
     fixSuggestion:
       "Enable a future Schematron validation worker with local reviewed artefacts before using Peppol-style business-rule checks.",
     sourceLabels: ["Planned validation layer"]
+  };
+}
+
+function buildQueueFailureFinding(input: {
+  errorCode: string;
+  errorMessage: string;
+}): XmlValidationJobFinding {
+  return {
+    code: input.errorCode,
+    severity: "warning",
+    checkType: "worker_readiness",
+    field: "xml",
+    message: input.errorMessage,
+    status: "error",
+    legalConfidence: "technical",
+    fixSuggestion:
+      "Retry the XML validation job or review the worker queue configuration if this error persists.",
+    sourceLabels: ["Invoice Lantern XML validation queue"]
   };
 }
 
@@ -250,9 +509,7 @@ function isCompletedCheckResult(result: XmlValidationJobCheckResult) {
   return result.status === "passed" || result.status === "completed";
 }
 
-function getXsdUblResult(
-  checkResults: readonly XmlValidationJobCheckResult[]
-) {
+function getXsdUblResult(checkResults: readonly XmlValidationJobCheckResult[]) {
   return checkResults.find((result) => result.checkType === "xsd_ubl");
 }
 
@@ -261,6 +518,97 @@ function getBooleanSummaryValue(
   key: string
 ) {
   return summary?.[key] === true;
+}
+
+export function buildXmlValidationJobQueueFailureCompletion(input: {
+  xmlSha256: string;
+  xmlSizeBytes: number;
+  requestedChecks: readonly XmlValidationJobCheck[];
+  safety?: XmlSafetyInspection;
+  rootElement: string;
+  documentType: string;
+  errorCode: string;
+  errorMessage: string;
+  retryable?: boolean;
+  attempt?: number;
+  maxAttempts?: number;
+  queuedAt?: Date | string;
+  startedAt?: Date | string;
+  failedAt?: Date | string;
+  claimedBy?: string;
+}): XmlValidationJobCompletion {
+  const queueLifecycle = buildFailedXmlValidationJobLifecycle({
+    mode: "async_worker",
+    failureCode: input.errorCode,
+    failureMessage: input.errorMessage,
+    ...(typeof input.retryable === "boolean" ? { retryable: input.retryable } : {}),
+    ...(input.attempt !== undefined ? { attempt: input.attempt } : {}),
+    ...(input.maxAttempts !== undefined ? { maxAttempts: input.maxAttempts } : {}),
+    ...(input.queuedAt !== undefined ? { queuedAt: input.queuedAt } : {}),
+    ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
+    ...(input.failedAt !== undefined ? { failedAt: input.failedAt } : {}),
+    ...(input.claimedBy !== undefined ? { claimedBy: input.claimedBy } : {})
+  });
+  const failedChecks = [...input.requestedChecks];
+  const finding = buildQueueFailureFinding({
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage
+  });
+
+  return {
+    completedChecks: [],
+    failedChecks,
+    workerName: XML_VALIDATION_JOB_WORKER_NAME,
+    workerVersion: XML_VALIDATION_JOB_WORKER_VERSION,
+    resultSummary: {
+      workerReady: false,
+      xmlSha256: input.xmlSha256,
+      xmlSizeBytes: input.xmlSizeBytes,
+      rootElement: input.rootElement,
+      documentType: input.documentType,
+      safetyPolicyPassed: input.safety?.safe ?? false,
+      requestedChecks: input.requestedChecks,
+      completedChecks: [],
+      failedChecks,
+      inactiveChecks: failedChecks,
+      checkResults: [
+        {
+          checkType: "worker_readiness",
+          status: "error",
+          findings: [finding],
+          summary: {
+            validationExecuted: false,
+            errorCode: input.errorCode,
+            retryable: queueLifecycle.retryable
+          }
+        }
+      ],
+      checkStatuses: {
+        worker_readiness: "error"
+      },
+      queue: queueLifecycle,
+      activeValidation: {
+        xsd: false,
+        schematron: false,
+        peppolArtifacts: false,
+        en16931Certification: false
+      },
+      xsdUbl: {
+        requested: input.requestedChecks.includes("xsd_ubl"),
+        configured: false,
+        validationExecuted: false,
+        markedValid: false
+      },
+      schematronPeppol: {
+        requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
+        implemented: false,
+        validationExecuted: false,
+        markedValid: false
+      }
+    },
+    findings: [finding],
+    disclaimer: XML_VALIDATION_JOB_DISCLAIMER
+  };
 }
 
 export async function buildXmlValidationJobCompletion(input: {
@@ -272,6 +620,11 @@ export async function buildXmlValidationJobCompletion(input: {
   rootElement: string;
   documentType: string;
   xsdArtifactConfig?: UblXsdArtifactConfigInput;
+  queueMode?: XmlValidationJobQueueMode;
+  queueAttempt?: number;
+  queueQueuedAt?: Date | string;
+  queueStartedAt?: Date | string;
+  queueClaimedBy?: string;
 }): Promise<XmlValidationJobCompletion> {
   const completedChecks: XmlValidationJobCheck[] = [];
   const failedChecks: XmlValidationJobCheck[] = [];
@@ -321,6 +674,17 @@ export async function buildXmlValidationJobCompletion(input: {
 
   const xsdUblResult = getXsdUblResult(checkResults);
   const xsdUblSummary = xsdUblResult?.summary;
+  const queueLifecycle = buildCompletedXmlValidationJobLifecycle({
+    mode: input.queueMode ?? "inline",
+    ...(input.queueAttempt !== undefined ? { attempt: input.queueAttempt } : {}),
+    ...(input.queueQueuedAt !== undefined ? { queuedAt: input.queueQueuedAt } : {}),
+    ...(input.queueStartedAt !== undefined
+      ? { startedAt: input.queueStartedAt }
+      : {}),
+    ...(input.queueClaimedBy !== undefined
+      ? { claimedBy: input.queueClaimedBy }
+      : {})
+  });
 
   return {
     completedChecks,
@@ -338,6 +702,7 @@ export async function buildXmlValidationJobCompletion(input: {
       completedChecks,
       failedChecks,
       inactiveChecks: failedChecks,
+      queue: queueLifecycle,
       checkResults,
       checkStatuses: summarizeCheckStatuses(checkResults),
       activeValidation: {

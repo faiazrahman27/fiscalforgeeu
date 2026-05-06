@@ -120,6 +120,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function readObject(value: unknown, label: string): Record<string, unknown> {
+  assert.equal(isPlainObject(value), true, `${label} should be an object`);
+
+  return value as Record<string, unknown>;
+}
+
 async function createXmlValidationJob(requestedChecks = ["worker_readiness"]) {
   const app = await buildApp();
 
@@ -188,7 +194,7 @@ test("XML validation job rejects unsafe XML before storage", async (t) => {
   assert.equal(await readOptionalFile(xmlValidationJobDataPath), beforeData);
 });
 
-test("XML validation job stores metadata, SHA-256, and completed worker-readiness result", async () => {
+test("XML validation job stores metadata, SHA-256, queue lifecycle, and completed worker-readiness result", async () => {
   const response = await createXmlValidationJob();
 
   assert.equal(response.statusCode, 200);
@@ -205,9 +211,27 @@ test("XML validation job stores metadata, SHA-256, and completed worker-readines
   assert.deepEqual(job.requestedChecks, ["worker_readiness"]);
   assert.deepEqual(job.completedChecks, ["worker_readiness"]);
   assert.deepEqual(job.failedChecks, []);
-  assert.match(String(job.disclaimer), /does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance/i);
+  assert.match(
+    String(job.disclaimer),
+    /does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance/i
+  );
   assert.equal(response.body.includes(simpleUblInvoiceXml), false);
   assert.equal(response.body.includes("<Invoice"), false);
+
+  const resultSummary = readObject(job.resultSummary, "job.resultSummary");
+  const queue = readObject(resultSummary.queue, "job.resultSummary.queue");
+
+  assert.equal(queue.status, "completed");
+  assert.equal(typeof queue.queueVersion, "string");
+  assert.equal(typeof queue.mode, "string");
+  assert.equal(typeof queue.attempt, "number");
+  assert.equal(typeof queue.maxAttempts, "number");
+  assert.equal(typeof queue.leaseSeconds, "number");
+  assert.equal(typeof queue.timeoutSeconds, "number");
+  assert.equal(queue.retryable, false);
+  assert.match(String(queue.queuedAt), /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(String(queue.startedAt), /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(String(queue.completedAt), /^\d{4}-\d{2}-\d{2}T/);
 
   const storedData = await readOptionalFile(xmlValidationJobDataPath);
 
@@ -215,6 +239,41 @@ test("XML validation job stores metadata, SHA-256, and completed worker-readines
   assert.equal(storedData?.includes(simpleUblInvoiceXml), false);
   assert.equal(storedData?.includes("<Invoice"), false);
   assert.match(storedData ?? "", /xmlSha256/);
+  assert.match(storedData ?? "", /"queue"/);
+  assert.match(storedData ?? "", /"status"\s*:\s*"completed"/);
+});
+
+test("XML validation job completion builds inline queue lifecycle metadata", async () => {
+  const rootElement = detectXmlRootElement(simpleUblInvoiceXml);
+  const documentType = detectXmlDocumentType(rootElement);
+  const completion = await buildXmlValidationJobCompletion({
+    xml: simpleUblInvoiceXml,
+    xmlSha256: sha256(simpleUblInvoiceXml),
+    xmlSizeBytes: Buffer.byteLength(simpleUblInvoiceXml, "utf8"),
+    requestedChecks: ["worker_readiness"],
+    safety: inspectXmlSafety(simpleUblInvoiceXml),
+    rootElement,
+    documentType,
+    queueMode: "inline",
+    queueAttempt: 2,
+    queueClaimedBy: "test-inline-worker"
+  });
+
+  const queue = readObject(completion.resultSummary.queue, "completion.queue");
+
+  assert.deepEqual(completion.completedChecks, ["worker_readiness"]);
+  assert.deepEqual(completion.failedChecks, []);
+  assert.equal(queue.status, "completed");
+  assert.equal(queue.mode, "inline");
+  assert.equal(queue.attempt, 2);
+  assert.equal(queue.maxAttempts, 3);
+  assert.equal(queue.retryable, false);
+  assert.equal(queue.claimedBy, "test-inline-worker");
+  assert.match(String(queue.queuedAt), /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(String(queue.startedAt), /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(String(queue.completedAt), /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(JSON.stringify(completion).includes(simpleUblInvoiceXml), false);
+  assert.equal(JSON.stringify(completion).includes("<Invoice"), false);
 });
 
 test("XML validation job marks UBL XSD as not configured without pretending it passed", async () => {
@@ -253,6 +312,7 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   );
 
   const resultSummary = job.resultSummary as Record<string, unknown>;
+  const queue = readObject(resultSummary.queue, "job.resultSummary.queue");
   const checkStatuses = resultSummary.checkStatuses as Record<string, unknown>;
   const xsdUbl = resultSummary.xsdUbl as Record<string, unknown>;
   const checkResults = resultSummary.checkResults as Record<string, unknown>[];
@@ -261,6 +321,8 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   ) as Record<string, unknown>;
   const artifactInfo = xsdUbl.artifactInfo as Record<string, unknown>;
 
+  assert.equal(queue.status, "completed");
+  assert.equal(queue.retryable, false);
   assert.equal(checkStatuses.xsd_ubl, "not_configured");
   assert.equal(xsdCheckResult.status, "not_configured");
   assert.equal(isPlainObject(xsdCheckResult.artifactInfo), true);
@@ -318,6 +380,7 @@ test("configured missing UBL XSD artefact paths produce safe not_configured meta
   assert.deepEqual(completion.completedChecks, ["xsd_ubl"]);
   assert.deepEqual(completion.failedChecks, []);
 
+  const queue = readObject(completion.resultSummary.queue, "completion.queue");
   const xsdUbl = completion.resultSummary.xsdUbl as Record<string, unknown>;
   const checkResults = completion.resultSummary.checkResults as Record<
     string,
@@ -328,6 +391,9 @@ test("configured missing UBL XSD artefact paths produce safe not_configured meta
   ) as Record<string, unknown>;
   const artifactInfo = xsdUbl.artifactInfo as Record<string, unknown>;
 
+  assert.equal(queue.status, "completed");
+  assert.equal(queue.mode, "inline");
+  assert.equal(queue.retryable, false);
   assert.equal(xsdCheckResult.status, "not_configured");
   assert.equal(xsdUbl.configured, false);
   assert.equal(xsdUbl.validationExecuted, false);
@@ -390,11 +456,15 @@ test("configured readable UBL Invoice XSD artefact metadata is returned safely",
     assert.deepEqual(completion.completedChecks, ["xsd_ubl"]);
     assert.deepEqual(completion.failedChecks, []);
 
+    const queue = readObject(completion.resultSummary.queue, "completion.queue");
     const xsdUbl = completion.resultSummary.xsdUbl as Record<string, unknown>;
     const artifactInfo = xsdUbl.artifactInfo as Record<string, unknown>;
     const invoiceSchema = artifactInfo.invoiceSchema as Record<string, unknown>;
     const dependencyGraph = artifactInfo.dependencyGraph as Record<string, unknown>;
 
+    assert.equal(queue.status, "completed");
+    assert.equal(queue.mode, "inline");
+    assert.equal(queue.retryable, false);
     assert.equal(xsdUbl.status, "passed");
     assert.equal(xsdUbl.configured, true);
     assert.equal(xsdUbl.validationExecuted, true);
@@ -445,6 +515,7 @@ test("configured readable UBL Invoice XSD failure returns mapped findings safely
     assert.deepEqual(completion.completedChecks, []);
     assert.deepEqual(completion.failedChecks, ["xsd_ubl"]);
 
+    const queue = readObject(completion.resultSummary.queue, "completion.queue");
     const xsdUbl = completion.resultSummary.xsdUbl as Record<string, unknown>;
     const checkResults = completion.resultSummary.checkResults as Record<
       string,
@@ -456,6 +527,9 @@ test("configured readable UBL Invoice XSD failure returns mapped findings safely
     const checkFindings = xsdCheckResult.findings as Record<string, unknown>[];
     const mappedFinding = checkFindings[0] as Record<string, unknown>;
 
+    assert.equal(queue.status, "completed");
+    assert.equal(queue.mode, "inline");
+    assert.equal(queue.retryable, false);
     assert.equal(xsdUbl.status, "failed");
     assert.equal(xsdUbl.configured, true);
     assert.equal(xsdUbl.validationExecuted, true);
@@ -476,7 +550,10 @@ test("configured readable UBL Invoice XSD failure returns mapped findings safely
     );
     assert.equal(JSON.stringify(completion).includes(invalidInvoiceXml), false);
     assert.equal(JSON.stringify(completion).includes("<Invoice"), false);
-    assert.equal(JSON.stringify(completion).includes("INV-XSD-API-RAW-SECRET"), false);
+    assert.equal(
+      JSON.stringify(completion).includes("INV-XSD-API-RAW-SECRET"),
+      false
+    );
   } finally {
     await rm(tempRoot, {
       force: true,
@@ -518,7 +595,7 @@ test("legacy XSD placeholder check is rejected by schema instead of silently acc
   assert.doesNotMatch(response.body, /XML_VALIDATION_WORKER_READY/);
 });
 
-test("XML validation job list and read endpoints return metadata only", async (t) => {
+test("XML validation job list and read endpoints return metadata and queue state only", async (t) => {
   const createdResponse = await createXmlValidationJob();
   const createdJob = (createdResponse.json() as { job: { id: string } }).job;
   const app = await buildApp();
@@ -544,8 +621,21 @@ test("XML validation job list and read endpoints return metadata only", async (t
   assert.equal(Array.isArray(listBody.jobs), true);
 
   const jobs = listBody.jobs as Record<string, unknown>[];
+  const listedJob = jobs.find((job) => job.id === createdJob.id);
 
-  assert.equal(jobs.some((job) => job.id === createdJob.id), true);
+  assert.equal(isPlainObject(listedJob), true);
+
+  const listedResultSummary = readObject(
+    (listedJob as Record<string, unknown>).resultSummary,
+    "listedJob.resultSummary"
+  );
+  const listedQueue = readObject(
+    listedResultSummary.queue,
+    "listedJob.resultSummary.queue"
+  );
+
+  assert.equal(listedQueue.status, "completed");
+  assert.equal(listedQueue.retryable, false);
 
   const readResponse = await app.inject({
     method: "GET",
@@ -563,4 +653,16 @@ test("XML validation job list and read endpoints return metadata only", async (t
 
   assert.equal(isPlainObject(readBody.job), true);
   assert.equal((readBody.job as Record<string, unknown>).id, createdJob.id);
+
+  const readResultSummary = readObject(
+    (readBody.job as Record<string, unknown>).resultSummary,
+    "readBody.job.resultSummary"
+  );
+  const readQueue = readObject(
+    readResultSummary.queue,
+    "readBody.job.resultSummary.queue"
+  );
+
+  assert.equal(readQueue.status, "completed");
+  assert.equal(readQueue.retryable, false);
 });

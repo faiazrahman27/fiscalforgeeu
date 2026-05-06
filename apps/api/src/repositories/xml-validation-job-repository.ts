@@ -6,9 +6,15 @@ import {
   hasSupabaseServerConfig
 } from "../lib/supabase/server-client.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
-import type {
-  XmlValidationJobCheck,
-  XmlValidationJobFinding
+import {
+  buildCompletedXmlValidationJobLifecycle,
+  buildFailedXmlValidationJobLifecycle,
+  buildQueuedXmlValidationJobLifecycle,
+  buildRunningXmlValidationJobLifecycle,
+  type XmlValidationJobCheck,
+  type XmlValidationJobFinding,
+  type XmlValidationJobQueueLifecycle,
+  type XmlValidationJobQueueMode
 } from "../services/xml-validation-job-service.js";
 
 export type XmlValidationJobStatus =
@@ -83,6 +89,12 @@ export type FailXmlValidationJobInput = {
   failedChecks?: XmlValidationJobCheck[];
 };
 
+export type ClaimXmlValidationJobInput = {
+  organizationId: string;
+  workerName: string;
+  workerVersion?: string;
+};
+
 export type AuthenticatedXmlValidationJobContext = {
   userId: string;
   accessToken: string;
@@ -147,6 +159,56 @@ function readStringField(
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : fallback;
+}
+
+function readQueueString(
+  queue: Record<string, unknown> | null,
+  key: string
+): string | undefined {
+  if (!queue) {
+    return undefined;
+  }
+
+  const value = queue[key];
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+function readQueueNumber(
+  queue: Record<string, unknown> | null,
+  key: string
+): number | undefined {
+  if (!queue) {
+    return undefined;
+  }
+
+  const value = queue[key];
+
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function readQueueMode(
+  queue: Record<string, unknown> | null
+): XmlValidationJobQueueMode | undefined {
+  if (!queue) {
+    return undefined;
+  }
+
+  return queue.mode === "async_worker" || queue.mode === "inline"
+    ? queue.mode
+    : undefined;
+}
+
+function readQueueLifecycle(
+  summary: Record<string, unknown>
+): Record<string, unknown> | null {
+  const value = summary.queue;
+
+  return isPlainObject(value) ? value : null;
 }
 
 function normalizeWorkspaceBootstrapRecord(
@@ -284,6 +346,132 @@ function sortJobsByCreatedAt(records: XmlValidationJobRecord[]) {
   );
 }
 
+function sortJobsByOldestCreatedAt(records: XmlValidationJobRecord[]) {
+  return [...records].sort((first, second) =>
+    first.createdAt.localeCompare(second.createdAt)
+  );
+}
+
+function buildQueuedResultSummary(now?: string): Record<string, unknown> {
+  return {
+    queue: buildQueuedXmlValidationJobLifecycle(now ? { now } : {})
+  };
+}
+
+function buildRunningQueueLifecycle(input: {
+  existingSummary: Record<string, unknown>;
+  now: string;
+  claimedBy?: string | null;
+}): XmlValidationJobQueueLifecycle {
+  const existingQueue = readQueueLifecycle(input.existingSummary);
+  const queuedAt = readQueueString(existingQueue, "queuedAt");
+  const attempt = readQueueNumber(existingQueue, "attempt");
+  const maxAttempts = readQueueNumber(existingQueue, "maxAttempts");
+  const leaseSeconds = readQueueNumber(existingQueue, "leaseSeconds");
+  const timeoutSeconds = readQueueNumber(existingQueue, "timeoutSeconds");
+  const claimedBy =
+    input.claimedBy && input.claimedBy.trim().length > 0
+      ? input.claimedBy.trim()
+      : readQueueString(existingQueue, "claimedBy");
+
+  return buildRunningXmlValidationJobLifecycle({
+    now: input.now,
+    ...(queuedAt ? { queuedAt } : {}),
+    ...(attempt ? { attempt } : {}),
+    ...(maxAttempts ? { maxAttempts } : {}),
+    ...(leaseSeconds ? { leaseSeconds } : {}),
+    ...(timeoutSeconds ? { timeoutSeconds } : {}),
+    ...(claimedBy ? { claimedBy } : {})
+  });
+}
+
+function buildCompletedResultSummary(input: {
+  existingSummary: Record<string, unknown>;
+  resultSummary: Record<string, unknown>;
+  now: string;
+  startedAt?: string | null;
+  workerName?: string | null;
+}): Record<string, unknown> {
+  const existingQueue =
+    readQueueLifecycle(input.existingSummary) ??
+    readQueueLifecycle(input.resultSummary);
+  const mode = readQueueMode(existingQueue);
+  const queuedAt = readQueueString(existingQueue, "queuedAt");
+  const startedAt =
+    input.startedAt && input.startedAt.trim().length > 0
+      ? input.startedAt
+      : readQueueString(existingQueue, "startedAt");
+  const attempt = readQueueNumber(existingQueue, "attempt");
+  const maxAttempts = readQueueNumber(existingQueue, "maxAttempts");
+  const leaseSeconds = readQueueNumber(existingQueue, "leaseSeconds");
+  const timeoutSeconds = readQueueNumber(existingQueue, "timeoutSeconds");
+  const claimedBy =
+    input.workerName && input.workerName.trim().length > 0
+      ? input.workerName.trim()
+      : readQueueString(existingQueue, "claimedBy");
+
+  return {
+    ...input.resultSummary,
+    queue: buildCompletedXmlValidationJobLifecycle({
+      completedAt: input.now,
+      ...(mode ? { mode } : {}),
+      ...(queuedAt ? { queuedAt } : {}),
+      ...(startedAt ? { startedAt } : {}),
+      ...(attempt ? { attempt } : {}),
+      ...(maxAttempts ? { maxAttempts } : {}),
+      ...(leaseSeconds ? { leaseSeconds } : {}),
+      ...(timeoutSeconds ? { timeoutSeconds } : {}),
+      ...(claimedBy ? { claimedBy } : {})
+    })
+  };
+}
+
+function buildFailedResultSummary(input: {
+  existingSummary: Record<string, unknown>;
+  now: string;
+  startedAt?: string | null;
+  workerName?: string | null;
+  errorCode: string;
+  errorMessage: string;
+  retryable?: boolean;
+}): Record<string, unknown> {
+  const existingQueue = readQueueLifecycle(input.existingSummary);
+  const mode = readQueueMode(existingQueue);
+  const queuedAt = readQueueString(existingQueue, "queuedAt");
+  const startedAt =
+    input.startedAt && input.startedAt.trim().length > 0
+      ? input.startedAt
+      : readQueueString(existingQueue, "startedAt");
+  const attempt = readQueueNumber(existingQueue, "attempt");
+  const maxAttempts = readQueueNumber(existingQueue, "maxAttempts");
+  const leaseSeconds = readQueueNumber(existingQueue, "leaseSeconds");
+  const timeoutSeconds = readQueueNumber(existingQueue, "timeoutSeconds");
+  const claimedBy =
+    input.workerName && input.workerName.trim().length > 0
+      ? input.workerName.trim()
+      : readQueueString(existingQueue, "claimedBy");
+
+  return {
+    ...input.existingSummary,
+    queue: buildFailedXmlValidationJobLifecycle({
+      failedAt: input.now,
+      failureCode: input.errorCode,
+      failureMessage: input.errorMessage,
+      ...(mode ? { mode } : {}),
+      ...(queuedAt ? { queuedAt } : {}),
+      ...(startedAt ? { startedAt } : {}),
+      ...(attempt ? { attempt } : {}),
+      ...(maxAttempts ? { maxAttempts } : {}),
+      ...(leaseSeconds ? { leaseSeconds } : {}),
+      ...(timeoutSeconds ? { timeoutSeconds } : {}),
+      ...(claimedBy ? { claimedBy } : {}),
+      ...(typeof input.retryable === "boolean"
+        ? { retryable: input.retryable }
+        : {})
+    })
+  };
+}
+
 function normalizeSupabaseXmlValidationJobRow(
   row: SupabaseXmlValidationJobRow
 ): XmlValidationJobRecord {
@@ -319,6 +507,8 @@ function normalizeSupabaseXmlValidationJobRow(
 }
 
 function buildSupabaseXmlValidationJobValues(input: CreateXmlValidationJobInput) {
+  const now = new Date().toISOString();
+
   return {
     organization_id: input.organizationId,
     xml_readiness_report_id: input.xmlReadinessReportId ?? null,
@@ -333,7 +523,7 @@ function buildSupabaseXmlValidationJobValues(input: CreateXmlValidationJobInput)
     requested_checks: input.requestedChecks,
     completed_checks: [],
     failed_checks: [],
-    result_summary: {},
+    result_summary: buildQueuedResultSummary(now),
     findings: [],
     disclaimer: input.disclaimer,
     created_by: input.createdBy ?? null
@@ -460,6 +650,70 @@ async function updateSupabaseXmlValidationJob(input: {
     : null;
 }
 
+async function claimSupabaseQueuedXmlValidationJob(input: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  workerName: string;
+  workerVersion?: string;
+}) {
+  const { data: selectedData, error: selectError } = await input.supabase
+    .from("xml_validation_jobs")
+    .select(XML_VALIDATION_JOB_SELECT_FIELDS)
+    .eq("organization_id", input.organizationId)
+    .eq("status", "queued")
+    .order("created_at", {
+      ascending: true
+    })
+    .limit(1)
+    .maybeSingle();
+
+  if (selectError) {
+    throw new Error(`Could not claim XML validation job: ${selectError.message}`);
+  }
+
+  if (!selectedData) {
+    return null;
+  }
+
+  const selectedRecord = normalizeSupabaseXmlValidationJobRow(
+    selectedData as SupabaseXmlValidationJobRow
+  );
+  const now = new Date().toISOString();
+  const nextSummary = {
+    ...selectedRecord.resultSummary,
+    queue: buildRunningQueueLifecycle({
+      existingSummary: selectedRecord.resultSummary,
+      now,
+      claimedBy: input.workerName
+    })
+  };
+
+  const { data: updatedData, error: updateError } = await input.supabase
+    .from("xml_validation_jobs")
+    .update({
+      status: "running",
+      worker_name: input.workerName,
+      worker_version: input.workerVersion ?? selectedRecord.workerVersion,
+      started_at: selectedRecord.startedAt ?? now,
+      result_summary: nextSummary
+    })
+    .eq("organization_id", input.organizationId)
+    .eq("id", selectedRecord.id)
+    .eq("status", "queued")
+    .select(XML_VALIDATION_JOB_SELECT_FIELDS)
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Could not claim XML validation job: ${updateError.message}`);
+  }
+
+  return updatedData
+    ? normalizeSupabaseXmlValidationJobRow(
+        updatedData as SupabaseXmlValidationJobRow
+      )
+    : null;
+}
+
 export function hasAuthenticatedXmlValidationJobContext(
   context: AuthenticatedXmlValidationJobContext | null | undefined
 ) {
@@ -524,7 +778,7 @@ export async function createXmlValidationJob(
     failedAt: null,
     errorCode: null,
     errorMessage: null,
-    resultSummary: {},
+    resultSummary: buildQueuedResultSummary(now),
     findings: [],
     disclaimer: input.disclaimer,
     createdBy: input.createdBy ?? null,
@@ -578,6 +832,62 @@ async function updateLocalXmlValidationJob(input: {
   return updatedRecord;
 }
 
+async function claimLocalQueuedXmlValidationJob(input: ClaimXmlValidationJobInput) {
+  const currentRecords =
+    await storageProvider.readCollection<XmlValidationJobRecord>(
+      XML_VALIDATION_JOBS_FILE
+    );
+  const queuedJob = sortJobsByOldestCreatedAt(currentRecords).find(
+    (record) =>
+      record.organizationId === input.organizationId &&
+      record.status === "queued"
+  );
+
+  if (!queuedJob) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  let claimedRecord: XmlValidationJobRecord | null = null;
+
+  const nextRecords = currentRecords.map((record) => {
+    if (
+      record.organizationId !== input.organizationId ||
+      record.id !== queuedJob.id ||
+      record.status !== "queued"
+    ) {
+      return record;
+    }
+
+    claimedRecord = {
+      ...record,
+      status: "running",
+      workerName: input.workerName,
+      workerVersion: input.workerVersion ?? record.workerVersion,
+      startedAt: record.startedAt ?? now,
+      resultSummary: {
+        ...record.resultSummary,
+        queue: buildRunningQueueLifecycle({
+          existingSummary: record.resultSummary,
+          now,
+          claimedBy: input.workerName
+        })
+      },
+      updatedAt: now
+    };
+
+    return claimedRecord;
+  });
+
+  if (!claimedRecord) {
+    return null;
+  }
+
+  await storageProvider.writeCollection(XML_VALIDATION_JOBS_FILE, nextRecords);
+
+  return claimedRecord;
+}
+
 export async function markJobRunning(input: {
   organizationId: string;
   jobId: string;
@@ -595,6 +905,14 @@ export async function markJobRunning(input: {
       workerName: input.workerName ?? record.workerName,
       workerVersion: input.workerVersion ?? record.workerVersion,
       startedAt: record.startedAt ?? now,
+      resultSummary: {
+        ...record.resultSummary,
+        queue: buildRunningQueueLifecycle({
+          existingSummary: record.resultSummary,
+          now,
+          claimedBy: input.workerName ?? record.workerName
+        })
+      },
       updatedAt: now
     })
   });
@@ -618,7 +936,13 @@ export async function completeJob(input: CompleteXmlValidationJobInput) {
       failedAt: null,
       errorCode: null,
       errorMessage: null,
-      resultSummary: input.resultSummary,
+      resultSummary: buildCompletedResultSummary({
+        existingSummary: record.resultSummary,
+        resultSummary: input.resultSummary,
+        now,
+        startedAt: record.startedAt,
+        workerName: input.workerName
+      }),
       findings: input.findings,
       disclaimer: input.disclaimer,
       updatedAt: now
@@ -640,6 +964,14 @@ export async function failJob(input: FailXmlValidationJobInput) {
       failedAt: now,
       errorCode: input.errorCode,
       errorMessage: input.errorMessage,
+      resultSummary: buildFailedResultSummary({
+        existingSummary: record.resultSummary,
+        now,
+        startedAt: record.startedAt,
+        workerName: record.workerName,
+        errorCode: input.errorCode,
+        errorMessage: input.errorMessage
+      }),
       updatedAt: now
     })
   });
@@ -694,13 +1026,34 @@ export async function getAuthenticatedXmlValidationJob(
   });
 }
 
+export async function claimAuthenticatedQueuedXmlValidationJob(
+  context: AuthenticatedXmlValidationJobContext,
+  input: Omit<ClaimXmlValidationJobInput, "organizationId">
+) {
+  const supabase = createAuthenticatedSupabaseClient(context);
+  const workspace = await getWorkspaceForAuthenticatedUser(supabase);
+
+  return claimSupabaseQueuedXmlValidationJob({
+    supabase,
+    organizationId: workspace.organizationId,
+    ...input
+  });
+}
+
 export async function markAuthenticatedJobRunning(
   context: AuthenticatedXmlValidationJobContext,
   input: Omit<Parameters<typeof markJobRunning>[0], "organizationId">
 ) {
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
+  const existingRecord = await getSupabaseXmlValidationJob({
+    supabase,
+    organizationId: workspace.organizationId,
+    jobId: input.jobId
+  });
   const now = new Date().toISOString();
+  const existingSummary = existingRecord?.resultSummary ?? {};
+  const workerName = input.workerName ?? existingRecord?.workerName ?? null;
 
   return updateSupabaseXmlValidationJob({
     supabase,
@@ -708,9 +1061,17 @@ export async function markAuthenticatedJobRunning(
     jobId: input.jobId,
     values: {
       status: "running",
-      worker_name: input.workerName ?? null,
-      worker_version: input.workerVersion ?? null,
-      started_at: now
+      worker_name: input.workerName ?? existingRecord?.workerName ?? null,
+      worker_version: input.workerVersion ?? existingRecord?.workerVersion ?? null,
+      started_at: existingRecord?.startedAt ?? now,
+      result_summary: {
+        ...existingSummary,
+        queue: buildRunningQueueLifecycle({
+          existingSummary,
+          now,
+          claimedBy: workerName
+        })
+      }
     }
   });
 }
@@ -721,6 +1082,11 @@ export async function completeAuthenticatedJob(
 ) {
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
+  const existingRecord = await getSupabaseXmlValidationJob({
+    supabase,
+    organizationId: workspace.organizationId,
+    jobId: input.jobId
+  });
   const now = new Date().toISOString();
 
   return updateSupabaseXmlValidationJob({
@@ -733,12 +1099,18 @@ export async function completeAuthenticatedJob(
       failed_checks: input.failedChecks,
       worker_name: input.workerName,
       worker_version: input.workerVersion,
-      started_at: now,
+      started_at: existingRecord?.startedAt ?? now,
       completed_at: now,
       failed_at: null,
       error_code: null,
       error_message: null,
-      result_summary: input.resultSummary,
+      result_summary: buildCompletedResultSummary({
+        existingSummary: existingRecord?.resultSummary ?? {},
+        resultSummary: input.resultSummary,
+        now,
+        ...(existingRecord ? { startedAt: existingRecord.startedAt } : {}),
+        workerName: input.workerName
+      }),
       findings: input.findings,
       disclaimer: input.disclaimer
     }
@@ -788,6 +1160,19 @@ export async function getOrganizationXmlValidationJob(input: {
   });
 }
 
+export async function claimOrganizationQueuedXmlValidationJob(
+  input: ClaimXmlValidationJobInput
+) {
+  if (!hasSupabaseServerConfig()) {
+    return claimLocalQueuedXmlValidationJob(input);
+  }
+
+  return claimSupabaseQueuedXmlValidationJob({
+    supabase: createServiceRoleSupabaseClient(),
+    ...input
+  });
+}
+
 export async function markOrganizationJobRunning(
   input: Parameters<typeof markJobRunning>[0]
 ) {
@@ -795,17 +1180,33 @@ export async function markOrganizationJobRunning(
     return markJobRunning(input);
   }
 
+  const supabase = createServiceRoleSupabaseClient();
+  const existingRecord = await getSupabaseXmlValidationJob({
+    supabase,
+    organizationId: input.organizationId,
+    jobId: input.jobId
+  });
   const now = new Date().toISOString();
+  const existingSummary = existingRecord?.resultSummary ?? {};
+  const workerName = input.workerName ?? existingRecord?.workerName ?? null;
 
   return updateSupabaseXmlValidationJob({
-    supabase: createServiceRoleSupabaseClient(),
+    supabase,
     organizationId: input.organizationId,
     jobId: input.jobId,
     values: {
       status: "running",
-      worker_name: input.workerName ?? null,
-      worker_version: input.workerVersion ?? null,
-      started_at: now
+      worker_name: input.workerName ?? existingRecord?.workerName ?? null,
+      worker_version: input.workerVersion ?? existingRecord?.workerVersion ?? null,
+      started_at: existingRecord?.startedAt ?? now,
+      result_summary: {
+        ...existingSummary,
+        queue: buildRunningQueueLifecycle({
+          existingSummary,
+          now,
+          claimedBy: workerName
+        })
+      }
     }
   });
 }
@@ -817,10 +1218,16 @@ export async function completeOrganizationJob(
     return completeJob(input);
   }
 
+  const supabase = createServiceRoleSupabaseClient();
+  const existingRecord = await getSupabaseXmlValidationJob({
+    supabase,
+    organizationId: input.organizationId,
+    jobId: input.jobId
+  });
   const now = new Date().toISOString();
 
   return updateSupabaseXmlValidationJob({
-    supabase: createServiceRoleSupabaseClient(),
+    supabase,
     organizationId: input.organizationId,
     jobId: input.jobId,
     values: {
@@ -829,12 +1236,18 @@ export async function completeOrganizationJob(
       failed_checks: input.failedChecks,
       worker_name: input.workerName,
       worker_version: input.workerVersion,
-      started_at: now,
+      started_at: existingRecord?.startedAt ?? now,
       completed_at: now,
       failed_at: null,
       error_code: null,
       error_message: null,
-      result_summary: input.resultSummary,
+      result_summary: buildCompletedResultSummary({
+        existingSummary: existingRecord?.resultSummary ?? {},
+        resultSummary: input.resultSummary,
+        now,
+        ...(existingRecord ? { startedAt: existingRecord.startedAt } : {}),
+        workerName: input.workerName
+      }),
       findings: input.findings,
       disclaimer: input.disclaimer
     }
@@ -846,19 +1259,33 @@ export async function failOrganizationJob(input: FailXmlValidationJobInput) {
     return failJob(input);
   }
 
+  const supabase = createServiceRoleSupabaseClient();
+  const existingRecord = await getSupabaseXmlValidationJob({
+    supabase,
+    organizationId: input.organizationId,
+    jobId: input.jobId
+  });
   const now = new Date().toISOString();
 
   return updateSupabaseXmlValidationJob({
-    supabase: createServiceRoleSupabaseClient(),
+    supabase,
     organizationId: input.organizationId,
     jobId: input.jobId,
     values: {
       status: "failed",
-      failed_checks: input.failedChecks ?? [],
-      started_at: now,
+      failed_checks: input.failedChecks ?? existingRecord?.requestedChecks ?? [],
+      started_at: existingRecord?.startedAt ?? now,
       failed_at: now,
       error_code: input.errorCode,
-      error_message: input.errorMessage
+      error_message: input.errorMessage,
+      result_summary: buildFailedResultSummary({
+        existingSummary: existingRecord?.resultSummary ?? {},
+        now,
+        ...(existingRecord ? { startedAt: existingRecord.startedAt } : {}),
+        ...(existingRecord ? { workerName: existingRecord.workerName } : {}),
+        errorCode: input.errorCode,
+        errorMessage: input.errorMessage
+      })
     }
   });
 }
