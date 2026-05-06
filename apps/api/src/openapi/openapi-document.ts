@@ -1,6 +1,8 @@
 const SANDBOX_DISCLAIMER =
   "Invoice Lantern is an independent, non-official EU e-invoice validation and ViDA-readiness sandbox. The Developer API provides technical validation and readiness tooling only. It is not official filing, not authority submission, not tax, legal, or accounting advice, and not a compliance guarantee.";
 
+const CORE_VALIDATION_RULE_VERSION = "2026.05.1";
+
 const tinyUblXml = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
   xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
@@ -54,7 +56,22 @@ const exampleCanonicalInvoice = {
       vatCategory: "S",
       vatRate: "27"
     }
-  ]
+  ],
+  taxSubtotals: [
+    {
+      vatCategory: "S",
+      vatRate: "27",
+      taxableAmount: "100.00",
+      taxAmount: "27.00"
+    }
+  ],
+  totals: {
+    lineExtensionAmount: "100.00",
+    taxExclusiveAmount: "100.00",
+    taxAmount: "27.00",
+    taxInclusiveAmount: "127.00",
+    payableAmount: "127.00"
+  }
 };
 
 const rateLimitHeaders = {
@@ -92,7 +109,10 @@ const retryAfterHeader = {
   }
 };
 
-function jsonContent(schema: Record<string, unknown>, examples?: Record<string, unknown>) {
+function jsonContent(
+  schema: Record<string, unknown>,
+  examples?: Record<string, unknown>
+) {
   return {
     "application/json": {
       schema,
@@ -677,7 +697,10 @@ const openApiDocument = {
             "Use raw XML or JSON with an xml string for UBL parsing.",
             "UNSUPPORTED_MEDIA_TYPE"
           ),
-          "422": response("UBL XML parsed but could not produce a valid canonical invoice.", ref("UblParseResponse"))
+          "422": response(
+            "UBL XML parsed but could not produce a valid canonical invoice.",
+            ref("UblParseResponse")
+          )
         }
       })
     },
@@ -824,7 +847,7 @@ const openApiDocument = {
                     {
                       code: "INVOICE_LANTERN_CORE",
                       name: "Invoice Lantern Core Technical Rules",
-                      version: "2026.04.1",
+                      version: CORE_VALIDATION_RULE_VERSION,
                       status: "published",
                       legalConfidence: "technical",
                       rules: []
@@ -1378,11 +1401,13 @@ const openApiDocument = {
               },
               issueDate: {
                 type: "string",
-                maxLength: 32
+                maxLength: 32,
+                example: "2026-04-30"
               },
               dueDate: {
                 type: "string",
-                maxLength: 32
+                maxLength: 32,
+                example: "2026-05-30"
               },
               profile: {
                 type: "string",
@@ -1500,16 +1525,20 @@ const openApiDocument = {
         type: "object",
         properties: {
           taxableAmount: {
-            type: "string"
+            type: "string",
+            example: "100.00"
           },
           taxAmount: {
-            type: "string"
+            type: "string",
+            example: "27.00"
           },
           vatCategory: {
-            type: "string"
+            type: "string",
+            example: "S"
           },
           vatRate: {
-            type: "string"
+            type: "string",
+            example: "27"
           }
         }
       },
@@ -1533,16 +1562,20 @@ const openApiDocument = {
             example: "127.00"
           },
           allowanceTotalAmount: {
-            type: "string"
+            type: "string",
+            example: "10.00"
           },
           chargeTotalAmount: {
-            type: "string"
+            type: "string",
+            example: "5.00"
           },
           prepaidAmount: {
-            type: "string"
+            type: "string",
+            example: "20.00"
           },
           payableRoundingAmount: {
-            type: "string"
+            type: "string",
+            example: "0.01"
           },
           payableAmount: {
             type: "string",
@@ -1552,7 +1585,14 @@ const openApiDocument = {
       },
       ValidationFinding: {
         type: "object",
-        required: ["code", "severity", "category", "fieldPath", "message", "legalConfidence"],
+        required: [
+          "code",
+          "severity",
+          "category",
+          "fieldPath",
+          "message",
+          "legalConfidence"
+        ],
         properties: {
           code: {
             type: "string",
@@ -1587,10 +1627,12 @@ const openApiDocument = {
             ]
           },
           ruleSetCode: {
-            type: "string"
+            type: "string",
+            example: "INVOICE_LANTERN_CORE"
           },
           ruleVersion: {
-            type: "string"
+            type: "string",
+            example: CORE_VALIDATION_RULE_VERSION
           },
           sourceLabels: {
             type: "array",
@@ -1703,7 +1745,14 @@ const openApiDocument = {
       },
       UblExportResponse: {
         type: "object",
-        required: ["xml", "metadata", "readinessStatus", "totals", "findings", "disclaimer"],
+        required: [
+          "xml",
+          "metadata",
+          "readinessStatus",
+          "totals",
+          "findings",
+          "disclaimer"
+        ],
         properties: {
           xml: {
             type: "string",
@@ -1817,7 +1866,7 @@ const openApiDocument = {
                 "schematron_peppol_placeholder"
               ]
             },
-            default: ["worker_readiness", "xsd_ubl"]
+            default: ["worker_readiness"]
           },
           xmlReadinessReportId: {
             type: ["string", "null"],
@@ -2162,7 +2211,15 @@ const openApiDocument = {
       },
       ValidationRuleSet: {
         type: "object",
-        required: ["code", "name", "description", "version", "status", "legalConfidence", "rules"],
+        required: [
+          "code",
+          "name",
+          "description",
+          "version",
+          "status",
+          "legalConfidence",
+          "rules"
+        ],
         properties: {
           code: {
             type: "string"

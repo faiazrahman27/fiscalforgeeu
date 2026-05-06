@@ -126,9 +126,11 @@ export type InvoiceCalculationResult = {
 const DECIMAL_STRING_PATTERN = /^-?(?:\d+|\d*\.\d+|\d+\.\d*)$/;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
 const COUNTRY_PATTERN = /^[A-Z]{2}$/;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONEY_ROUNDING = Decimal.ROUND_HALF_UP;
+
 export const CORE_VALIDATION_RULE_SET_CODE = "INVOICE_LANTERN_CORE";
-export const CORE_VALIDATION_RULE_VERSION = "2026.04.1";
+export const CORE_VALIDATION_RULE_VERSION = "2026.05.1";
 
 const INTERNAL_TECHNICAL_POLICY_SOURCE: ValidationRuleSourceMetadata = {
   sourceName: "Invoice Lantern internal technical validation policy",
@@ -197,6 +199,31 @@ const CORE_VALIDATION_RULE_METADATA = {
     fieldPath: "document.number",
     messageTemplate: "Document number is required for invoice validation readiness.",
     fixSuggestion: "Add the invoice document number before validation or export."
+  }),
+  DOCUMENT_ISSUE_DATE_RECOMMENDED: coreRule({
+    code: "DOCUMENT_ISSUE_DATE_RECOMMENDED",
+    title: "Document issue date recommended",
+    description:
+      "An issue date is strongly recommended for invoice readiness review and downstream XML/export workflows.",
+    category: "CANONICAL",
+    severity: "warning",
+    fieldPath: "document.issueDate",
+    messageTemplate:
+      "Document issue date is missing. Add an issue date before operational use.",
+    fixSuggestion: "Add the invoice issue date in YYYY-MM-DD format where possible."
+  }),
+  DUE_DATE_BEFORE_ISSUE_DATE: coreRule({
+    code: "DUE_DATE_BEFORE_ISSUE_DATE",
+    title: "Due date before issue date",
+    description:
+      "A due date earlier than the issue date is marked for review in the technical sandbox.",
+    category: "CANONICAL",
+    severity: "warning",
+    fieldPath: "document.dueDate",
+    messageTemplate:
+      "Document due date is earlier than the issue date and should be reviewed.",
+    fixSuggestion:
+      "Confirm the due date or adjust it so it is not earlier than the issue date."
   }),
   CURRENCY_REQUIRED: coreRule({
     code: "CURRENCY_REQUIRED",
@@ -298,6 +325,41 @@ const CORE_VALIDATION_RULE_METADATA = {
     messageTemplate: "Line {lineLabel} unit price must be zero or greater.",
     fixSuggestion: "Use a non-negative decimal unit price."
   }),
+  LINE_VAT_CATEGORY_RECOMMENDED: coreRule({
+    code: "LINE_VAT_CATEGORY_RECOMMENDED",
+    title: "Line VAT category recommended",
+    description:
+      "A VAT category code is recommended for each line so tax grouping and XML readiness can be reviewed.",
+    category: "VAT_ID",
+    severity: "warning",
+    fieldPath: "lines.{index}.vatCategory",
+    messageTemplate:
+      "Line {lineLabel} has no VAT category code and should be reviewed.",
+    fixSuggestion:
+      "Add a VAT category code such as S, Z, E, AE, K, G, O, or another reviewed category value."
+  }),
+  LINE_VAT_RATE_REQUIRED: coreRule({
+    code: "LINE_VAT_RATE_REQUIRED",
+    title: "Line VAT rate required",
+    description:
+      "Each invoice line needs a VAT rate decimal value for technical tax calculation readiness.",
+    category: "CALCULATION",
+    severity: "fatal",
+    fieldPath: "lines.{index}.vatRate",
+    messageTemplate: "Line {lineLabel} requires a VAT rate.",
+    fixSuggestion: "Add a VAT rate decimal value such as 0, 5, 19, or 27."
+  }),
+  LINE_VAT_RATE_NON_NEGATIVE: coreRule({
+    code: "LINE_VAT_RATE_NON_NEGATIVE",
+    title: "Line VAT rate non-negative",
+    description:
+      "Each invoice line VAT rate must be zero or greater for calculation readiness.",
+    category: "CALCULATION",
+    severity: "fatal",
+    fieldPath: "lines.{index}.vatRate",
+    messageTemplate: "Line {lineLabel} VAT rate must be zero or greater.",
+    fixSuggestion: "Use a non-negative VAT rate decimal value."
+  }),
   LINE_NET_AMOUNT_MISMATCH: coreRule({
     code: "LINE_NET_AMOUNT_MISMATCH",
     title: "Line net amount mismatch",
@@ -320,6 +382,28 @@ const CORE_VALIDATION_RULE_METADATA = {
     messageTemplate:
       "Line {lineLabel} tax amount does not match the calculated VAT amount."
   }),
+  LINE_EXTENSION_AMOUNT_MISMATCH: coreRule({
+    code: "LINE_EXTENSION_AMOUNT_MISMATCH",
+    title: "Line extension amount mismatch",
+    description:
+      "A supplied line extension total should match the sum of calculated line net amounts.",
+    category: "CALCULATION",
+    severity: "fatal",
+    fieldPath: "totals.lineExtensionAmount",
+    messageTemplate:
+      "Line extension amount does not match the sum of calculated line net amounts."
+  }),
+  TAX_EXCLUSIVE_AMOUNT_MISMATCH: coreRule({
+    code: "TAX_EXCLUSIVE_AMOUNT_MISMATCH",
+    title: "Tax exclusive amount mismatch",
+    description:
+      "A supplied tax-exclusive total should match the calculated net total after document-level allowances and charges.",
+    category: "CALCULATION",
+    severity: "fatal",
+    fieldPath: "totals.taxExclusiveAmount",
+    messageTemplate:
+      "Tax exclusive amount does not match the calculated net total after allowances and charges."
+  }),
   TAX_AMOUNT_MISMATCH: coreRule({
     code: "TAX_AMOUNT_MISMATCH",
     title: "Tax amount mismatch",
@@ -331,16 +415,62 @@ const CORE_VALIDATION_RULE_METADATA = {
     messageTemplate:
       "Tax amount does not match the sum of calculated line VAT amounts."
   }),
+  TAX_INCLUSIVE_AMOUNT_MISMATCH: coreRule({
+    code: "TAX_INCLUSIVE_AMOUNT_MISMATCH",
+    title: "Tax inclusive amount mismatch",
+    description:
+      "A supplied tax-inclusive total should match calculated tax-exclusive amount plus tax amount.",
+    category: "CALCULATION",
+    severity: "fatal",
+    fieldPath: "totals.taxInclusiveAmount",
+    messageTemplate:
+      "Tax inclusive amount does not match calculated tax-exclusive amount plus tax amount."
+  }),
   PAYABLE_AMOUNT_MISMATCH: coreRule({
     code: "PAYABLE_AMOUNT_MISMATCH",
     title: "Payable amount mismatch",
     description:
-      "A supplied payable amount should match the calculated tax-inclusive amount.",
+      "A supplied payable amount should match the calculated tax-inclusive amount after prepaid amount and rounding adjustment.",
     category: "CALCULATION",
     severity: "fatal",
     fieldPath: "totals.payableAmount",
     messageTemplate:
-      "Payable total does not match the calculated tax-inclusive amount."
+      "Payable total does not match the calculated payable amount."
+  }),
+  TAX_SUBTOTAL_UNMATCHED: coreRule({
+    code: "TAX_SUBTOTAL_UNMATCHED",
+    title: "Tax subtotal unmatched",
+    description:
+      "A supplied tax subtotal should match a calculated VAT category and rate group from invoice lines.",
+    category: "CALCULATION",
+    severity: "warning",
+    fieldPath: "taxSubtotals.{index}",
+    messageTemplate:
+      "Tax subtotal {lineLabel} does not match any calculated line VAT category and rate group.",
+    fixSuggestion:
+      "Review the subtotal VAT category and VAT rate against the invoice lines."
+  }),
+  TAX_SUBTOTAL_TAXABLE_AMOUNT_MISMATCH: coreRule({
+    code: "TAX_SUBTOTAL_TAXABLE_AMOUNT_MISMATCH",
+    title: "Tax subtotal taxable amount mismatch",
+    description:
+      "A supplied tax subtotal taxable amount should match the calculated taxable amount for its VAT category and rate.",
+    category: "CALCULATION",
+    severity: "fatal",
+    fieldPath: "taxSubtotals.{index}.taxableAmount",
+    messageTemplate:
+      "Tax subtotal {lineLabel} taxable amount does not match calculated line totals."
+  }),
+  TAX_SUBTOTAL_TAX_AMOUNT_MISMATCH: coreRule({
+    code: "TAX_SUBTOTAL_TAX_AMOUNT_MISMATCH",
+    title: "Tax subtotal tax amount mismatch",
+    description:
+      "A supplied tax subtotal tax amount should match the calculated tax amount for its VAT category and rate.",
+    category: "CALCULATION",
+    severity: "fatal",
+    fieldPath: "taxSubtotals.{index}.taxAmount",
+    messageTemplate:
+      "Tax subtotal {lineLabel} tax amount does not match calculated line tax totals."
   }),
   ZERO_VALUE_LINE_WARNING: coreRule({
     code: "ZERO_VALUE_LINE_WARNING",
@@ -607,6 +737,10 @@ function toRateKey(value: string) {
   return decimalOrZero(value).toDecimalPlaces(6, MONEY_ROUNDING).toString();
 }
 
+function toTaxGroupKey(input: { vatCategory: string; vatRate: string }) {
+  return `${input.vatCategory || "UNSPECIFIED"}::${toRateKey(input.vatRate)}`;
+}
+
 function amountsMatch(first: string, second: string) {
   return decimalOrZero(first).minus(decimalOrZero(second)).abs().lte("0.01");
 }
@@ -642,6 +776,60 @@ function hasRequiredText(value: string) {
   return value.trim().length > 0;
 }
 
+function parseDateOnly(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!DATE_ONLY_PATTERN.test(trimmedValue)) {
+    return null;
+  }
+
+  const [rawYear, rawMonth, rawDay] = trimmedValue.split("-");
+  const year = Number(rawYear);
+  const month = Number(rawMonth);
+  const day = Number(rawDay);
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
+    return null;
+  }
+
+  const timestamp = Date.UTC(year, month - 1, day);
+  const date = new Date(timestamp);
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return timestamp;
+}
+
+function findCalculatedTaxSubtotal(
+  calculatedSubtotals: readonly CalculatedTaxSubtotal[],
+  subtotal: CanonicalInvoice["taxSubtotals"][number]
+) {
+  const key = toTaxGroupKey({
+    vatCategory: subtotal.vatCategory,
+    vatRate: subtotal.vatRate
+  });
+
+  return (
+    calculatedSubtotals.find(
+      (calculatedSubtotal) =>
+        toTaxGroupKey({
+          vatCategory: calculatedSubtotal.vatCategory,
+          vatRate: calculatedSubtotal.vatRate
+        }) === key
+    ) ?? null
+  );
+}
+
 export function calculateInvoiceTotals(
   invoice: CanonicalInvoice
 ): InvoiceCalculationResult {
@@ -672,12 +860,26 @@ export function calculateInvoiceTotals(
     new Decimal(0)
   );
 
+  const allowanceTotalAmount = decimalOrZero(invoice.totals.allowanceTotalAmount);
+  const chargeTotalAmount = decimalOrZero(invoice.totals.chargeTotalAmount);
+  const prepaidAmount = decimalOrZero(invoice.totals.prepaidAmount);
+  const payableRoundingAmount = decimalOrZero(
+    invoice.totals.payableRoundingAmount
+  );
+
+  const taxExclusiveAmount = lineExtensionAmount
+    .minus(allowanceTotalAmount)
+    .plus(chargeTotalAmount);
+
   const taxAmount = calculatedLines.reduce(
     (sum, line) => sum.plus(line.taxAmount),
     new Decimal(0)
   );
 
-  const taxInclusiveAmount = lineExtensionAmount.plus(taxAmount);
+  const taxInclusiveAmount = taxExclusiveAmount.plus(taxAmount);
+  const payableAmount = taxInclusiveAmount
+    .minus(prepaidAmount)
+    .plus(payableRoundingAmount);
 
   const taxSubtotalMap = new Map<
     string,
@@ -690,7 +892,7 @@ export function calculateInvoiceTotals(
   >();
 
   for (const line of calculatedLines) {
-    const key = `${line.vatCategory || "UNSPECIFIED"}::${toRateKey(line.vatRate)}`;
+    const key = toTaxGroupKey(line);
     const existing = taxSubtotalMap.get(key);
 
     if (existing) {
@@ -707,6 +909,30 @@ export function calculateInvoiceTotals(
     });
   }
 
+  const totals: InvoiceMoneyTotals = {
+    lineExtensionAmount: toMoney(lineExtensionAmount),
+    taxExclusiveAmount: toMoney(taxExclusiveAmount),
+    taxAmount: toMoney(taxAmount),
+    taxInclusiveAmount: toMoney(taxInclusiveAmount),
+    payableAmount: toMoney(payableAmount)
+  };
+
+  if (invoice.totals.allowanceTotalAmount !== undefined) {
+    totals.allowanceTotalAmount = toMoney(allowanceTotalAmount);
+  }
+
+  if (invoice.totals.chargeTotalAmount !== undefined) {
+    totals.chargeTotalAmount = toMoney(chargeTotalAmount);
+  }
+
+  if (invoice.totals.prepaidAmount !== undefined) {
+    totals.prepaidAmount = toMoney(prepaidAmount);
+  }
+
+  if (invoice.totals.payableRoundingAmount !== undefined) {
+    totals.payableRoundingAmount = toMoney(payableRoundingAmount);
+  }
+
   return {
     lines: calculatedLines,
     taxSubtotals: [...taxSubtotalMap.values()].map((subtotal) => ({
@@ -715,13 +941,7 @@ export function calculateInvoiceTotals(
       taxableAmount: toMoney(subtotal.taxableAmount),
       taxAmount: toMoney(subtotal.taxAmount)
     })),
-    totals: {
-      lineExtensionAmount: toMoney(lineExtensionAmount),
-      taxExclusiveAmount: toMoney(lineExtensionAmount),
-      taxAmount: toMoney(taxAmount),
-      taxInclusiveAmount: toMoney(taxInclusiveAmount),
-      payableAmount: toMoney(taxInclusiveAmount)
-    }
+    totals
   };
 }
 
@@ -740,6 +960,44 @@ export function buildCoreValidationFindings(
         fieldPath: "document.number",
         message: "Document number is required for invoice validation readiness.",
         fixSuggestion: "Add the invoice document number before validation or export.",
+        legalConfidence: "technical"
+      })
+    );
+  }
+
+  if (!hasRequiredText(invoice.document.issueDate)) {
+    findings.push(
+      makeFinding({
+        code: "DOCUMENT_ISSUE_DATE_RECOMMENDED",
+        severity: "warning",
+        category: "CANONICAL",
+        fieldPath: "document.issueDate",
+        message:
+          "Document issue date is missing. Add an issue date before operational use.",
+        fixSuggestion: "Add the invoice issue date in YYYY-MM-DD format where possible.",
+        legalConfidence: "technical"
+      })
+    );
+  }
+
+  const issueDateTime = parseDateOnly(invoice.document.issueDate);
+  const dueDateTime = parseDateOnly(invoice.document.dueDate);
+
+  if (
+    issueDateTime !== null &&
+    dueDateTime !== null &&
+    dueDateTime < issueDateTime
+  ) {
+    findings.push(
+      makeFinding({
+        code: "DUE_DATE_BEFORE_ISSUE_DATE",
+        severity: "warning",
+        category: "CANONICAL",
+        fieldPath: "document.dueDate",
+        message:
+          "Document due date is earlier than the issue date and should be reviewed.",
+        fixSuggestion:
+          "Confirm the due date or adjust it so it is not earlier than the issue date.",
         legalConfidence: "technical"
       })
     );
@@ -876,6 +1134,47 @@ export function buildCoreValidationFindings(
       );
     }
 
+    if (!hasRequiredText(line.vatCategory)) {
+      findings.push(
+        makeFinding({
+          code: "LINE_VAT_CATEGORY_RECOMMENDED",
+          severity: "warning",
+          category: "VAT_ID",
+          fieldPath: `${fieldPrefix}.vatCategory`,
+          message: `Line ${lineLabel} has no VAT category code and should be reviewed.`,
+          fixSuggestion:
+            "Add a VAT category code such as S, Z, E, AE, K, G, O, or another reviewed category value.",
+          legalConfidence: "technical"
+        })
+      );
+    }
+
+    if (!isDecimalString(line.vatRate)) {
+      findings.push(
+        makeFinding({
+          code: "LINE_VAT_RATE_REQUIRED",
+          severity: "fatal",
+          category: "CALCULATION",
+          fieldPath: `${fieldPrefix}.vatRate`,
+          message: `Line ${lineLabel} requires a VAT rate.`,
+          fixSuggestion: "Add a VAT rate decimal value such as 0, 5, 19, or 27.",
+          legalConfidence: "technical"
+        })
+      );
+    } else if (decimalOrZero(line.vatRate).lt(0)) {
+      findings.push(
+        makeFinding({
+          code: "LINE_VAT_RATE_NON_NEGATIVE",
+          severity: "fatal",
+          category: "CALCULATION",
+          fieldPath: `${fieldPrefix}.vatRate`,
+          message: `Line ${lineLabel} VAT rate must be zero or greater.`,
+          fixSuggestion: "Use a non-negative VAT rate decimal value.",
+          legalConfidence: "technical"
+        })
+      );
+    }
+
     if (calculatedLine && decimalOrZero(calculatedLine.netAmount).eq(0)) {
       findings.push(
         makeFinding({
@@ -928,8 +1227,53 @@ export function buildCoreValidationFindings(
   });
 
   if (
+    invoice.totals.lineExtensionAmount !== undefined &&
+    !amountsMatch(
+      toComparableMoney(invoice.totals.lineExtensionAmount),
+      calculations.totals.lineExtensionAmount
+    )
+  ) {
+    findings.push(
+      makeFinding({
+        code: "LINE_EXTENSION_AMOUNT_MISMATCH",
+        severity: "fatal",
+        category: "CALCULATION",
+        fieldPath: "totals.lineExtensionAmount",
+        message:
+          "Line extension amount does not match the sum of calculated line net amounts.",
+        fixSuggestion: `Use ${calculations.totals.lineExtensionAmount} as the calculated line extension amount or review line values.`,
+        legalConfidence: "technical"
+      })
+    );
+  }
+
+  if (
+    invoice.totals.taxExclusiveAmount !== undefined &&
+    !amountsMatch(
+      toComparableMoney(invoice.totals.taxExclusiveAmount),
+      calculations.totals.taxExclusiveAmount
+    )
+  ) {
+    findings.push(
+      makeFinding({
+        code: "TAX_EXCLUSIVE_AMOUNT_MISMATCH",
+        severity: "fatal",
+        category: "CALCULATION",
+        fieldPath: "totals.taxExclusiveAmount",
+        message:
+          "Tax exclusive amount does not match the calculated net total after allowances and charges.",
+        fixSuggestion: `Use ${calculations.totals.taxExclusiveAmount} as the calculated tax-exclusive amount or review allowances and charges.`,
+        legalConfidence: "technical"
+      })
+    );
+  }
+
+  if (
     invoice.totals.taxAmount !== undefined &&
-    !amountsMatch(toComparableMoney(invoice.totals.taxAmount), calculations.totals.taxAmount)
+    !amountsMatch(
+      toComparableMoney(invoice.totals.taxAmount),
+      calculations.totals.taxAmount
+    )
   ) {
     findings.push(
       makeFinding({
@@ -939,6 +1283,27 @@ export function buildCoreValidationFindings(
         fieldPath: "totals.taxAmount",
         message: "Tax amount does not match the sum of calculated line VAT amounts.",
         fixSuggestion: `Use ${calculations.totals.taxAmount} as the calculated tax amount or review line VAT rates.`,
+        legalConfidence: "technical"
+      })
+    );
+  }
+
+  if (
+    invoice.totals.taxInclusiveAmount !== undefined &&
+    !amountsMatch(
+      toComparableMoney(invoice.totals.taxInclusiveAmount),
+      calculations.totals.taxInclusiveAmount
+    )
+  ) {
+    findings.push(
+      makeFinding({
+        code: "TAX_INCLUSIVE_AMOUNT_MISMATCH",
+        severity: "fatal",
+        category: "CALCULATION",
+        fieldPath: "totals.taxInclusiveAmount",
+        message:
+          "Tax inclusive amount does not match calculated tax-exclusive amount plus tax amount.",
+        fixSuggestion: `Use ${calculations.totals.taxInclusiveAmount} as the calculated tax-inclusive amount or review totals.`,
         legalConfidence: "technical"
       })
     );
@@ -957,12 +1322,80 @@ export function buildCoreValidationFindings(
         severity: "fatal",
         category: "CALCULATION",
         fieldPath: "totals.payableAmount",
-        message: "Payable total does not match the calculated tax-inclusive amount.",
-        fixSuggestion: `Use ${calculations.totals.payableAmount} as the payable amount or review totals.`,
+        message: "Payable total does not match the calculated payable amount.",
+        fixSuggestion: `Use ${calculations.totals.payableAmount} as the payable amount or review totals, prepaid amount, and rounding.`,
         legalConfidence: "technical"
       })
     );
   }
+
+  invoice.taxSubtotals.forEach((subtotal, index) => {
+    const subtotalLabel =
+      subtotal.vatCategory || subtotal.vatRate
+        ? `${subtotal.vatCategory || "UNSPECIFIED"} ${subtotal.vatRate || "0"}%`
+        : String(index + 1);
+    const calculatedSubtotal = findCalculatedTaxSubtotal(
+      calculations.taxSubtotals,
+      subtotal
+    );
+    const fieldPrefix = `taxSubtotals.${index}`;
+
+    if (!calculatedSubtotal) {
+      findings.push(
+        makeFinding({
+          code: "TAX_SUBTOTAL_UNMATCHED",
+          severity: "warning",
+          category: "CALCULATION",
+          fieldPath: fieldPrefix,
+          message: `Tax subtotal ${subtotalLabel} does not match any calculated line VAT category and rate group.`,
+          fixSuggestion:
+            "Review the subtotal VAT category and VAT rate against the invoice lines.",
+          legalConfidence: "technical"
+        })
+      );
+      return;
+    }
+
+    if (
+      subtotal.taxableAmount !== undefined &&
+      !amountsMatch(
+        toComparableMoney(subtotal.taxableAmount),
+        calculatedSubtotal.taxableAmount
+      )
+    ) {
+      findings.push(
+        makeFinding({
+          code: "TAX_SUBTOTAL_TAXABLE_AMOUNT_MISMATCH",
+          severity: "fatal",
+          category: "CALCULATION",
+          fieldPath: `${fieldPrefix}.taxableAmount`,
+          message: `Tax subtotal ${subtotalLabel} taxable amount does not match calculated line totals.`,
+          fixSuggestion: `Use ${calculatedSubtotal.taxableAmount} as the calculated taxable amount for this VAT group or review line values.`,
+          legalConfidence: "technical"
+        })
+      );
+    }
+
+    if (
+      subtotal.taxAmount !== undefined &&
+      !amountsMatch(
+        toComparableMoney(subtotal.taxAmount),
+        calculatedSubtotal.taxAmount
+      )
+    ) {
+      findings.push(
+        makeFinding({
+          code: "TAX_SUBTOTAL_TAX_AMOUNT_MISMATCH",
+          severity: "fatal",
+          category: "CALCULATION",
+          fieldPath: `${fieldPrefix}.taxAmount`,
+          message: `Tax subtotal ${subtotalLabel} tax amount does not match calculated line tax totals.`,
+          fixSuggestion: `Use ${calculatedSubtotal.taxAmount} as the calculated tax amount for this VAT group or review line VAT rates.`,
+          legalConfidence: "technical"
+        })
+      );
+    }
+  });
 
   const hasCrossBorderCountries =
     hasRequiredText(invoice.seller.country) &&

@@ -28,5 +28,8 @@
     "test": "npm run test:tax-engine && npm run test:invoice-core && npm run test:ubl && npm run test:api",
     "start:web": "npm --prefix apps/web run start",
     "start:api": "npm --prefix apps/api run start"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0"
   }
 }

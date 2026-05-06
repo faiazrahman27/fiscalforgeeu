@@ -131,6 +131,13 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.doesNotMatch(jobSchema, /xsd_ubl_placeholder/);
 });
 
+test("OpenAPI reflects the current core validation rule version", () => {
+  const serialized = JSON.stringify(openApiDocument);
+
+  assert.match(serialized, /2026\.05\.1/);
+  assert.doesNotMatch(serialized, /2026\.04\.1/);
+});
+
 test("OpenAPI includes common errors and rate-limit headers", () => {
   const document = getOpenApiDocument(openApiDocument);
   const paths = getPaths(document);
@@ -153,7 +160,10 @@ test("OpenAPI includes common errors and rate-limit headers", () => {
   assert.match(serialized, /xml:validation_jobs/);
   assert.match(serialized, /UBL XSD checks are configuration-gated/);
   assert.match(serialized, /not_configured/);
-  assert.match(serialized, /does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance/);
+  assert.match(
+    serialized,
+    /does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance/
+  );
 });
 
 test("OpenAPI avoids sensitive key fields and only documents one-time create secret", () => {
