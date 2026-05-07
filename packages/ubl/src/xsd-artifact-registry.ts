@@ -562,7 +562,7 @@ function buildArtifactInfo(input: {
   };
 }
 
-function buildSchematronArtifactInfo(input: {
+function createSchematronArtifactRegistryInfo(input: {
   resolvedConfig: ResolvedSchematronArtifactConfig;
   peppolBisArtifact: SchematronArtifactFileInfo;
   en16931Artifact: SchematronArtifactFileInfo;
@@ -572,7 +572,8 @@ function buildSchematronArtifactInfo(input: {
     input.peppolBisArtifact.usable || input.en16931Artifact.usable;
 
   return {
-    configured: input.peppolBisArtifact.configured || input.en16931Artifact.configured,
+    configured:
+      input.peppolBisArtifact.configured || input.en16931Artifact.configured,
     usable,
     rootPath: input.resolvedConfig.rootPath ?? null,
     peppolBisSchematronPath:
@@ -635,7 +636,7 @@ export async function inspectSchematronArtifacts(
     resolvedConfig,
     peppolBisArtifact,
     en16931Artifact,
-    artifactInfo: buildSchematronArtifactInfo({
+    artifactInfo: createSchematronArtifactRegistryInfo({
       resolvedConfig,
       peppolBisArtifact,
       en16931Artifact
