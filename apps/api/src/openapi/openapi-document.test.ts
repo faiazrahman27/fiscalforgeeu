@@ -124,6 +124,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const schematronDiagnosticsSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronArtifactDiagnostics")
   );
+  const schematronPreflightSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchematronExecutionPreflight")
+  );
   const schematronArtifactSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronArtifactFileDiagnostics")
   );
@@ -151,6 +154,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /UBL_CREDIT_NOTE_XSD_PATH/);
   assert.match(serializedPost, /UBL_XSD_ARTIFACT_VERSION/);
   assert.match(serializedPost, /Schematron artifact diagnostics/i);
+  assert.match(serializedPost, /schematron_adapter_preflight_v1/);
+  assert.match(serializedPost, /executionPreflight/);
+  assert.match(serializedPost, /ready_for_future_execution/);
+  assert.match(serializedPost, /schematron_execution_disabled/);
+  assert.match(serializedPost, /schematron_execution_engine_not_implemented/);
   assert.match(serializedPost, /validationExecutionEnabled/);
   assert.match(serializedPost, /PEPPOL_SCHEMATRON_ROOT_DIR/);
   assert.match(serializedPost, /PEPPOL_BIS_SCHEMATRON_PATH/);
@@ -184,6 +192,17 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronDiagnosticsSchema, /readyArtifactCount/);
   assert.match(schematronDiagnosticsSchema, /peppolBisArtifact/);
   assert.match(schematronDiagnosticsSchema, /en16931Artifact/);
+  assert.match(schematronPreflightSchema, /schematron_execution_preflight/);
+  assert.match(schematronPreflightSchema, /schematron_adapter_preflight_v1/);
+  assert.match(schematronPreflightSchema, /preflight_only/);
+  assert.match(schematronPreflightSchema, /ready_for_future_execution/);
+  assert.match(schematronPreflightSchema, /unsupported/);
+  assert.match(schematronPreflightSchema, /schematron_execution_disabled/);
+  assert.match(
+    schematronPreflightSchema,
+    /schematron_execution_engine_not_implemented/
+  );
+  assert.match(schematronPreflightSchema, /does not execute validation/);
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
   assert.match(schematronArtifactSchema, /basename/);
   assert.match(schematronArtifactSchema, /sha256/);
@@ -213,6 +232,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(jobSchema, /artifactInfo/);
   assert.match(jobSchema, /schematron_artifacts/);
   assert.match(jobSchema, /validationExecutionEnabled/);
+  assert.match(jobSchema, /adapterVersion/);
+  assert.match(jobSchema, /executionPreflight/);
+  assert.match(jobSchema, /preflightStatus/);
+  assert.match(jobSchema, /preflightReason/);
   assert.match(jobSchema, /findingContractVersion/);
   assert.match(jobSchema, /schematron_contract_v1/);
   assert.match(jobSchema, /supportedFutureFindingCodes/);
@@ -223,7 +246,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.doesNotMatch(jobSchema, /xsd_ubl_placeholder/);
   assert.doesNotMatch(
     serializedPost,
-    /\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bauthority accepted\b/i
+    /\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bauthority accepted\b|\baccepted by authority\b|\bproves compliance\b|\bproves Peppol\b|\bproves EN 16931\b/i
   );
 });
 

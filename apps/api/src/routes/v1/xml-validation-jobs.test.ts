@@ -459,6 +459,36 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(schematronPeppol.validationExecuted, false);
   assert.equal(schematronPeppol.markedValid, false);
   assert.equal(
+    schematronPeppol.adapterVersion,
+    "schematron_adapter_preflight_v1"
+  );
+  assert.equal(schematronPeppol.preflightStatus, "not_configured");
+  assert.equal(
+    schematronPeppol.preflightReason,
+    "schematron_artifacts_not_configured"
+  );
+  const schematronPreflight = readObject(
+    schematronPeppol.executionPreflight,
+    "schematronPeppol.executionPreflight"
+  );
+  assert.equal(
+    schematronPreflight.diagnosticKind,
+    "schematron_execution_preflight"
+  );
+  assert.equal(
+    schematronPreflight.adapterVersion,
+    "schematron_adapter_preflight_v1"
+  );
+  assert.equal(schematronPreflight.mode, "preflight_only");
+  assert.equal(schematronPreflight.status, "not_configured");
+  assert.equal(
+    schematronPreflight.reason,
+    "schematron_artifacts_not_configured"
+  );
+  assert.equal(schematronPreflight.validationExecutionEnabled, false);
+  assert.equal(schematronPreflight.validationExecuted, false);
+  assert.equal(schematronPreflight.markedValid, false);
+  assert.equal(
     schematronPeppol.findingContractVersion,
     "schematron_contract_v1"
   );
@@ -494,6 +524,19 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(schematronCheckSummary.validationExecutionEnabled, false);
   assert.equal(schematronCheckSummary.validationExecuted, false);
   assert.equal(schematronCheckSummary.markedValid, false);
+  assert.equal(
+    schematronCheckSummary.adapterVersion,
+    "schematron_adapter_preflight_v1"
+  );
+  assert.equal(schematronCheckSummary.preflightStatus, "not_configured");
+  assert.equal(
+    schematronCheckSummary.preflightReason,
+    "schematron_artifacts_not_configured"
+  );
+  assert.deepEqual(
+    schematronCheckSummary.executionPreflight,
+    schematronPreflight
+  );
   assert.equal(
     schematronCheckSummary.findingContractVersion,
     "schematron_contract_v1"
@@ -539,6 +582,7 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   );
   assert.equal(response.body.includes(simpleUblInvoiceXml), false);
   assert.equal(response.body.includes("<Invoice"), false);
+  assert.equal(response.body.includes("<schema>"), false);
 
   const storedData = await readOptionalFile(xmlValidationJobDataPath);
 
@@ -831,6 +875,42 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.equal(schematronPeppol.validationExecuted, false);
     assert.equal(schematronPeppol.markedValid, false);
     assert.equal(
+      schematronPeppol.adapterVersion,
+      "schematron_adapter_preflight_v1"
+    );
+    assert.equal(
+      schematronPeppol.preflightStatus,
+      "ready_for_future_execution"
+    );
+    assert.equal(
+      schematronPeppol.preflightReason,
+      "schematron_artifacts_ready_but_execution_not_enabled"
+    );
+    const executionPreflight = readObject(
+      schematronPeppol.executionPreflight,
+      "schematronPeppol.executionPreflight"
+    );
+    assert.equal(
+      executionPreflight.diagnosticKind,
+      "schematron_execution_preflight"
+    );
+    assert.equal(
+      executionPreflight.adapterVersion,
+      "schematron_adapter_preflight_v1"
+    );
+    assert.equal(executionPreflight.mode, "preflight_only");
+    assert.equal(
+      executionPreflight.status,
+      "ready_for_future_execution"
+    );
+    assert.equal(
+      executionPreflight.reason,
+      "schematron_artifacts_ready_but_execution_not_enabled"
+    );
+    assert.equal(executionPreflight.validationExecutionEnabled, false);
+    assert.equal(executionPreflight.validationExecuted, false);
+    assert.equal(executionPreflight.markedValid, false);
+    assert.equal(
       schematronPeppol.findingContractVersion,
       "schematron_contract_v1"
     );
@@ -867,6 +947,22 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.equal(schematronCheckSummary.validationExecutionEnabled, false);
     assert.equal(schematronCheckSummary.validationExecuted, false);
     assert.equal(schematronCheckSummary.markedValid, false);
+    assert.equal(
+      schematronCheckSummary.adapterVersion,
+      "schematron_adapter_preflight_v1"
+    );
+    assert.equal(
+      schematronCheckSummary.preflightStatus,
+      "ready_for_future_execution"
+    );
+    assert.equal(
+      schematronCheckSummary.preflightReason,
+      "schematron_artifacts_ready_but_execution_not_enabled"
+    );
+    assert.deepEqual(
+      schematronCheckSummary.executionPreflight,
+      executionPreflight
+    );
     assert.equal(
       schematronCheckSummary.findingContractVersion,
       "schematron_contract_v1"

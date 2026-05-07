@@ -84,6 +84,42 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
     assert.equal(schematronPeppol.validationExecuted, false);
     assert.equal(schematronPeppol.markedValid, false);
     assert.equal(
+      schematronPeppol.adapterVersion,
+      "schematron_adapter_preflight_v1"
+    );
+    assert.equal(
+      schematronPeppol.preflightStatus,
+      "ready_for_future_execution"
+    );
+    assert.equal(
+      schematronPeppol.preflightReason,
+      "schematron_artifacts_ready_but_execution_not_enabled"
+    );
+    const executionPreflight = readObject(
+      schematronPeppol.executionPreflight,
+      "schematronPeppol.executionPreflight"
+    );
+    assert.equal(
+      executionPreflight.diagnosticKind,
+      "schematron_execution_preflight"
+    );
+    assert.equal(
+      executionPreflight.adapterVersion,
+      "schematron_adapter_preflight_v1"
+    );
+    assert.equal(executionPreflight.mode, "preflight_only");
+    assert.equal(
+      executionPreflight.status,
+      "ready_for_future_execution"
+    );
+    assert.equal(
+      executionPreflight.reason,
+      "schematron_artifacts_ready_but_execution_not_enabled"
+    );
+    assert.equal(executionPreflight.validationExecutionEnabled, false);
+    assert.equal(executionPreflight.validationExecuted, false);
+    assert.equal(executionPreflight.markedValid, false);
+    assert.equal(
       schematronPeppol.findingContractVersion,
       "schematron_contract_v1"
     );
@@ -117,6 +153,19 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
     assert.equal(checkSummary.validationExecutionEnabled, false);
     assert.equal(checkSummary.validationExecuted, false);
     assert.equal(checkSummary.markedValid, false);
+    assert.equal(
+      checkSummary.adapterVersion,
+      "schematron_adapter_preflight_v1"
+    );
+    assert.equal(
+      checkSummary.preflightStatus,
+      "ready_for_future_execution"
+    );
+    assert.equal(
+      checkSummary.preflightReason,
+      "schematron_artifacts_ready_but_execution_not_enabled"
+    );
+    assert.deepEqual(checkSummary.executionPreflight, executionPreflight);
     assert.equal(checkSummary.findingContractVersion, "schematron_contract_v1");
     assert.equal(
       (checkSummary.supportedFutureFindingCodes as string[]).includes(

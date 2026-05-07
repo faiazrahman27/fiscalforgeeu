@@ -1,12 +1,15 @@
 import {
+  SCHEMATRON_EXECUTION_ADAPTER_VERSION,
   SCHEMATRON_FINDING_CONTRACT_VERSION,
   SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES,
+  buildSchematronExecutionPreflight,
   buildSchematronExecutionDisabledFinding,
   buildSafeSchematronArtifactDiagnostics,
   inspectXmlSafety,
   readSchematronArtifactConfigFromEnv,
   readUblXsdArtifactConfigFromEnv,
   validateUblXsd,
+  type SchematronExecutionPreflightResult,
   type SchematronSafeArtifactDiagnostics,
   type UblXsdValidationFinding
 } from "@invoice-lantern/ubl";
@@ -100,9 +103,14 @@ function buildWorkerReadinessResult(): XmlWorkerCheckResult {
 }
 
 function buildSchematronPlaceholderSummary(
-  diagnostics: SchematronSafeArtifactDiagnostics
+  diagnostics: SchematronSafeArtifactDiagnostics,
+  preflight: SchematronExecutionPreflightResult
 ) {
   return {
+    adapterVersion: SCHEMATRON_EXECUTION_ADAPTER_VERSION,
+    executionPreflight: preflight.safeSummary,
+    preflightStatus: preflight.status,
+    preflightReason: preflight.reason,
     findingContractVersion: SCHEMATRON_FINDING_CONTRACT_VERSION,
     supportedFutureFindingCodes: [...SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES],
     implemented: false,
@@ -123,17 +131,25 @@ function buildSchematronPlaceholderSummary(
   };
 }
 
-async function buildSchematronPlaceholderResult(): Promise<XmlWorkerCheckResult> {
+async function buildSchematronPlaceholderResult(input: {
+  xml: string;
+}): Promise<XmlWorkerCheckResult> {
   const diagnostics = await buildSafeSchematronArtifactDiagnostics(
     readSchematronArtifactConfigFromEnv()
   );
+  const preflight = buildSchematronExecutionPreflight({
+    xml: input.xml,
+    requestedLayer: "peppol_bis_billing",
+    artifactDiagnostics: diagnostics,
+    mode: "preflight_only"
+  });
   const finding = buildSchematronPlaceholderFinding(diagnostics);
 
   return {
     checkType: "schematron_peppol_placeholder",
     status: "not_implemented",
     findings: [finding],
-    summary: buildSchematronPlaceholderSummary(diagnostics)
+    summary: buildSchematronPlaceholderSummary(diagnostics, preflight)
   };
 }
 
@@ -256,7 +272,9 @@ export async function runStubXmlValidator(
     }
 
     if (check === "schematron_peppol_placeholder") {
-      const result = await buildSchematronPlaceholderResult();
+      const result = await buildSchematronPlaceholderResult({
+        xml: request.xml
+      });
       failedChecks.push(check);
       checkResults.push(result);
       findings.push(...result.findings);
@@ -309,6 +327,14 @@ export async function runStubXmlValidator(
       schematronPeppol: {
         requested: requestedChecks.includes("schematron_peppol_placeholder"),
         implemented: false,
+        adapterVersion:
+          schematronPeppolSummary?.adapterVersion ?? undefined,
+        executionPreflight:
+          schematronPeppolSummary?.executionPreflight ?? undefined,
+        preflightStatus:
+          schematronPeppolSummary?.preflightStatus ?? undefined,
+        preflightReason:
+          schematronPeppolSummary?.preflightReason ?? undefined,
         validationExecutionEnabled: false,
         validationExecuted: false,
         markedValid: false,

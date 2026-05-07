@@ -29,6 +29,17 @@ Schematron rules are not parsed or evaluated, and there is no certification,
 compliance guarantee, legal/tax/accounting conclusion, or authority acceptance
 claim.
 
+Step 50 adds the `schematron_adapter_preflight_v1` Schematron execution adapter
+preflight foundation. XML validation jobs can now report whether Schematron
+artefacts are not configured, unreadable, or ready for future execution. This is
+still metadata-only: it does not execute Schematron validation, parse
+Schematron rules, evaluate XPath assertions, certify Peppol or EN 16931, prove
+compliance, provide legal/tax/accounting conclusions, or indicate authority
+acceptance. Even `ready_for_future_execution` means only that safe artefact
+metadata is usable for a future engine boundary. It does not mean valid,
+compliant, certified, or accepted. No raw XML, Schematron file contents, or full
+absolute local filesystem paths are returned.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -219,6 +230,20 @@ The Schematron diagnostics print metadata-only JSON including:
   `PEPPOL_SCHEMATRON_ROOT_DIR`.
 - A technical diagnostics disclaimer.
 
+When `schematron_peppol_placeholder` is requested through XML validation jobs,
+the result can also include `executionPreflight` with:
+
+- `adapterVersion: "schematron_adapter_preflight_v1"`.
+- `mode: "preflight_only"` for XML validation job summaries.
+- `preflightStatus` / `status` values such as `not_configured`,
+  `artifact_unreadable`, or `ready_for_future_execution`.
+- `preflightReason` / `reason` values such as
+  `schematron_artifacts_not_configured`,
+  `schematron_artifacts_not_usable`, or
+  `schematron_artifacts_ready_but_execution_not_enabled`.
+- `validationExecutionEnabled: false`, `validationExecuted: false`, and
+  `markedValid: false`.
+
 The diagnostics do not return raw XML, schema file contents, Schematron file
 contents, secrets, or full absolute local filesystem paths.
 
@@ -259,10 +284,11 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 through 49. The Schematron registry can inspect
-  configured files, XML validation jobs can report safe diagnostics, and the
-  shared finding contract can describe future sanitized rule metadata, but they
-  do not execute Schematron validation yet.
+: This is expected in Steps 47 through 50. The Schematron registry can inspect
+  configured files, XML validation jobs can report safe diagnostics, the shared
+  finding contract can describe future sanitized rule metadata, and the Step 50
+  preflight adapter can report `ready_for_future_execution`, but they do not
+  execute Schematron validation yet.
 
 Hash mismatch
 
@@ -274,7 +300,7 @@ Hash mismatch
 
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
-- Schematron execution is not enabled in Steps 47 through 49.
+- Schematron execution is not enabled in Steps 47 through 50.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -286,7 +312,7 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 49. `xml_validation_jobs.result_summary`
+No Supabase migration is needed for Step 50. `xml_validation_jobs.result_summary`
 and `xml_validation_jobs.findings` are JSONB and can already store the safe
-Schematron finding contract metadata. No raw XML column is added and no schema
-change is required.
+Schematron finding contract and preflight metadata. No raw XML column is added
+and no schema change is required.
