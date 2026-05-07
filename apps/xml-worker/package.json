@@ -11,6 +11,7 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/index.ts",
     "worker:once": "tsx src/index.ts run-once",
+    "worker:cleanup": "tsx src/index.ts cleanup",
     "pretest": "npm run build:packages",
     "test": "tsx --test src/**/*.test.ts"
   },

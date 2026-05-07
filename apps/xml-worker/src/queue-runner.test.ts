@@ -8,12 +8,16 @@ import { createLocalXmlValidationQueueRepository } from "./queue-repositories.js
 import {
   buildRunningQueueLifecycleFromSummary,
   runXmlValidationQueueOnce,
+  XML_VALIDATION_JOB_MAX_ATTEMPTS_EXCEEDED_CODE,
+  XML_VALIDATION_JOB_STALE_RUNNING_REQUEUED_CODE,
   XML_VALIDATION_JOB_XML_UNAVAILABLE_CODE,
   XML_VALIDATION_JOB_XML_UNAVAILABLE_MESSAGE,
+  XML_VALIDATION_WORKER_EXECUTION_FAILED_CODE,
   XML_VALIDATION_JOB_WORKER_NAME,
   XML_VALIDATION_JOB_WORKER_VERSION,
   type CompleteXmlValidationQueueJobInput,
   type FailXmlValidationQueueJobInput,
+  type RequeueXmlValidationQueueJobInput,
   type XmlValidationQueueJob,
   type XmlValidationQueueRepository
 } from "./queue-runner.js";
@@ -77,15 +81,45 @@ function createClaimedJob(input: {
   };
 }
 
-function createFakeRepository(job: XmlValidationQueueJob | null) {
+function createFakeRepository(
+  job: XmlValidationQueueJob | null,
+  input: {
+    staleJob?: XmlValidationQueueJob | null;
+  } = {}
+) {
   let completeInput: CompleteXmlValidationQueueJobInput | null = null;
   let failInput: FailXmlValidationQueueJobInput | null = null;
+  let requeueInput: RequeueXmlValidationQueueJobInput | null = null;
   let claimCount = 0;
+  let staleReadCount = 0;
 
   const repository: XmlValidationQueueRepository = {
     async claimQueuedJob() {
       claimCount += 1;
       return job;
+    },
+
+    async findStaleRunningJob() {
+      staleReadCount += 1;
+      return input.staleJob ?? null;
+    },
+
+    async requeueJob(requeueJobInput) {
+      requeueInput = requeueJobInput;
+      const sourceJob = input.staleJob ?? job;
+
+      if (!sourceJob) {
+        return null;
+      }
+
+      return {
+        ...sourceJob,
+        status: "queued",
+        workerName: requeueJobInput.workerName,
+        workerVersion: requeueJobInput.workerVersion,
+        resultSummary: requeueJobInput.resultSummary,
+        updatedAt: requeueJobInput.requeuedAt
+      };
     },
 
     async completeJob(input) {
@@ -134,8 +168,10 @@ function createFakeRepository(job: XmlValidationQueueJob | null) {
   return {
     repository,
     getClaimCount: () => claimCount,
+    getStaleReadCount: () => staleReadCount,
     getCompleteInput: () => completeInput,
-    getFailInput: () => failInput
+    getFailInput: () => failInput,
+    getRequeueInput: () => requeueInput
   };
 }
 
@@ -263,6 +299,198 @@ test("queue runner can complete a job when transient XML is supplied safely", as
   );
   assert.equal(JSON.stringify(result).includes(rawXml), false);
   assert.equal(JSON.stringify(result).includes("TRANSIENT-XML-STEP-43"), false);
+  assert.equal("job" in result, false);
+  assert.equal(result.events.some((event) => event.status === "job_claimed"), true);
+  assert.equal(
+    result.events.some((event) => event.status === "job_completed"),
+    true
+  );
+});
+
+test("queue runner requeues retryable worker execution failures when attempts remain", async () => {
+  const rawXml = "<Invoice><ID>RETRYABLE-WORKER-FAILURE</ID></Invoice>";
+  const job = createClaimedJob({
+    xmlSha256: sha256(rawXml),
+    xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+    requestedChecks: ["worker_readiness"],
+    resultSummary: {
+      queue: buildRunningQueueLifecycleFromSummary({
+        existingSummary: {
+          queue: {
+            queuedAt,
+            attempt: 1,
+            maxAttempts: 3,
+            leaseSeconds: 120,
+            timeoutSeconds: 300
+          }
+        },
+        now: startedAt,
+        claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+      })
+    }
+  });
+  const fake = createFakeRepository(job);
+  const result = await runXmlValidationQueueOnce({
+    repository: fake.repository,
+    loadTransientXml: async () => rawXml,
+    validator: async () => {
+      throw new Error("simulated worker failure");
+    },
+    now: () => fixedNow
+  });
+  const requeueInput = fake.getRequeueInput();
+
+  assert.equal(result.status, "requeued");
+  assert.equal(result.errorCode, XML_VALIDATION_WORKER_EXECUTION_FAILED_CODE);
+  assert.equal(result.retryable, true);
+  assert.equal(result.attempt, 2);
+  assert.equal(result.maxAttempts, 3);
+  assert.equal(fake.getCompleteInput(), null);
+  assert.equal(fake.getFailInput(), null);
+  assert.ok(requeueInput);
+
+  const queue = readQueue(requeueInput.resultSummary);
+
+  assert.equal(queue.status, "queued");
+  assert.equal(queue.attempt, 2);
+  assert.equal(queue.failureCode, XML_VALIDATION_WORKER_EXECUTION_FAILED_CODE);
+  assert.equal(JSON.stringify(result).includes(rawXml), false);
+  assert.equal(JSON.stringify(requeueInput).includes(rawXml), false);
+});
+
+test("queue runner fails retryable worker failures when max attempts are exhausted", async () => {
+  const rawXml = "<Invoice><ID>MAX-ATTEMPTS-WORKER-FAILURE</ID></Invoice>";
+  const job = createClaimedJob({
+    xmlSha256: sha256(rawXml),
+    xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+    requestedChecks: ["worker_readiness"],
+    resultSummary: {
+      queue: buildRunningQueueLifecycleFromSummary({
+        existingSummary: {
+          queue: {
+            queuedAt,
+            attempt: 3,
+            maxAttempts: 3,
+            leaseSeconds: 120,
+            timeoutSeconds: 300
+          }
+        },
+        now: startedAt,
+        claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+      })
+    }
+  });
+  const fake = createFakeRepository(job);
+  const result = await runXmlValidationQueueOnce({
+    repository: fake.repository,
+    loadTransientXml: async () => rawXml,
+    validator: async () => {
+      throw new Error("simulated worker failure");
+    },
+    now: () => fixedNow
+  });
+  const failInput = fake.getFailInput();
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorCode, XML_VALIDATION_JOB_MAX_ATTEMPTS_EXCEEDED_CODE);
+  assert.equal(result.retryable, false);
+  assert.equal(result.attempt, 3);
+  assert.equal(fake.getRequeueInput(), null);
+  assert.ok(failInput);
+  assert.equal(
+    failInput.errorCode,
+    XML_VALIDATION_JOB_MAX_ATTEMPTS_EXCEEDED_CODE
+  );
+
+  const queue = readQueue(failInput.resultSummary);
+
+  assert.equal(queue.status, "failed");
+  assert.equal(queue.retryable, false);
+  assert.equal(queue.failureCode, XML_VALIDATION_JOB_MAX_ATTEMPTS_EXCEEDED_CODE);
+  assert.equal(JSON.stringify(result).includes(rawXml), false);
+  assert.equal(JSON.stringify(failInput).includes(rawXml), false);
+});
+
+test("queue runner requeues stale running jobs with expired leases", async () => {
+  const staleJob = createClaimedJob({
+    requestedChecks: ["worker_readiness"],
+    resultSummary: {
+      queue: buildRunningQueueLifecycleFromSummary({
+        existingSummary: {
+          queue: {
+            queuedAt,
+            attempt: 1,
+            maxAttempts: 3,
+            leaseSeconds: 120,
+            timeoutSeconds: 300
+          }
+        },
+        now: startedAt,
+        claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+      })
+    }
+  });
+  const fake = createFakeRepository(null, {
+    staleJob
+  });
+  const result = await runXmlValidationQueueOnce({
+    repository: fake.repository,
+    now: () => fixedNow
+  });
+  const requeueInput = fake.getRequeueInput();
+
+  assert.equal(result.status, "requeued");
+  assert.equal(result.errorCode, XML_VALIDATION_JOB_STALE_RUNNING_REQUEUED_CODE);
+  assert.equal(fake.getClaimCount(), 0);
+  assert.ok(requeueInput);
+
+  const queue = readQueue(requeueInput.resultSummary);
+
+  assert.equal(queue.status, "queued");
+  assert.equal(queue.attempt, 2);
+  assert.equal(
+    queue.failureCode,
+    XML_VALIDATION_JOB_STALE_RUNNING_REQUEUED_CODE
+  );
+});
+
+test("queue runner fails stale running jobs when attempts are exhausted", async () => {
+  const staleJob = createClaimedJob({
+    requestedChecks: ["worker_readiness"],
+    resultSummary: {
+      queue: buildRunningQueueLifecycleFromSummary({
+        existingSummary: {
+          queue: {
+            queuedAt,
+            attempt: 3,
+            maxAttempts: 3,
+            leaseSeconds: 120,
+            timeoutSeconds: 300
+          }
+        },
+        now: startedAt,
+        claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+      })
+    }
+  });
+  const fake = createFakeRepository(null, {
+    staleJob
+  });
+  const result = await runXmlValidationQueueOnce({
+    repository: fake.repository,
+    now: () => fixedNow
+  });
+  const failInput = fake.getFailInput();
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorCode, XML_VALIDATION_JOB_MAX_ATTEMPTS_EXCEEDED_CODE);
+  assert.equal(result.retryable, false);
+  assert.equal(fake.getClaimCount(), 0);
+  assert.ok(failInput);
+  assert.equal(
+    failInput.errorCode,
+    XML_VALIDATION_JOB_MAX_ATTEMPTS_EXCEEDED_CODE
+  );
 });
 
 test("queue runner fails mismatched transient XML without validation output", async () => {
@@ -281,7 +509,7 @@ test("queue runner fails mismatched transient XML without validation output", as
   const failInput = fake.getFailInput();
 
   assert.equal(result.status, "failed");
-  assert.equal(result.errorCode, "XML_VALIDATION_JOB_TRANSIENT_XML_MISMATCH");
+  assert.equal(result.errorCode, XML_TRANSIENT_PAYLOAD_HASH_MISMATCH_CODE);
   assert.equal(fake.getCompleteInput(), null);
   assert.ok(failInput);
   assert.deepEqual(failInput.failedChecks, ["xsd_ubl"]);

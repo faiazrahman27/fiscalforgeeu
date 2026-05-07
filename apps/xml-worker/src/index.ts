@@ -4,7 +4,9 @@ import { createXmlValidationQueueRepositoryFromEnv } from "./queue-repositories.
 import { runXmlValidationQueueOnce } from "./queue-runner.js";
 import { runStubXmlValidator } from "./stub-validator.js";
 import {
+  cleanupTransientXmlPayloads,
   DEFAULT_TRANSIENT_XML_PAYLOAD_MAX_BYTES,
+  DEFAULT_TRANSIENT_XML_PAYLOAD_TTL_SECONDS,
   getDefaultTransientXmlPayloadRootDir
 } from "./transient-xml-payload-store.js";
 import type { XmlWorkerCheck } from "./worker-types.js";
@@ -102,6 +104,10 @@ async function runQueueOnce(args: readonly string[]) {
     process.env.API_BODY_LIMIT_BYTES,
     DEFAULT_TRANSIENT_XML_PAYLOAD_MAX_BYTES
   );
+  const transientPayloadTtlSeconds = normalizePositiveInteger(
+    process.env.XML_TRANSIENT_PAYLOAD_TTL_SECONDS,
+    DEFAULT_TRANSIENT_XML_PAYLOAD_TTL_SECONDS
+  );
   const queueRepository = createXmlValidationQueueRepositoryFromEnv({
     env: process.env,
     dataDir,
@@ -112,7 +118,8 @@ async function runQueueOnce(args: readonly string[]) {
     repository: queueRepository.repository,
     transientPayloadStore: {
       rootDir: transientPayloadRootDir,
-      maxBytes: transientPayloadMaxBytes
+      maxBytes: transientPayloadMaxBytes,
+      cleanupTtlSeconds: transientPayloadTtlSeconds
     }
   });
 
@@ -120,9 +127,34 @@ async function runQueueOnce(args: readonly string[]) {
     JSON.stringify(
       {
         ...result,
-        storage: queueRepository.storage,
-        ...(queueRepository.storage === "local" ? { dataDir } : {}),
         ...(organizationId ? { organizationId } : {})
+      },
+      null,
+      2
+    )
+  );
+}
+
+async function runCleanup(args: readonly string[]) {
+  const transientPayloadRootDir =
+    readCliOption(args, "--payload-dir") ?? getDefaultTransientXmlPayloadRootDir();
+  const ttlSeconds = normalizePositiveInteger(
+    readCliOption(args, "--ttl-seconds") ??
+      process.env.XML_TRANSIENT_PAYLOAD_TTL_SECONDS,
+    DEFAULT_TRANSIENT_XML_PAYLOAD_TTL_SECONDS
+  );
+  const cleanup = await cleanupTransientXmlPayloads({
+    rootDir: transientPayloadRootDir,
+    ttlSeconds
+  });
+
+  console.log(
+    JSON.stringify(
+      {
+        status: "cleanup_completed",
+        workerName: "invoice-lantern-xml-worker",
+        workerVersion: "0.2.0",
+        cleanup
       },
       null,
       2
@@ -135,6 +167,11 @@ async function main() {
 
   if (commandOrXmlPath === "run-once") {
     await runQueueOnce(process.argv.slice(3));
+    return;
+  }
+
+  if (commandOrXmlPath === "cleanup") {
+    await runCleanup(process.argv.slice(3));
     return;
   }
 

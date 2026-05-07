@@ -2,9 +2,13 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildRunningQueueLifecycleFromSummary,
+  readQueueLifecycleRetryReadiness,
+  readQueueLifecycleStaleRunningInfo,
   type ClaimQueuedXmlValidationJobInput,
   type CompleteXmlValidationQueueJobInput,
   type FailXmlValidationQueueJobInput,
+  type FindStaleRunningXmlValidationJobInput,
+  type RequeueXmlValidationQueueJobInput,
   type XmlValidationQueueJob,
   type XmlValidationQueueJobStatus,
   type XmlValidationQueueRepository
@@ -320,16 +324,22 @@ async function writeLocalRecords(
 
 function shouldIncludeJob(input: {
   job: XmlValidationQueueJob;
+  now: string;
   organizationId?: string;
 }) {
   return (
     input.job.status === "queued" &&
+    readQueueLifecycleRetryReadiness({
+      summary: input.job.resultSummary,
+      now: input.now
+    }) &&
     (!input.organizationId || input.job.organizationId === input.organizationId)
   );
 }
 
 function findLocalQueuedJob(input: {
   records: Record<string, unknown>[];
+  now: string;
   organizationId?: string;
 }) {
   const jobs = input.records
@@ -338,8 +348,30 @@ function findLocalQueuedJob(input: {
     .filter((job) =>
       shouldIncludeJob({
         job,
+        now: input.now,
         ...(input.organizationId ? { organizationId: input.organizationId } : {})
       })
+    );
+
+  return sortByOldestCreatedAt(jobs)[0] ?? null;
+}
+
+function findLocalStaleRunningJob(input: {
+  records: Record<string, unknown>[];
+  now: string;
+  organizationId?: string;
+}) {
+  const jobs = input.records
+    .map((record) => normalizeLocalXmlValidationJobRecord(record))
+    .filter((record): record is XmlValidationQueueJob => record !== null)
+    .filter(
+      (job) =>
+        job.status === "running" &&
+        (!input.organizationId || job.organizationId === input.organizationId) &&
+        readQueueLifecycleStaleRunningInfo({
+          summary: job.resultSummary,
+          now: input.now
+        }).stale
     );
 
   return sortByOldestCreatedAt(jobs)[0] ?? null;
@@ -418,6 +450,27 @@ function withFailedLocalFields(
   };
 }
 
+function withRequeuedLocalFields(
+  record: Record<string, unknown>,
+  input: RequeueXmlValidationQueueJobInput
+) {
+  return {
+    ...removeRawXmlFields(record),
+    status: "queued",
+    completedChecks: [],
+    failedChecks: [],
+    workerName: input.workerName,
+    workerVersion: input.workerVersion,
+    startedAt: null,
+    completedAt: null,
+    failedAt: null,
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage,
+    resultSummary: input.resultSummary,
+    updatedAt: input.requeuedAt
+  };
+}
+
 async function updateLocalJob(input: {
   dataDir: string;
   organizationId: string;
@@ -457,8 +510,10 @@ export function createLocalXmlValidationQueueRepository(
   return {
     async claimQueuedJob(claimInput: ClaimQueuedXmlValidationJobInput) {
       const records = await readLocalRecords(input.dataDir);
+      const now = claimInput.now ?? new Date().toISOString();
       const queuedJob = findLocalQueuedJob({
         records,
+        now,
         ...(input.organizationId ? { organizationId: input.organizationId } : {})
       });
 
@@ -466,7 +521,6 @@ export function createLocalXmlValidationQueueRepository(
         return null;
       }
 
-      const now = new Date().toISOString();
       let claimedRecord: Record<string, unknown> | null = null;
       const nextRecords = records.map((record) => {
         const job = normalizeLocalXmlValidationJobRecord(record);
@@ -492,6 +546,27 @@ export function createLocalXmlValidationQueueRepository(
       await writeLocalRecords(input.dataDir, nextRecords);
 
       return normalizeLocalXmlValidationJobRecord(claimedRecord);
+    },
+
+    async findStaleRunningJob(
+      staleInput: FindStaleRunningXmlValidationJobInput
+    ) {
+      const records = await readLocalRecords(input.dataDir);
+
+      return findLocalStaleRunningJob({
+        records,
+        now: staleInput.now,
+        ...(input.organizationId ? { organizationId: input.organizationId } : {})
+      });
+    },
+
+    async requeueJob(requeueInput: RequeueXmlValidationQueueJobInput) {
+      return updateLocalJob({
+        dataDir: input.dataDir,
+        organizationId: requeueInput.organizationId,
+        jobId: requeueInput.jobId,
+        update: (record) => withRequeuedLocalFields(record, requeueInput)
+      });
     },
 
     async completeJob(completeInput: CompleteXmlValidationQueueJobInput) {
@@ -556,6 +631,7 @@ async function readSupabaseRows(input: {
   serviceRoleKey: string;
   organizationId?: string;
   status?: XmlValidationQueueJobStatus;
+  limit?: number;
 }) {
   const url = buildSupabaseUrl({
     supabaseUrl: input.supabaseUrl,
@@ -564,7 +640,7 @@ async function readSupabaseRows(input: {
   });
 
   url.searchParams.set("order", "created_at.asc");
-  url.searchParams.set("limit", "1");
+  url.searchParams.set("limit", String(input.limit ?? 100));
 
   const response = await fetch(url, {
     method: "GET",
@@ -620,6 +696,39 @@ function getFirstSupabaseJob(rows: SupabaseXmlValidationJobRow[]) {
   return row ? normalizeSupabaseXmlValidationJobRow(row) : null;
 }
 
+function getFirstSupabaseQueuedJob(input: {
+  rows: SupabaseXmlValidationJobRow[];
+  now: string;
+}) {
+  const jobs = input.rows
+    .map((row) => normalizeSupabaseXmlValidationJobRow(row))
+    .filter((job) =>
+      readQueueLifecycleRetryReadiness({
+        summary: job.resultSummary,
+        now: input.now
+      })
+    );
+
+  return jobs[0] ?? null;
+}
+
+function getFirstSupabaseStaleRunningJob(input: {
+  rows: SupabaseXmlValidationJobRow[];
+  now: string;
+}) {
+  const jobs = input.rows
+    .map((row) => normalizeSupabaseXmlValidationJobRow(row))
+    .filter(
+      (job) =>
+        readQueueLifecycleStaleRunningInfo({
+          summary: job.resultSummary,
+          now: input.now
+        }).stale
+    );
+
+  return jobs[0] ?? null;
+}
+
 function buildRunningSupabaseValues(input: {
   job: XmlValidationQueueJob;
   now: string;
@@ -642,24 +751,45 @@ function buildRunningSupabaseValues(input: {
   };
 }
 
+function buildRequeuedSupabaseValues(
+  input: RequeueXmlValidationQueueJobInput
+) {
+  return {
+    status: "queued",
+    completed_checks: [],
+    failed_checks: [],
+    worker_name: input.workerName,
+    worker_version: input.workerVersion,
+    started_at: null,
+    completed_at: null,
+    failed_at: null,
+    error_code: input.errorCode,
+    error_message: input.errorMessage,
+    result_summary: input.resultSummary
+  };
+}
+
 export function createSupabaseXmlValidationQueueRepository(
   input: CreateSupabaseXmlValidationQueueRepositoryInput
 ): XmlValidationQueueRepository {
   return {
     async claimQueuedJob(claimInput: ClaimQueuedXmlValidationJobInput) {
+      const now = claimInput.now ?? new Date().toISOString();
       const rows = await readSupabaseRows({
         supabaseUrl: input.supabaseUrl,
         serviceRoleKey: input.serviceRoleKey,
         ...(input.organizationId ? { organizationId: input.organizationId } : {}),
         status: "queued"
       });
-      const queuedJob = getFirstSupabaseJob(rows);
+      const queuedJob = getFirstSupabaseQueuedJob({
+        rows,
+        now
+      });
 
       if (!queuedJob) {
         return null;
       }
 
-      const now = new Date().toISOString();
       const updatedRows = await patchSupabaseRows({
         supabaseUrl: input.supabaseUrl,
         serviceRoleKey: input.serviceRoleKey,
@@ -675,6 +805,35 @@ export function createSupabaseXmlValidationQueueRepository(
       });
 
       return getFirstSupabaseJob(updatedRows);
+    },
+
+    async findStaleRunningJob(
+      staleInput: FindStaleRunningXmlValidationJobInput
+    ) {
+      const rows = await readSupabaseRows({
+        supabaseUrl: input.supabaseUrl,
+        serviceRoleKey: input.serviceRoleKey,
+        ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+        status: "running"
+      });
+
+      return getFirstSupabaseStaleRunningJob({
+        rows,
+        now: staleInput.now
+      });
+    },
+
+    async requeueJob(requeueInput: RequeueXmlValidationQueueJobInput) {
+      const rows = await patchSupabaseRows({
+        supabaseUrl: input.supabaseUrl,
+        serviceRoleKey: input.serviceRoleKey,
+        organizationId: requeueInput.organizationId,
+        jobId: requeueInput.jobId,
+        status: "running",
+        values: buildRequeuedSupabaseValues(requeueInput)
+      });
+
+      return getFirstSupabaseJob(rows);
     },
 
     async completeJob(completeInput: CompleteXmlValidationQueueJobInput) {
