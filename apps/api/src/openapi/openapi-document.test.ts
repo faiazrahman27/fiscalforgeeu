@@ -121,6 +121,12 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const dependencyGraphSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobDependencyGraph")
   );
+  const schematronDiagnosticsSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchematronArtifactDiagnostics")
+  );
+  const schematronArtifactSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchematronArtifactFileDiagnostics")
+  );
   const findingSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobFinding")
   );
@@ -144,7 +150,16 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /UBL_INVOICE_XSD_PATH/);
   assert.match(serializedPost, /UBL_CREDIT_NOTE_XSD_PATH/);
   assert.match(serializedPost, /UBL_XSD_ARTIFACT_VERSION/);
-  assert.match(serializedPost, /Schematron remains planned\/inactive/i);
+  assert.match(serializedPost, /Schematron artifact diagnostics/i);
+  assert.match(serializedPost, /validationExecutionEnabled/);
+  assert.match(serializedPost, /PEPPOL_SCHEMATRON_ROOT_DIR/);
+  assert.match(serializedPost, /PEPPOL_BIS_SCHEMATRON_PATH/);
+  assert.match(serializedPost, /EN16931_SCHEMATRON_PATH/);
+  assert.match(serializedPost, /SCHEMATRON_ARTIFACT_VERSION/);
+  assert.match(serializedPost, /Schematron execution is not implemented/i);
+  assert.match(serializedPost, /no certification/i);
+  assert.match(serializedPost, /no authority acceptance/i);
+  assert.match(serializedPost, /no legal\/tax\/accounting compliance validation/i);
   assert.match(createRequest, /"xsd_ubl"/);
   assert.doesNotMatch(createRequest, /xsd_ubl_placeholder/);
   assert.match(artifactInfoSchema, /validatorName/);
@@ -163,6 +178,16 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(dependencyGraphSchema, /dependencyCount/);
   assert.match(dependencyGraphSchema, /external_reference_blocked/);
   assert.match(artifactInfoSchema, /checkedAt/);
+  assert.match(schematronDiagnosticsSchema, /schematron_artifacts/);
+  assert.match(schematronDiagnosticsSchema, /validationExecutionEnabled/);
+  assert.match(schematronDiagnosticsSchema, /validatorAvailable/);
+  assert.match(schematronDiagnosticsSchema, /readyArtifactCount/);
+  assert.match(schematronDiagnosticsSchema, /peppolBisArtifact/);
+  assert.match(schematronDiagnosticsSchema, /en16931Artifact/);
+  assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
+  assert.match(schematronArtifactSchema, /basename/);
+  assert.match(schematronArtifactSchema, /sha256/);
+  assert.match(schematronArtifactSchema, /full absolute local filesystem paths/);
   assert.match(findingSchema, /not_configured/);
   assert.match(findingSchema, /passed/);
   assert.match(findingSchema, /failed/);
@@ -172,9 +197,16 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(findingSchema, /technicalCode/);
   assert.match(findingSchema, /xmlLine/);
   assert.match(findingSchema, /never raw XML/);
+  assert.match(findingSchema, /PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED/);
   assert.match(jobSchema, /xsd_ubl/);
   assert.match(jobSchema, /artifactInfo/);
+  assert.match(jobSchema, /schematron_artifacts/);
+  assert.match(jobSchema, /validationExecutionEnabled/);
   assert.doesNotMatch(jobSchema, /xsd_ubl_placeholder/);
+  assert.doesNotMatch(
+    serializedPost,
+    /\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bauthority accepted\b/i
+  );
 });
 
 test("OpenAPI reflects the current core validation rule version", () => {

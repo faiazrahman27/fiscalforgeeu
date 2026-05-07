@@ -894,6 +894,7 @@ function buildQueueFailureResult(input: {
       schematronPeppol: {
         requested: requestedChecks.includes("schematron_peppol_placeholder"),
         implemented: false,
+        validationExecutionEnabled: false,
         validationExecuted: false,
         markedValid: false
       }

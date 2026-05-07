@@ -288,6 +288,7 @@ function buildAsyncXmlValidationJobResultSummary(input: {
     schematronPeppol: {
       requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
       implemented: false,
+      validationExecutionEnabled: false,
       validationExecuted: false,
       markedValid: false
     }

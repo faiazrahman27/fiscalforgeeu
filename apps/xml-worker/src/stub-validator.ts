@@ -1,7 +1,10 @@
 import {
+  buildSafeSchematronArtifactDiagnostics,
   inspectXmlSafety,
+  readSchematronArtifactConfigFromEnv,
   readUblXsdArtifactConfigFromEnv,
   validateUblXsd,
+  type SchematronSafeArtifactDiagnostics,
   type UblXsdValidationFinding
 } from "@invoice-lantern/ubl";
 import type {
@@ -67,12 +70,12 @@ function buildSchematronPlaceholderFinding(): XmlWorkerFinding {
     checkType: "schematron_peppol_placeholder",
     field: "xml",
     message:
-      "Peppol Schematron validation is planned but not active in this worker foundation.",
+      "Schematron validation is not executed yet. Artefact registry diagnostics may show whether local Schematron artefacts are configured and readable, but this is not Peppol certification or EN 16931 certification.",
     status: "not_implemented",
     legalConfidence: "educational_simulation",
     fixSuggestion:
-      "Enable a future Schematron validation worker with local reviewed artefacts before using Peppol-style business-rule checks.",
-    sourceLabels: ["Planned validation layer"]
+      "Use these metadata-only diagnostics to prepare reviewed local artefacts; enable a future Schematron execution worker before relying on Peppol-style business-rule checks.",
+    sourceLabels: ["Schematron artefact registry diagnostics"]
   };
 }
 
@@ -90,19 +93,39 @@ function buildWorkerReadinessResult(): XmlWorkerCheckResult {
   };
 }
 
-function buildSchematronPlaceholderResult(): XmlWorkerCheckResult {
+function buildSchematronPlaceholderSummary(
+  diagnostics: SchematronSafeArtifactDiagnostics
+) {
+  return {
+    implemented: false,
+    validationExecutionEnabled: false,
+    validationExecuted: false,
+    markedValid: false,
+    reason: "schematron_validation_not_implemented",
+    configured: diagnostics.configured,
+    usable: diagnostics.usable,
+    readyArtifactCount: diagnostics.readyArtifactCount,
+    requiredArtifactCount: diagnostics.requiredArtifactCount,
+    allRequiredArtifactsReadable: diagnostics.allRequiredArtifactsReadable,
+    artifactVersion: diagnostics.artifactVersion,
+    validatorName: diagnostics.validatorName,
+    validatorAvailable: diagnostics.validatorAvailable,
+    checkedAt: diagnostics.checkedAt,
+    artifactDiagnostics: diagnostics
+  };
+}
+
+async function buildSchematronPlaceholderResult(): Promise<XmlWorkerCheckResult> {
   const finding = buildSchematronPlaceholderFinding();
+  const diagnostics = await buildSafeSchematronArtifactDiagnostics(
+    readSchematronArtifactConfigFromEnv()
+  );
 
   return {
     checkType: "schematron_peppol_placeholder",
     status: "not_implemented",
     findings: [finding],
-    summary: {
-      implemented: false,
-      validationExecuted: false,
-      markedValid: false,
-      reason: "schematron_peppol_not_implemented"
-    }
+    summary: buildSchematronPlaceholderSummary(diagnostics)
   };
 }
 
@@ -166,6 +189,14 @@ function getXsdUblResult(checkResults: readonly XmlWorkerCheckResult[]) {
   return checkResults.find((result) => result.checkType === "xsd_ubl");
 }
 
+function getSchematronPeppolResult(
+  checkResults: readonly XmlWorkerCheckResult[]
+) {
+  return checkResults.find(
+    (result) => result.checkType === "schematron_peppol_placeholder"
+  );
+}
+
 function getBooleanSummaryValue(
   summary: Record<string, unknown> | undefined,
   key: string
@@ -217,7 +248,7 @@ export async function runStubXmlValidator(
     }
 
     if (check === "schematron_peppol_placeholder") {
-      const result = buildSchematronPlaceholderResult();
+      const result = await buildSchematronPlaceholderResult();
       failedChecks.push(check);
       checkResults.push(result);
       findings.push(...result.findings);
@@ -226,6 +257,8 @@ export async function runStubXmlValidator(
 
   const xsdUblResult = getXsdUblResult(checkResults);
   const xsdUblSummary = xsdUblResult?.summary;
+  const schematronPeppolResult = getSchematronPeppolResult(checkResults);
+  const schematronPeppolSummary = schematronPeppolResult?.summary;
 
   return {
     status: "completed",
@@ -268,8 +301,29 @@ export async function runStubXmlValidator(
       schematronPeppol: {
         requested: requestedChecks.includes("schematron_peppol_placeholder"),
         implemented: false,
+        validationExecutionEnabled: false,
         validationExecuted: false,
-        markedValid: false
+        markedValid: false,
+        configured: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "configured"
+        ),
+        usable: getBooleanSummaryValue(schematronPeppolSummary, "usable"),
+        readyArtifactCount:
+          schematronPeppolSummary?.readyArtifactCount ?? undefined,
+        requiredArtifactCount:
+          schematronPeppolSummary?.requiredArtifactCount ?? undefined,
+        artifactVersion:
+          schematronPeppolSummary?.artifactVersion ?? undefined,
+        ...(schematronPeppolResult
+          ? { status: schematronPeppolResult.status }
+          : {}),
+        ...(schematronPeppolSummary?.artifactDiagnostics
+          ? {
+              artifactDiagnostics:
+                schematronPeppolSummary.artifactDiagnostics
+            }
+          : {})
       }
     },
     disclaimer: XML_WORKER_STUB_DISCLAIMER

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { inspectXmlSafety } from "@invoice-lantern/ubl";
@@ -412,21 +412,64 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   const queue = readObject(resultSummary.queue, "job.resultSummary.queue");
   const checkStatuses = resultSummary.checkStatuses as Record<string, unknown>;
   const xsdUbl = resultSummary.xsdUbl as Record<string, unknown>;
+  const schematronPeppol = resultSummary.schematronPeppol as Record<
+    string,
+    unknown
+  >;
   const checkResults = resultSummary.checkResults as Record<string, unknown>[];
   const xsdCheckResult = checkResults.find(
     (result) => result.checkType === "xsd_ubl"
   ) as Record<string, unknown>;
+  const schematronCheckResult = checkResults.find(
+    (result) => result.checkType === "schematron_peppol_placeholder"
+  ) as Record<string, unknown>;
   const artifactInfo = xsdUbl.artifactInfo as Record<string, unknown>;
+  const schematronCheckSummary = readObject(
+    schematronCheckResult.summary,
+    "schematronCheckResult.summary"
+  );
+  const schematronDiagnostics = readObject(
+    schematronPeppol.artifactDiagnostics,
+    "schematronPeppol.artifactDiagnostics"
+  );
 
   assert.equal(queue.status, "completed");
   assert.equal(queue.retryable, false);
   assert.equal(checkStatuses.xsd_ubl, "not_configured");
+  assert.equal(
+    checkStatuses.schematron_peppol_placeholder,
+    "not_implemented"
+  );
   assert.equal(xsdCheckResult.status, "not_configured");
+  assert.equal(schematronCheckResult.status, "not_implemented");
   assert.equal(isPlainObject(xsdCheckResult.artifactInfo), true);
   assert.equal(xsdUbl.configured, false);
   assert.equal(xsdUbl.validationExecuted, false);
   assert.equal(xsdUbl.markedValid, false);
   assert.equal(xsdUbl.status, "not_configured");
+  assert.equal(schematronPeppol.requested, true);
+  assert.equal(schematronPeppol.implemented, false);
+  assert.equal(schematronPeppol.validationExecutionEnabled, false);
+  assert.equal(schematronPeppol.validationExecuted, false);
+  assert.equal(schematronPeppol.markedValid, false);
+  assert.equal(schematronPeppol.configured, false);
+  assert.equal(schematronPeppol.usable, false);
+  assert.equal(schematronPeppol.readyArtifactCount, 0);
+  assert.equal(schematronPeppol.requiredArtifactCount, 2);
+  assert.equal(schematronPeppol.status, "not_implemented");
+  assert.equal(schematronCheckSummary.validationExecutionEnabled, false);
+  assert.equal(schematronCheckSummary.validationExecuted, false);
+  assert.equal(schematronCheckSummary.markedValid, false);
+  assert.equal(schematronCheckSummary.validatorAvailable, false);
+  assert.equal(schematronDiagnostics.diagnosticKind, "schematron_artifacts");
+  assert.equal(schematronDiagnostics.configured, false);
+  assert.equal(schematronDiagnostics.usable, false);
+  assert.equal(schematronDiagnostics.validatorName, "schematron-placeholder");
+  assert.equal(schematronDiagnostics.validatorAvailable, false);
+  assert.equal(
+    schematronDiagnostics.validationExecutionEnabled,
+    false
+  );
   assert.equal(isPlainObject(artifactInfo), true);
   assert.equal(artifactInfo.configured, false);
   assert.equal(artifactInfo.validatorName, "xmllint-wasm");
@@ -450,6 +493,13 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
     JSON.stringify(job),
     /\bXSD valid\b|\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bofficially valid\b|\blegally compliant\b|\baccepted by authority\b/i
   );
+  assert.equal(response.body.includes(simpleUblInvoiceXml), false);
+  assert.equal(response.body.includes("<Invoice"), false);
+
+  const storedData = await readOptionalFile(xmlValidationJobDataPath);
+
+  assert.equal(storedData?.includes(simpleUblInvoiceXml), false);
+  assert.equal(storedData?.includes("<Invoice"), false);
 });
 
 test("configured missing UBL XSD artefact paths produce safe not_configured metadata", async () => {
@@ -650,6 +700,139 @@ test("configured readable UBL Invoice XSD failure returns mapped findings safely
     assert.equal(
       JSON.stringify(completion).includes("INV-XSD-API-RAW-SECRET"),
       false
+    );
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("configured readable Schematron artefacts return safe metadata-only placeholder diagnostics", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-api-sch-"));
+  const peppolBisPath = join(tempRoot, "peppol", "PEPPOL-BIS-Billing.sch");
+  const en16931Path = join(tempRoot, "tc434", "EN16931-TC434.sch");
+  const peppolSentinel = "PEPPOL-SCHEMATRON-CONTENT-SENTINEL-STEP-48";
+  const en16931Sentinel = "EN16931-SCHEMATRON-CONTENT-SENTINEL-STEP-48";
+
+  try {
+    await mkdir(dirname(peppolBisPath), {
+      recursive: true
+    });
+    await mkdir(dirname(en16931Path), {
+      recursive: true
+    });
+    await writeFile(peppolBisPath, `<schema>${peppolSentinel}</schema>`, "utf8");
+    await writeFile(en16931Path, `<schema>${en16931Sentinel}</schema>`, "utf8");
+
+    const rootElement = detectXmlRootElement(simpleUblInvoiceXml);
+    const documentType = detectXmlDocumentType(rootElement);
+    const completion = await buildXmlValidationJobCompletion({
+      xml: simpleUblInvoiceXml,
+      xmlSha256: sha256(simpleUblInvoiceXml),
+      xmlSizeBytes: Buffer.byteLength(simpleUblInvoiceXml, "utf8"),
+      requestedChecks: ["schematron_peppol_placeholder"],
+      safety: inspectXmlSafety(simpleUblInvoiceXml),
+      rootElement,
+      documentType,
+      schematronArtifactConfig: {
+        rootDir: tempRoot,
+        peppolBisSchematronPath: peppolBisPath,
+        en16931SchematronPath: en16931Path,
+        artifactVersion: "step-48-test"
+      }
+    });
+
+    assert.deepEqual(completion.completedChecks, []);
+    assert.deepEqual(completion.failedChecks, [
+      "schematron_peppol_placeholder"
+    ]);
+
+    const queue = readObject(completion.resultSummary.queue, "completion.queue");
+    const schematronPeppol = readObject(
+      completion.resultSummary.schematronPeppol,
+      "completion.schematronPeppol"
+    );
+    const diagnostics = readObject(
+      schematronPeppol.artifactDiagnostics,
+      "schematronPeppol.artifactDiagnostics"
+    );
+    const peppolBisArtifact = readObject(
+      diagnostics.peppolBisArtifact,
+      "diagnostics.peppolBisArtifact"
+    );
+    const en16931Artifact = readObject(
+      diagnostics.en16931Artifact,
+      "diagnostics.en16931Artifact"
+    );
+    const checkResults = completion.resultSummary.checkResults as Record<
+      string,
+      unknown
+    >[];
+    const schematronCheckResult = checkResults.find(
+      (result) => result.checkType === "schematron_peppol_placeholder"
+    ) as Record<string, unknown>;
+    const schematronCheckSummary = readObject(
+      schematronCheckResult.summary,
+      "schematronCheckResult.summary"
+    );
+    const serialized = JSON.stringify(completion);
+
+    assert.equal(queue.status, "completed");
+    assert.equal(schematronCheckResult.status, "not_implemented");
+    assert.equal(schematronPeppol.requested, true);
+    assert.equal(schematronPeppol.implemented, false);
+    assert.equal(schematronPeppol.validationExecutionEnabled, false);
+    assert.equal(schematronPeppol.validationExecuted, false);
+    assert.equal(schematronPeppol.markedValid, false);
+    assert.equal(schematronPeppol.configured, true);
+    assert.equal(schematronPeppol.usable, true);
+    assert.equal(schematronPeppol.readyArtifactCount, 2);
+    assert.equal(schematronPeppol.requiredArtifactCount, 2);
+    assert.equal(schematronPeppol.artifactVersion, "step-48-test");
+    assert.equal(schematronPeppol.status, "not_implemented");
+    assert.equal(schematronCheckSummary.validationExecutionEnabled, false);
+    assert.equal(schematronCheckSummary.validationExecuted, false);
+    assert.equal(schematronCheckSummary.markedValid, false);
+    assert.equal(schematronCheckSummary.configured, true);
+    assert.equal(schematronCheckSummary.usable, true);
+    assert.equal(schematronCheckSummary.readyArtifactCount, 2);
+    assert.equal(schematronCheckSummary.requiredArtifactCount, 2);
+    assert.equal(schematronCheckSummary.validatorAvailable, false);
+    assert.equal(diagnostics.diagnosticKind, "schematron_artifacts");
+    assert.equal(diagnostics.configured, true);
+    assert.equal(diagnostics.usable, true);
+    assert.equal(diagnostics.readyArtifactCount, 2);
+    assert.equal(diagnostics.requiredArtifactCount, 2);
+    assert.equal(diagnostics.allRequiredArtifactsReadable, true);
+    assert.equal(diagnostics.artifactVersion, "step-48-test");
+    assert.equal(diagnostics.validatorName, "schematron-placeholder");
+    assert.equal(diagnostics.validatorAvailable, false);
+    assert.equal(diagnostics.validationExecutionEnabled, false);
+    assert.match(String(diagnostics.checkedAt), /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(peppolBisArtifact.artifactKind, "peppol_bis_billing");
+    assert.equal(peppolBisArtifact.status, "available");
+    assert.equal(peppolBisArtifact.readable, true);
+    assert.match(String(peppolBisArtifact.sha256), /^[a-f0-9]{64}$/);
+    assert.equal(peppolBisArtifact.label, "peppol/PEPPOL-BIS-Billing.sch");
+    assert.equal(peppolBisArtifact.basename, "PEPPOL-BIS-Billing.sch");
+    assert.equal(en16931Artifact.artifactKind, "en16931_tc434");
+    assert.equal(en16931Artifact.status, "available");
+    assert.equal(en16931Artifact.readable, true);
+    assert.match(String(en16931Artifact.sha256), /^[a-f0-9]{64}$/);
+    assert.equal(en16931Artifact.label, "tc434/EN16931-TC434.sch");
+    assert.equal(en16931Artifact.basename, "EN16931-TC434.sch");
+    assert.equal(serialized.includes(simpleUblInvoiceXml), false);
+    assert.equal(serialized.includes("<Invoice"), false);
+    assert.equal(serialized.includes(peppolSentinel), false);
+    assert.equal(serialized.includes(en16931Sentinel), false);
+    assert.equal(serialized.includes(peppolBisPath), false);
+    assert.equal(serialized.includes(en16931Path), false);
+    assert.equal(serialized.includes(basename(tempRoot)), false);
+    assert.doesNotMatch(
+      serialized,
+      /\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bofficially valid\b|\blegally compliant\b|\baccepted by authority\b/i
     );
   } finally {
     await rm(tempRoot, {

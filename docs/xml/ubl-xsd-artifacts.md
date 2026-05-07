@@ -12,6 +12,13 @@ The Schematron diagnostics added in Step 47 are registry diagnostics only. They
 confirm whether local Schematron files are configured and readable. They do not
 execute Schematron validation yet.
 
+Step 48 wires those same safe Schematron artefact diagnostics into XML
+validation job results when `schematron_peppol_placeholder` is requested. The
+job result and placeholder check summary remain metadata-only: Schematron
+validation is still not executed, Peppol and EN 16931 are not certified, and no
+raw XML, Schematron file contents, or absolute local filesystem paths are
+returned.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -242,8 +249,9 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Step 47. The Schematron registry can inspect configured
-  files, but it does not execute Schematron validation yet.
+: This is expected in Steps 47 and 48. The Schematron registry can inspect
+  configured files and XML validation jobs can report safe diagnostics, but
+  they do not execute Schematron validation yet.
 
 Hash mismatch
 
@@ -255,7 +263,7 @@ Hash mismatch
 
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
-- Schematron execution is not enabled in Step 47.
+- Schematron execution is not enabled in Steps 47 or 48.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -267,5 +275,6 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 47. Do not run a new migration on
-Supabase.
+No Supabase migration is needed for Step 48. `xml_validation_jobs.result_summary`
+and `xml_validation_jobs.findings` are JSONB and can already store richer safe
+metadata. No raw XML column is added and no schema change is required.

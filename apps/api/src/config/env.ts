@@ -54,6 +54,16 @@ const envSchema = z.object({
   UBL_CREDIT_NOTE_XSD_PATH: optionalLocalPathSchema,
   UBL_XSD_ARTIFACT_VERSION: optionalLocalPathSchema,
 
+  /*
+   * Optional local Schematron artefacts for metadata-only XML validation jobs.
+   * These paths stay server-side. Step 48 only reports safe configuration
+   * diagnostics and does not enable or execute Schematron validation.
+   */
+  PEPPOL_SCHEMATRON_ROOT_DIR: optionalLocalPathSchema,
+  PEPPOL_BIS_SCHEMATRON_PATH: optionalLocalPathSchema,
+  EN16931_SCHEMATRON_PATH: optionalLocalPathSchema,
+  SCHEMATRON_ARTIFACT_VERSION: optionalLocalPathSchema,
+
   XML_TRANSIENT_PAYLOAD_DIR: optionalLocalPathSchema,
   XML_TRANSIENT_PAYLOAD_TTL_SECONDS: z.coerce
     .number()

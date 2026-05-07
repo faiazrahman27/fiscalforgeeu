@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import {
+  buildSafeSchematronArtifactDiagnostics,
   validateUblXsd,
+  type SchematronArtifactConfigInput,
+  type SchematronSafeArtifactDiagnostics,
   type UblXsdArtifactConfigInput,
   type UblXsdArtifactInfo,
   type UblXsdValidationFinding,
@@ -382,12 +385,12 @@ function buildSchematronPlaceholderFinding(): XmlValidationJobFinding {
     checkType: "schematron_peppol_placeholder",
     field: "xml",
     message:
-      "Peppol Schematron validation is planned but not active in this worker foundation step.",
+      "Schematron validation is not executed yet. Artefact registry diagnostics may show whether local Schematron artefacts are configured and readable, but this is not Peppol certification or EN 16931 certification.",
     status: "not_implemented",
     legalConfidence: "educational_simulation",
     fixSuggestion:
-      "Enable a future Schematron validation worker with local reviewed artefacts before using Peppol-style business-rule checks.",
-    sourceLabels: ["Planned validation layer"]
+      "Use these metadata-only diagnostics to prepare reviewed local artefacts; enable a future Schematron execution worker before relying on Peppol-style business-rule checks.",
+    sourceLabels: ["Schematron artefact registry diagnostics"]
   };
 }
 
@@ -423,19 +426,41 @@ function buildWorkerReadinessResult(): XmlValidationJobCheckResult {
   };
 }
 
-function buildSchematronPlaceholderResult(): XmlValidationJobCheckResult {
+function buildSchematronPlaceholderSummary(
+  diagnostics: SchematronSafeArtifactDiagnostics
+) {
+  return {
+    implemented: false,
+    validationExecutionEnabled: false,
+    validationExecuted: false,
+    markedValid: false,
+    reason: "schematron_validation_not_implemented",
+    configured: diagnostics.configured,
+    usable: diagnostics.usable,
+    readyArtifactCount: diagnostics.readyArtifactCount,
+    requiredArtifactCount: diagnostics.requiredArtifactCount,
+    allRequiredArtifactsReadable: diagnostics.allRequiredArtifactsReadable,
+    artifactVersion: diagnostics.artifactVersion,
+    validatorName: diagnostics.validatorName,
+    validatorAvailable: diagnostics.validatorAvailable,
+    checkedAt: diagnostics.checkedAt,
+    artifactDiagnostics: diagnostics
+  };
+}
+
+async function buildSchematronPlaceholderResult(input: {
+  artifactConfig?: SchematronArtifactConfigInput;
+}): Promise<XmlValidationJobCheckResult> {
   const finding = buildSchematronPlaceholderFinding();
+  const diagnostics = await buildSafeSchematronArtifactDiagnostics(
+    input.artifactConfig ?? getDefaultSchematronArtifactConfig()
+  );
 
   return {
     checkType: "schematron_peppol_placeholder",
     status: "not_implemented",
     findings: [finding],
-    summary: {
-      implemented: false,
-      validationExecuted: false,
-      markedValid: false,
-      reason: "schematron_peppol_not_implemented"
-    }
+    summary: buildSchematronPlaceholderSummary(diagnostics)
   };
 }
 
@@ -454,6 +479,15 @@ function getDefaultUblXsdArtifactConfig(): UblXsdArtifactConfigInput {
     invoiceXsdPath: env.UBL_INVOICE_XSD_PATH,
     creditNoteXsdPath: env.UBL_CREDIT_NOTE_XSD_PATH,
     artifactVersion: env.UBL_XSD_ARTIFACT_VERSION
+  };
+}
+
+function getDefaultSchematronArtifactConfig(): SchematronArtifactConfigInput {
+  return {
+    rootDir: env.PEPPOL_SCHEMATRON_ROOT_DIR,
+    peppolBisSchematronPath: env.PEPPOL_BIS_SCHEMATRON_PATH,
+    en16931SchematronPath: env.EN16931_SCHEMATRON_PATH,
+    artifactVersion: env.SCHEMATRON_ARTIFACT_VERSION
   };
 }
 
@@ -511,6 +545,14 @@ function isCompletedCheckResult(result: XmlValidationJobCheckResult) {
 
 function getXsdUblResult(checkResults: readonly XmlValidationJobCheckResult[]) {
   return checkResults.find((result) => result.checkType === "xsd_ubl");
+}
+
+function getSchematronPeppolResult(
+  checkResults: readonly XmlValidationJobCheckResult[]
+) {
+  return checkResults.find(
+    (result) => result.checkType === "schematron_peppol_placeholder"
+  );
 }
 
 function getBooleanSummaryValue(
@@ -602,6 +644,7 @@ export function buildXmlValidationJobQueueFailureCompletion(input: {
       schematronPeppol: {
         requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
         implemented: false,
+        validationExecutionEnabled: false,
         validationExecuted: false,
         markedValid: false
       }
@@ -620,6 +663,7 @@ export async function buildXmlValidationJobCompletion(input: {
   rootElement: string;
   documentType: string;
   xsdArtifactConfig?: UblXsdArtifactConfigInput;
+  schematronArtifactConfig?: SchematronArtifactConfigInput;
   queueMode?: XmlValidationJobQueueMode;
   queueAttempt?: number;
   queueQueuedAt?: Date | string;
@@ -665,7 +709,11 @@ export async function buildXmlValidationJobCompletion(input: {
     }
 
     if (check === "schematron_peppol_placeholder") {
-      const result = buildSchematronPlaceholderResult();
+      const result = await buildSchematronPlaceholderResult({
+        ...(input.schematronArtifactConfig
+          ? { artifactConfig: input.schematronArtifactConfig }
+          : {})
+      });
       failedChecks.push(check);
       checkResults.push(result);
       findings.push(...result.findings);
@@ -674,6 +722,8 @@ export async function buildXmlValidationJobCompletion(input: {
 
   const xsdUblResult = getXsdUblResult(checkResults);
   const xsdUblSummary = xsdUblResult?.summary;
+  const schematronPeppolResult = getSchematronPeppolResult(checkResults);
+  const schematronPeppolSummary = schematronPeppolResult?.summary;
   const queueLifecycle = buildCompletedXmlValidationJobLifecycle({
     mode: input.queueMode ?? "inline",
     ...(input.queueAttempt !== undefined ? { attempt: input.queueAttempt } : {}),
@@ -727,8 +777,29 @@ export async function buildXmlValidationJobCompletion(input: {
       schematronPeppol: {
         requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
         implemented: false,
+        validationExecutionEnabled: false,
         validationExecuted: false,
-        markedValid: false
+        markedValid: false,
+        configured: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "configured"
+        ),
+        usable: getBooleanSummaryValue(schematronPeppolSummary, "usable"),
+        readyArtifactCount:
+          schematronPeppolSummary?.readyArtifactCount ?? undefined,
+        requiredArtifactCount:
+          schematronPeppolSummary?.requiredArtifactCount ?? undefined,
+        artifactVersion:
+          schematronPeppolSummary?.artifactVersion ?? undefined,
+        ...(schematronPeppolResult
+          ? { status: schematronPeppolResult.status }
+          : {}),
+        ...(schematronPeppolSummary?.artifactDiagnostics
+          ? {
+              artifactDiagnostics:
+                schematronPeppolSummary.artifactDiagnostics
+            }
+          : {})
       }
     },
     findings,

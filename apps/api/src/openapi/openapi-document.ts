@@ -286,7 +286,7 @@ const openApiDocument = {
     {
       name: "XML Validation Jobs",
       description:
-        "Metadata-only XML validation job endpoints for the validation worker foundation. UBL XSD checks are configuration-gated local technical XSD validation when local artefacts are available. Schematron, Peppol, and EN 16931 validation remain inactive/planned."
+        "Metadata-only XML validation job endpoints for the validation worker foundation. UBL XSD checks are configuration-gated local technical XSD validation when local artefacts are available. Schematron placeholder results include safe Schematron artifact diagnostics only; Schematron execution, Peppol validation, and EN 16931 validation remain disabled."
     },
     {
       name: "VAT",
@@ -709,7 +709,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "List XML validation jobs",
         description:
-          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results include safe local artefact metadata such as configured paths, artefact version, schema readability, schema hashes, validator name/availability, and dependency graph status where inspected. Failed UBL XSD checks return mapped Invoice Lantern findings with stable codes, safe fields, source labels, sanitized technical messages, and technical confidence only. UBL XSD may report not_configured when local UBL XSD artefacts are unavailable, passed or failed only after a real local XSD validation operation executes, or error for controlled validator/runtime failures. These jobs are technical sandbox records, not official validation, Peppol certification, EN 16931 certification, authority acceptance, or a compliance guarantee.",
+          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results include safe local artefact metadata such as configured paths, artefact version, schema readability, schema hashes, validator name/availability, and dependency graph status where inspected. Failed UBL XSD checks return mapped Invoice Lantern findings with stable codes, safe fields, source labels, sanitized technical messages, and technical confidence only. UBL XSD may report not_configured when local UBL XSD artefacts are unavailable, passed or failed only after a real local XSD validation operation executes, or error for controlled validator/runtime failures. schematron_peppol_placeholder results may include metadata-only safe Schematron artifact diagnostics with configured/readable/usable status, safe labels, basenames, relativePathUnderRoot, SHA-256 hashes, checkedAt, and a disclaimer. Schematron execution is not implemented, validationExecutionEnabled is false, validationExecuted is false, and markedValid is false. Public responses do not include raw XML, Schematron contents, or full absolute Schematron paths. These jobs are technical sandbox records with no certification, no authority acceptance, and no compliance guarantee.",
         scope: "xml:validation_jobs",
         parameters: [
           {
@@ -745,7 +745,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "Create an XML validation job",
         description:
-          "Creates a metadata-only XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, and planned Schematron checks. UBL XSD returns not_configured when local UBL XSD artefacts for Invoice or CreditNote are missing, unreadable, outside the configured root, or not configured; passed or failed only after a real local XSD validation operation executes; and error for controlled validator/runtime or schema dependency failures. Failed UBL XSD results map xmllint-wasm messages into mapped Invoice Lantern findings with stable codes such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, and UBL_XSD_VALUE_INVALID. Server-side artefact configuration uses UBL_XSD_ROOT_DIR, UBL_INVOICE_XSD_PATH, UBL_CREDIT_NOTE_XSD_PATH, and UBL_XSD_ARTIFACT_VERSION. Results expose safe artefact metadata including artifactVersion, validatorName, validatorAvailable, schema SHA-256 hashes, and dependency graph status where inspected. Schematron remains planned/inactive. This endpoint does not perform Peppol certification, EN 16931 certification, authority acceptance, filing, or legal/tax/accounting compliance validation.",
+          "Creates a metadata-only XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, and schematron_peppol_placeholder metadata diagnostics. UBL XSD returns not_configured when local UBL XSD artefacts for Invoice or CreditNote are missing, unreadable, outside the configured root, or not configured; passed or failed only after a real local XSD validation operation executes; and error for controlled validator/runtime or schema dependency failures. Failed UBL XSD results map xmllint-wasm messages into mapped Invoice Lantern findings with stable codes such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, and UBL_XSD_VALUE_INVALID. Server-side UBL XSD artefact configuration uses UBL_XSD_ROOT_DIR, UBL_INVOICE_XSD_PATH, UBL_CREDIT_NOTE_XSD_PATH, and UBL_XSD_ARTIFACT_VERSION. Server-side Schematron artifact diagnostics use PEPPOL_SCHEMATRON_ROOT_DIR, PEPPOL_BIS_SCHEMATRON_PATH, EN16931_SCHEMATRON_PATH, and SCHEMATRON_ARTIFACT_VERSION. Schematron metadata may include configured/readable/usable status, validatorName, validatorAvailable, artifactVersion, safe labels, basenames, relativePathUnderRoot, SHA-256 hashes, checkedAt, validationExecutionEnabled, validationExecuted, markedValid, and a disclaimer. Schematron execution is not implemented; validationExecutionEnabled is false, validationExecuted is false, and markedValid is false. Public responses do not include raw XML, Schematron contents, or full absolute Schematron paths. This endpoint performs no certification, no authority acceptance, no filing, and no legal/tax/accounting compliance validation.",
         scope: "xml:validation_jobs",
         requestBody: {
           required: true,
@@ -1958,6 +1958,141 @@ const openApiDocument = {
           }
         }
       },
+      XmlValidationJobSchematronArtifactFileDiagnostics: {
+        type: "object",
+        description:
+          "Safe metadata-only Schematron artifact diagnostics for one configured file slot. This object never includes raw XML, Schematron file contents, or full absolute local filesystem paths.",
+        required: [
+          "artifactKind",
+          "configured",
+          "status",
+          "readable",
+          "usable",
+          "sha256",
+          "label",
+          "basename"
+        ],
+        properties: {
+          artifactKind: {
+            type: "string",
+            enum: ["peppol_bis_billing", "en16931_tc434"]
+          },
+          configured: {
+            type: "boolean"
+          },
+          status: {
+            type: "string",
+            enum: [
+              "available",
+              "missing",
+              "unreadable",
+              "out_of_root",
+              "not_configured"
+            ]
+          },
+          readable: {
+            type: "boolean"
+          },
+          usable: {
+            type: "boolean"
+          },
+          sha256: {
+            type: ["string", "null"],
+            description:
+              "SHA-256 hash of the readable Schematron artifact file when available."
+          },
+          label: {
+            type: ["string", "null"],
+            description:
+              "Safe display label: a basename or path relative under PEPPOL_SCHEMATRON_ROOT_DIR."
+          },
+          basename: {
+            type: ["string", "null"]
+          },
+          relativePathUnderRoot: {
+            type: "string",
+            description:
+              "Safe relative path under PEPPOL_SCHEMATRON_ROOT_DIR when the configured file is inside that root."
+          },
+          reason: {
+            type: "string"
+          }
+        }
+      },
+      XmlValidationJobSchematronArtifactDiagnostics: {
+        type: "object",
+        description:
+          "Metadata-only safe Schematron artifact diagnostics returned for schematron_peppol_placeholder. Schematron execution is not implemented; validationExecutionEnabled is false, validationExecuted is false, and markedValid is false. These diagnostics do not certify Peppol or EN 16931 and are not a compliance guarantee.",
+        required: [
+          "diagnosticKind",
+          "configured",
+          "usable",
+          "readyArtifactCount",
+          "requiredArtifactCount",
+          "allRequiredArtifactsReadable",
+          "validatorName",
+          "validatorAvailable",
+          "validationExecutionEnabled",
+          "artifactVersion",
+          "checkedAt",
+          "peppolBisArtifact",
+          "en16931Artifact",
+          "disclaimer"
+        ],
+        properties: {
+          diagnosticKind: {
+            type: "string",
+            const: "schematron_artifacts"
+          },
+          configured: {
+            type: "boolean"
+          },
+          usable: {
+            type: "boolean"
+          },
+          readyArtifactCount: {
+            type: "integer",
+            minimum: 0,
+            maximum: 2
+          },
+          requiredArtifactCount: {
+            type: "integer",
+            const: 2
+          },
+          allRequiredArtifactsReadable: {
+            type: "boolean"
+          },
+          validatorName: {
+            type: "string",
+            example: "schematron-placeholder"
+          },
+          validatorAvailable: {
+            type: "boolean",
+            description:
+              "False in Step 48 because no Schematron execution engine is wired into XML validation jobs."
+          },
+          validationExecutionEnabled: {
+            type: "boolean",
+            const: false
+          },
+          artifactVersion: {
+            type: ["string", "null"]
+          },
+          checkedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          peppolBisArtifact: ref(
+            "XmlValidationJobSchematronArtifactFileDiagnostics"
+          ),
+          en16931Artifact: ref(
+            "XmlValidationJobSchematronArtifactFileDiagnostics"
+          ),
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
       XmlValidationJobArtifactInfo: {
         type: "object",
         required: [
@@ -2021,7 +2156,7 @@ const openApiDocument = {
       XmlValidationJobFinding: {
         type: "object",
         description:
-          "Structured technical sandbox finding. xsd_ubl findings are mapped from local XSD validator messages and may include sanitized technical detail, but never raw XML.",
+          "Structured technical sandbox finding. xsd_ubl findings are mapped from local XSD validator messages and may include sanitized technical detail, but never raw XML. schematron_peppol_placeholder findings are metadata-only and report that Schematron validation is not executed.",
         required: [
           "code",
           "severity",
@@ -2036,7 +2171,7 @@ const openApiDocument = {
             type: "string",
             example: "UBL_XSD_ELEMENT_INVALID",
             description:
-              "Stable Invoice Lantern finding code, such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, UBL_XSD_VALUE_INVALID, UBL_XSD_NOT_CONFIGURED, UBL_XSD_VALIDATOR_ERROR, or UBL_XSD_VALIDATION_PASSED."
+              "Stable Invoice Lantern finding code, such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, UBL_XSD_VALUE_INVALID, UBL_XSD_NOT_CONFIGURED, UBL_XSD_VALIDATOR_ERROR, UBL_XSD_VALIDATION_PASSED, or PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED."
           },
           severity: {
             type: "string",
@@ -2249,6 +2384,54 @@ const openApiDocument = {
                     schemaResolutionRoot: null
                   },
                   checkedAt: "2026-05-06T12:00:00.000Z"
+                }
+              },
+              schematronPeppol: {
+                requested: true,
+                implemented: false,
+                validationExecutionEnabled: false,
+                validationExecuted: false,
+                markedValid: false,
+                configured: false,
+                usable: false,
+                readyArtifactCount: 0,
+                requiredArtifactCount: 2,
+                artifactVersion: null,
+                status: "not_implemented",
+                artifactDiagnostics: {
+                  diagnosticKind: "schematron_artifacts",
+                  configured: false,
+                  usable: false,
+                  readyArtifactCount: 0,
+                  requiredArtifactCount: 2,
+                  allRequiredArtifactsReadable: false,
+                  validatorName: "schematron-placeholder",
+                  validatorAvailable: false,
+                  validationExecutionEnabled: false,
+                  artifactVersion: null,
+                  checkedAt: "2026-05-06T12:00:00.000Z",
+                  peppolBisArtifact: {
+                    artifactKind: "peppol_bis_billing",
+                    configured: false,
+                    status: "not_configured",
+                    readable: false,
+                    usable: false,
+                    sha256: null,
+                    label: null,
+                    basename: null
+                  },
+                  en16931Artifact: {
+                    artifactKind: "en16931_tc434",
+                    configured: false,
+                    status: "not_configured",
+                    readable: false,
+                    usable: false,
+                    sha256: null,
+                    label: null,
+                    basename: null
+                  },
+                  disclaimer:
+                    "These are technical configuration diagnostics for local Schematron artefacts in Invoice Lantern. They do not execute Schematron validation."
                 }
               }
             }
