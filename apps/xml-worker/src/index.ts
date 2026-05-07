@@ -1,5 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  buildSafeUblXsdArtifactDiagnostics,
+  readUblXsdArtifactConfigFromEnv
+} from "@invoice-lantern/ubl";
 import { createXmlValidationQueueRepositoryFromEnv } from "./queue-repositories.js";
 import { runXmlValidationQueueOnce } from "./queue-runner.js";
 import { runStubXmlValidator } from "./stub-validator.js";
@@ -162,6 +166,14 @@ async function runCleanup(args: readonly string[]) {
   );
 }
 
+async function runXsdDiagnostics() {
+  const diagnostics = await buildSafeUblXsdArtifactDiagnostics(
+    readUblXsdArtifactConfigFromEnv(process.env)
+  );
+
+  console.log(JSON.stringify(diagnostics, null, 2));
+}
+
 async function main() {
   const [, , commandOrXmlPath, rawChecks] = process.argv;
 
@@ -172,6 +184,14 @@ async function main() {
 
   if (commandOrXmlPath === "cleanup") {
     await runCleanup(process.argv.slice(3));
+    return;
+  }
+
+  if (
+    commandOrXmlPath === "xsd-diagnostics" ||
+    commandOrXmlPath === "xsd:diagnostics"
+  ) {
+    await runXsdDiagnostics();
     return;
   }
 

@@ -90,6 +90,48 @@ export type UblXsdArtifactInspection = {
   creditNoteSchema: UblXsdSchemaArtifactInfo;
 };
 
+export const UBL_XSD_ARTIFACT_DIAGNOSTICS_DISCLAIMER =
+  "These are technical configuration diagnostics for local UBL XSD artefacts in Invoice Lantern. They are not official validation, Peppol certification, EN 16931 certification, legal, tax, or accounting advice, official filing, or a compliance guarantee.";
+
+export type UblXsdSafeSchemaArtifactDiagnostics = {
+  configured: boolean;
+  status: UblXsdSchemaArtifactStatus;
+  readable: boolean;
+  usable: boolean;
+  sha256: string | null;
+  label: string | null;
+  basename: string | null;
+  relativePathUnderRoot?: string;
+  reason?: string;
+};
+
+export type UblXsdSafeDependencyGraphDiagnostics = {
+  inspected: boolean;
+  status: UblXsdDependencyGraphStatus;
+  dependencyCount: number;
+  inspectedSchemaCount: number;
+  blockedDocumentType?: "invoice" | "credit_note";
+  blockedCode?: string;
+  blockedReason?: string;
+};
+
+export type UblXsdSafeArtifactDiagnostics = {
+  diagnosticKind: "ubl_xsd_artifacts";
+  configured: boolean;
+  usable: boolean;
+  readySchemaCount: number;
+  requiredSchemaCount: 2;
+  allRequiredSchemasReadable: boolean;
+  validatorName: string;
+  validatorAvailable: boolean;
+  artifactVersion: string | null;
+  checkedAt: string;
+  invoiceSchema: UblXsdSafeSchemaArtifactDiagnostics;
+  creditNoteSchema: UblXsdSafeSchemaArtifactDiagnostics;
+  dependencyGraph: UblXsdSafeDependencyGraphDiagnostics;
+  disclaimer: string;
+};
+
 export type UblXsdResolvedSchema = {
   resolvedConfig: ResolvedUblXsdArtifactConfig;
   artifactInfo: UblXsdArtifactInfo;
@@ -563,6 +605,234 @@ export async function inspectUblSchemaDependencyGraph(input: {
     status: "ready",
     schemaResolutionRoot
   });
+}
+
+function toPortableRelativePath(path: string) {
+  return path.split(/[\\/]+/).filter(Boolean).join("/");
+}
+
+type SafeSchemaPathLabels = {
+  label: string | null;
+  basename: string | null;
+  relativePathUnderRoot?: string;
+};
+
+function getSafeSchemaPathLabels(input: {
+  schemaPath: string | null;
+  rootPath: string | null;
+}): SafeSchemaPathLabels {
+  if (!input.schemaPath) {
+    return {
+      label: null,
+      basename: null
+    };
+  }
+
+  const safeBasename = basename(input.schemaPath);
+
+  if (input.rootPath && isPathInside(input.rootPath, input.schemaPath)) {
+    const relativePath = relative(input.rootPath, input.schemaPath);
+    const relativePathUnderRoot = toPortableRelativePath(relativePath);
+
+    return {
+      label: relativePathUnderRoot || safeBasename,
+      basename: safeBasename,
+      ...(relativePathUnderRoot ? { relativePathUnderRoot } : {})
+    };
+  }
+
+  return {
+    label: safeBasename,
+    basename: safeBasename
+  };
+}
+
+function buildSafeSchemaDiagnostics(input: {
+  schema: UblXsdSchemaArtifactInfo;
+  rootPath: string | null;
+}): UblXsdSafeSchemaArtifactDiagnostics {
+  const labels = getSafeSchemaPathLabels({
+    schemaPath: input.schema.path,
+    rootPath: input.rootPath
+  });
+
+  return {
+    configured: input.schema.configured,
+    status: input.schema.status,
+    readable: input.schema.readable,
+    usable: input.schema.usable,
+    sha256: input.schema.sha256,
+    label: labels.label,
+    basename: labels.basename,
+    ...(labels.relativePathUnderRoot
+      ? { relativePathUnderRoot: labels.relativePathUnderRoot }
+      : {}),
+    ...(input.schema.reason ? { reason: input.schema.reason } : {})
+  };
+}
+
+function getBlockedDependencyGraphCode(graph: UblXsdDependencyGraphInfo) {
+  if (graph.status === "missing_dependency") {
+    return "schema_dependency_missing";
+  }
+
+  if (graph.status === "unreadable_dependency") {
+    return "schema_dependency_unreadable";
+  }
+
+  if (graph.status === "external_reference_blocked") {
+    return "external_schema_location_not_supported";
+  }
+
+  if (graph.status === "error") {
+    return graph.reason ?? "schema_dependency_graph_error";
+  }
+
+  return undefined;
+}
+
+function getBlockedDependencyGraphReason(graph: UblXsdDependencyGraphInfo) {
+  if (graph.status === "missing_dependency") {
+    return "A referenced local XSD dependency is missing.";
+  }
+
+  if (graph.status === "unreadable_dependency") {
+    return "A referenced local XSD dependency is unreadable.";
+  }
+
+  if (graph.status === "external_reference_blocked") {
+    return "A referenced schema location is external and remote schema fetching is blocked.";
+  }
+
+  if (graph.status === "error") {
+    return "The local XSD dependency graph could not be inspected safely.";
+  }
+
+  return undefined;
+}
+
+async function inspectUblXsdValidatorAvailability() {
+  try {
+    await import("xmllint-wasm");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function buildSafeDependencyGraphDiagnostics(input: {
+  resolvedConfig: ResolvedUblXsdArtifactConfig;
+  invoiceSchema: UblXsdSchemaArtifactInfo;
+  creditNoteSchema: UblXsdSchemaArtifactInfo;
+}): Promise<UblXsdSafeDependencyGraphDiagnostics> {
+  const inspectableSchemas: Array<{
+    documentType: "invoice" | "credit_note";
+    schemaPath: string;
+  }> = [
+    ...(input.invoiceSchema.usable && input.invoiceSchema.path
+      ? [
+          {
+            documentType: "invoice" as const,
+            schemaPath: input.invoiceSchema.path
+          }
+        ]
+      : []),
+    ...(input.creditNoteSchema.usable && input.creditNoteSchema.path
+      ? [
+          {
+            documentType: "credit_note" as const,
+            schemaPath: input.creditNoteSchema.path
+          }
+        ]
+      : [])
+  ];
+
+  if (inspectableSchemas.length === 0) {
+    return {
+      inspected: false,
+      status: "not_inspected",
+      dependencyCount: 0,
+      inspectedSchemaCount: 0
+    };
+  }
+
+  const inspectedGraphs = await Promise.all(
+    inspectableSchemas.map(async (schema) => ({
+      documentType: schema.documentType,
+      graph: await inspectUblSchemaDependencyGraph({
+        selectedXsdPath: schema.schemaPath,
+        resolvedConfig: input.resolvedConfig
+      })
+    }))
+  );
+  const blockedGraph = inspectedGraphs.find(
+    (item) => item.graph.status !== "ready"
+  );
+
+  if (blockedGraph) {
+    const blockedCode = getBlockedDependencyGraphCode(blockedGraph.graph);
+    const blockedReason = getBlockedDependencyGraphReason(blockedGraph.graph);
+
+    return {
+      inspected: true,
+      status: blockedGraph.graph.status,
+      dependencyCount: blockedGraph.graph.dependencyCount,
+      inspectedSchemaCount: inspectedGraphs.length,
+      blockedDocumentType: blockedGraph.documentType,
+      ...(blockedCode ? { blockedCode } : {}),
+      ...(blockedReason ? { blockedReason } : {})
+    };
+  }
+
+  return {
+    inspected: true,
+    status: "ready",
+    dependencyCount: inspectedGraphs.reduce(
+      (total, item) => total + item.graph.dependencyCount,
+      0
+    ),
+    inspectedSchemaCount: inspectedGraphs.length
+  };
+}
+
+export async function buildSafeUblXsdArtifactDiagnostics(
+  config: UblXsdArtifactConfigInput | undefined
+): Promise<UblXsdSafeArtifactDiagnostics> {
+  const inspection = await inspectUblXsdArtifacts(config);
+  const validatorAvailable = await inspectUblXsdValidatorAvailability();
+  const readySchemaCount = [
+    inspection.invoiceSchema.usable,
+    inspection.creditNoteSchema.usable
+  ].filter(Boolean).length;
+
+  return {
+    diagnosticKind: "ubl_xsd_artifacts",
+    configured:
+      inspection.invoiceSchema.configured || inspection.creditNoteSchema.configured,
+    usable: readySchemaCount > 0,
+    readySchemaCount,
+    requiredSchemaCount: 2,
+    allRequiredSchemasReadable:
+      inspection.invoiceSchema.readable && inspection.creditNoteSchema.readable,
+    validatorName: UBL_XSD_VALIDATOR_NAME,
+    validatorAvailable,
+    artifactVersion: inspection.artifactInfo.artifactVersion,
+    checkedAt: inspection.artifactInfo.checkedAt,
+    invoiceSchema: buildSafeSchemaDiagnostics({
+      schema: inspection.invoiceSchema,
+      rootPath: inspection.artifactInfo.rootPath
+    }),
+    creditNoteSchema: buildSafeSchemaDiagnostics({
+      schema: inspection.creditNoteSchema,
+      rootPath: inspection.artifactInfo.rootPath
+    }),
+    dependencyGraph: await buildSafeDependencyGraphDiagnostics({
+      resolvedConfig: inspection.resolvedConfig,
+      invoiceSchema: inspection.invoiceSchema,
+      creditNoteSchema: inspection.creditNoteSchema
+    }),
+    disclaimer: UBL_XSD_ARTIFACT_DIAGNOSTICS_DISCLAIMER
+  };
 }
 
 export function withUblXsdDependencyGraph(
