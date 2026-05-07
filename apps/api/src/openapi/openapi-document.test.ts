@@ -127,6 +127,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const schematronPreflightSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronExecutionPreflight")
   );
+  const schematronPolicySchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchematronExecutionPolicy")
+  );
   const schematronArtifactSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronArtifactFileDiagnostics")
   );
@@ -156,6 +159,15 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /Schematron artifact diagnostics/i);
   assert.match(serializedPost, /schematron_adapter_preflight_v1/);
   assert.match(serializedPost, /executionPreflight/);
+  assert.match(serializedPost, /executionPolicy/);
+  assert.match(serializedPost, /schematron_policy_v1/);
+  assert.match(serializedPost, /SCHEMATRON_EXECUTION_MODE/);
+  assert.match(serializedPost, /SCHEMATRON_ENGINE/);
+  assert.match(serializedPost, /SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION/);
+  assert.match(serializedPost, /blocked_requested_execution/);
+  assert.match(serializedPost, /schematron_execution_requested_but_blocked/);
+  assert.match(serializedPost, /executionPermitted/);
+  assert.match(serializedPost, /policy metadata/);
   assert.match(serializedPost, /ready_for_future_execution/);
   assert.match(serializedPost, /schematron_execution_disabled/);
   assert.match(serializedPost, /schematron_execution_engine_not_implemented/);
@@ -203,6 +215,39 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     /schematron_execution_engine_not_implemented/
   );
   assert.match(schematronPreflightSchema, /does not execute validation/);
+  assert.match(schematronPolicySchema, /schematron_execution_policy/);
+  assert.match(schematronPolicySchema, /schematron_policy_v1/);
+  assert.match(schematronPolicySchema, /disabled/);
+  assert.match(schematronPolicySchema, /preflight_only/);
+  assert.match(schematronPolicySchema, /blocked_requested_execution/);
+  assert.match(schematronPolicySchema, /none/);
+  assert.match(schematronPolicySchema, /placeholder/);
+  assert.match(schematronPolicySchema, /future_xslt2/);
+  assert.match(schematronPolicySchema, /future_schxslt/);
+  assert.match(schematronPolicySchema, /unknown/);
+  assert.match(schematronPolicySchema, /executionPermitted/);
+  assert.match(schematronPolicySchema, /validationExecutionEnabled/);
+  assert.match(schematronPolicySchema, /schematron_execution_preflight_only/);
+  assert.match(
+    schematronPolicySchema,
+    /schematron_execution_disabled_by_policy/
+  );
+  assert.match(
+    schematronPolicySchema,
+    /schematron_execution_requested_but_blocked/
+  );
+  assert.match(
+    schematronPolicySchema,
+    /schematron_experimental_execution_not_available/
+  );
+  assert.match(schematronPolicySchema, /SCHEMATRON_EXECUTION_MODE/);
+  assert.match(schematronPolicySchema, /SCHEMATRON_ENGINE/);
+  assert.match(
+    schematronPolicySchema,
+    /SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION/
+  );
+  assert.match(schematronPolicySchema, /does not enable validation/);
+  assert.match(schematronPolicySchema, /Execution-like values are blocked/i);
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
   assert.match(schematronArtifactSchema, /basename/);
   assert.match(schematronArtifactSchema, /sha256/);
@@ -234,8 +279,14 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(jobSchema, /validationExecutionEnabled/);
   assert.match(jobSchema, /adapterVersion/);
   assert.match(jobSchema, /executionPreflight/);
+  assert.match(jobSchema, /executionPolicy/);
   assert.match(jobSchema, /preflightStatus/);
   assert.match(jobSchema, /preflightReason/);
+  assert.match(jobSchema, /policyVersion/);
+  assert.match(jobSchema, /policyMode/);
+  assert.match(jobSchema, /policyReason/);
+  assert.match(jobSchema, /engineId/);
+  assert.match(jobSchema, /executionPermitted/);
   assert.match(jobSchema, /findingContractVersion/);
   assert.match(jobSchema, /schematron_contract_v1/);
   assert.match(jobSchema, /supportedFutureFindingCodes/);

@@ -40,6 +40,18 @@ metadata is usable for a future engine boundary. It does not mean valid,
 compliant, certified, or accepted. No raw XML, Schematron file contents, or full
 absolute local filesystem paths are returned.
 
+Step 51 adds the `schematron_policy_v1` Schematron execution policy layer. XML
+validation jobs can now report the selected future engine metadata and whether
+the server policy is `disabled`, `preflight_only`, or
+`blocked_requested_execution`. The policy can be influenced by
+`SCHEMATRON_EXECUTION_MODE`, `SCHEMATRON_ENGINE`, and
+`SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION`, but in Step 51 these are policy and
+metadata controls only. Execution-like values are blocked, `executionPermitted`
+remains `false`, `validationExecutionEnabled` remains `false`, and no real
+Schematron execution is available yet. This does not certify Peppol or EN
+16931, prove compliance, provide legal/tax/accounting conclusions, or indicate
+authority acceptance.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -128,6 +140,27 @@ This setup does not add or provide:
 : Optional metadata label for the local Schematron artefact set. Use a value
   that helps identify the downloaded/reviewed artefact version, release, or
   internal review batch.
+
+`SCHEMATRON_EXECUTION_MODE`
+
+: Optional policy metadata selector. Missing or blank means `preflight_only`.
+  `disabled` records a disabled policy. `preflight_only` records metadata-only
+  preflight. Execution-like values such as `enabled`, `execute`, `real`, or
+  `production` are recorded as `blocked_requested_execution` and do not enable
+  validation in Step 51.
+
+`SCHEMATRON_ENGINE`
+
+: Optional future engine metadata selector. Supported metadata values include
+  `none`, `placeholder`, `xslt2`, `saxon`, `future_xslt2`, `schxslt`, and
+  `future_schxslt`. Unknown values are classified as `unknown`. This does not
+  load, parse, or run any engine in Step 51.
+
+`SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION`
+
+: Optional boolean-like policy metadata flag. `true`, `1`, and `yes` are treated
+  as true; other values are false. In Step 51, true still does not permit
+  execution and reports that experimental execution is not available.
 
 ## Recommended Local Structure
 
@@ -244,6 +277,20 @@ the result can also include `executionPreflight` with:
 - `validationExecutionEnabled: false`, `validationExecuted: false`, and
   `markedValid: false`.
 
+The same placeholder result can also include `executionPolicy` with:
+
+- `policyVersion: "schematron_policy_v1"`.
+- `mode` / `policyMode` values such as `disabled`, `preflight_only`, or
+  `blocked_requested_execution`.
+- `engineId` values such as `none`, `placeholder`, `future_xslt2`,
+  `future_schxslt`, or `unknown`.
+- `reason` / `policyReason` values such as
+  `schematron_execution_disabled_by_policy`,
+  `schematron_execution_preflight_only`,
+  `schematron_execution_requested_but_blocked`, or
+  `schematron_experimental_execution_not_available`.
+- `executionPermitted: false` and `validationExecutionEnabled: false`.
+
 The diagnostics do not return raw XML, schema file contents, Schematron file
 contents, secrets, or full absolute local filesystem paths.
 
@@ -284,11 +331,12 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 through 50. The Schematron registry can inspect
+: This is expected in Steps 47 through 51. The Schematron registry can inspect
   configured files, XML validation jobs can report safe diagnostics, the shared
-  finding contract can describe future sanitized rule metadata, and the Step 50
-  preflight adapter can report `ready_for_future_execution`, but they do not
-  execute Schematron validation yet.
+  finding contract can describe future sanitized rule metadata, the Step 50
+  preflight adapter can report `ready_for_future_execution`, and the Step 51
+  policy layer can report engine/policy selection metadata, but they do not
+  execute Schematron validation yet. Execution-like policy values are blocked.
 
 Hash mismatch
 
@@ -300,7 +348,9 @@ Hash mismatch
 
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
-- Schematron execution is not enabled in Steps 47 through 50.
+- Schematron execution is not enabled in Steps 47 through 51.
+- Step 51 policy variables are metadata controls only and must not be used to
+  configure production execution.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -312,7 +362,7 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 50. `xml_validation_jobs.result_summary`
+No Supabase migration is needed for Step 51. `xml_validation_jobs.result_summary`
 and `xml_validation_jobs.findings` are JSONB and can already store the safe
-Schematron finding contract and preflight metadata. No raw XML column is added
-and no schema change is required.
+Schematron finding contract, preflight metadata, and policy metadata. No raw XML
+column is added and no schema change is required.

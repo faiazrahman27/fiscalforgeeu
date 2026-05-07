@@ -27,7 +27,11 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
     PEPPOL_SCHEMATRON_ROOT_DIR: process.env.PEPPOL_SCHEMATRON_ROOT_DIR,
     PEPPOL_BIS_SCHEMATRON_PATH: process.env.PEPPOL_BIS_SCHEMATRON_PATH,
     EN16931_SCHEMATRON_PATH: process.env.EN16931_SCHEMATRON_PATH,
-    SCHEMATRON_ARTIFACT_VERSION: process.env.SCHEMATRON_ARTIFACT_VERSION
+    SCHEMATRON_ARTIFACT_VERSION: process.env.SCHEMATRON_ARTIFACT_VERSION,
+    SCHEMATRON_EXECUTION_MODE: process.env.SCHEMATRON_EXECUTION_MODE,
+    SCHEMATRON_ENGINE: process.env.SCHEMATRON_ENGINE,
+    SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION:
+      process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION
   };
 
   try {
@@ -44,6 +48,9 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
     process.env.PEPPOL_BIS_SCHEMATRON_PATH = peppolBisPath;
     process.env.EN16931_SCHEMATRON_PATH = en16931Path;
     process.env.SCHEMATRON_ARTIFACT_VERSION = "worker-step-48-test";
+    delete process.env.SCHEMATRON_EXECUTION_MODE;
+    delete process.env.SCHEMATRON_ENGINE;
+    delete process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION;
 
     const result = await runStubXmlValidator({
       xml: simpleXml,
@@ -83,6 +90,14 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
     assert.equal(schematronPeppol.validationExecutionEnabled, false);
     assert.equal(schematronPeppol.validationExecuted, false);
     assert.equal(schematronPeppol.markedValid, false);
+    assert.equal(schematronPeppol.policyVersion, "schematron_policy_v1");
+    assert.equal(schematronPeppol.policyMode, "preflight_only");
+    assert.equal(
+      schematronPeppol.policyReason,
+      "schematron_execution_preflight_only"
+    );
+    assert.equal(schematronPeppol.engineId, "placeholder");
+    assert.equal(schematronPeppol.executionPermitted, false);
     assert.equal(
       schematronPeppol.adapterVersion,
       "schematron_adapter_preflight_v1"
@@ -119,6 +134,17 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
     assert.equal(executionPreflight.validationExecutionEnabled, false);
     assert.equal(executionPreflight.validationExecuted, false);
     assert.equal(executionPreflight.markedValid, false);
+    const executionPolicy = readObject(
+      schematronPeppol.executionPolicy,
+      "schematronPeppol.executionPolicy"
+    );
+    assert.equal(executionPolicy.diagnosticKind, "schematron_execution_policy");
+    assert.equal(executionPolicy.policyVersion, "schematron_policy_v1");
+    assert.equal(executionPolicy.mode, "preflight_only");
+    assert.equal(executionPolicy.engineId, "placeholder");
+    assert.equal(executionPolicy.reason, "schematron_execution_preflight_only");
+    assert.equal(executionPolicy.executionPermitted, false);
+    assert.equal(executionPolicy.validationExecutionEnabled, false);
     assert.equal(
       schematronPeppol.findingContractVersion,
       "schematron_contract_v1"
@@ -153,6 +179,14 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
     assert.equal(checkSummary.validationExecutionEnabled, false);
     assert.equal(checkSummary.validationExecuted, false);
     assert.equal(checkSummary.markedValid, false);
+    assert.equal(checkSummary.policyVersion, "schematron_policy_v1");
+    assert.equal(checkSummary.policyMode, "preflight_only");
+    assert.equal(
+      checkSummary.policyReason,
+      "schematron_execution_preflight_only"
+    );
+    assert.equal(checkSummary.engineId, "placeholder");
+    assert.equal(checkSummary.executionPermitted, false);
     assert.equal(
       checkSummary.adapterVersion,
       "schematron_adapter_preflight_v1"
@@ -166,6 +200,7 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
       "schematron_artifacts_ready_but_execution_not_enabled"
     );
     assert.deepEqual(checkSummary.executionPreflight, executionPreflight);
+    assert.deepEqual(checkSummary.executionPolicy, executionPolicy);
     assert.equal(checkSummary.findingContractVersion, "schematron_contract_v1");
     assert.equal(
       (checkSummary.supportedFutureFindingCodes as string[]).includes(
@@ -222,5 +257,78 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
       force: true,
       recursive: true
     });
+  }
+});
+
+test("stub validator blocks execution-like Schematron policy env without execution", async () => {
+  const originalEnv = {
+    SCHEMATRON_EXECUTION_MODE: process.env.SCHEMATRON_EXECUTION_MODE,
+    SCHEMATRON_ENGINE: process.env.SCHEMATRON_ENGINE,
+    SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION:
+      process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION
+  };
+
+  try {
+    process.env.SCHEMATRON_EXECUTION_MODE = "production";
+    process.env.SCHEMATRON_ENGINE = "saxon";
+    delete process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION;
+
+    const result = await runStubXmlValidator({
+      xml: simpleXml,
+      requestedChecks: ["schematron_peppol_placeholder"]
+    });
+    const schematronPeppol = readObject(
+      result.resultSummary.schematronPeppol,
+      "resultSummary.schematronPeppol"
+    );
+    const executionPolicy = readObject(
+      schematronPeppol.executionPolicy,
+      "schematronPeppol.executionPolicy"
+    );
+    const executionPreflight = readObject(
+      schematronPeppol.executionPreflight,
+      "schematronPeppol.executionPreflight"
+    );
+    const serialized = JSON.stringify(result);
+
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.completedChecks, []);
+    assert.deepEqual(result.failedChecks, ["schematron_peppol_placeholder"]);
+    assert.equal(schematronPeppol.status, "not_implemented");
+    assert.equal(schematronPeppol.policyVersion, "schematron_policy_v1");
+    assert.equal(schematronPeppol.policyMode, "blocked_requested_execution");
+    assert.equal(
+      schematronPeppol.policyReason,
+      "schematron_execution_requested_but_blocked"
+    );
+    assert.equal(schematronPeppol.engineId, "future_xslt2");
+    assert.equal(schematronPeppol.executionPermitted, false);
+    assert.equal(schematronPeppol.validationExecutionEnabled, false);
+    assert.equal(schematronPeppol.validationExecuted, false);
+    assert.equal(schematronPeppol.markedValid, false);
+    assert.equal(schematronPeppol.preflightStatus, "unsupported");
+    assert.equal(
+      schematronPeppol.preflightReason,
+      "schematron_execution_engine_not_implemented"
+    );
+    assert.equal(executionPolicy.mode, "blocked_requested_execution");
+    assert.equal(executionPolicy.reason, "schematron_execution_requested_but_blocked");
+    assert.equal(executionPolicy.executionPermitted, false);
+    assert.equal(executionPolicy.validationExecutionEnabled, false);
+    assert.equal(executionPreflight.mode, "enabled");
+    assert.equal(executionPreflight.status, "unsupported");
+    assert.equal(executionPreflight.validationExecutionEnabled, false);
+    assert.equal(executionPreflight.validationExecuted, false);
+    assert.equal(executionPreflight.markedValid, false);
+    assert.equal(serialized.includes(simpleXml), false);
+    assert.equal(serialized.includes("<Invoice"), false);
+  } finally {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
   }
 });

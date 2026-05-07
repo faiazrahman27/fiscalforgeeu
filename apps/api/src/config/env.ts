@@ -20,6 +20,14 @@ const optionalUrlSchema = z
 
 const optionalSecretSchema = z.string().trim().default("");
 const optionalLocalPathSchema = z.string().trim().default("");
+const optionalPolicyStringSchema = z.string().trim().default("");
+const optionalBooleanLikeSchema = z.preprocess((value) => {
+  if (typeof value === "string") {
+    return ["true", "1", "yes"].includes(value.trim().toLowerCase());
+  }
+
+  return value === true;
+}, z.boolean());
 
 const envSchema = z.object({
   APP_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -63,6 +71,9 @@ const envSchema = z.object({
   PEPPOL_BIS_SCHEMATRON_PATH: optionalLocalPathSchema,
   EN16931_SCHEMATRON_PATH: optionalLocalPathSchema,
   SCHEMATRON_ARTIFACT_VERSION: optionalLocalPathSchema,
+  SCHEMATRON_EXECUTION_MODE: optionalPolicyStringSchema,
+  SCHEMATRON_ENGINE: optionalPolicyStringSchema,
+  SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION: optionalBooleanLikeSchema,
 
   XML_TRANSIENT_PAYLOAD_DIR: optionalLocalPathSchema,
   XML_TRANSIENT_PAYLOAD_TTL_SECONDS: z.coerce

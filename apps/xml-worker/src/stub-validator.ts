@@ -2,6 +2,7 @@ import {
   SCHEMATRON_EXECUTION_ADAPTER_VERSION,
   SCHEMATRON_FINDING_CONTRACT_VERSION,
   SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES,
+  buildSchematronExecutionPolicy,
   buildSchematronExecutionPreflight,
   buildSchematronExecutionDisabledFinding,
   buildSafeSchematronArtifactDiagnostics,
@@ -9,6 +10,9 @@ import {
   readSchematronArtifactConfigFromEnv,
   readUblXsdArtifactConfigFromEnv,
   validateUblXsd,
+  type SchematronExecutionMode,
+  type SchematronExecutionPolicy,
+  type SchematronExecutionPolicyInput,
   type SchematronExecutionPreflightResult,
   type SchematronSafeArtifactDiagnostics,
   type UblXsdValidationFinding
@@ -104,13 +108,20 @@ function buildWorkerReadinessResult(): XmlWorkerCheckResult {
 
 function buildSchematronPlaceholderSummary(
   diagnostics: SchematronSafeArtifactDiagnostics,
-  preflight: SchematronExecutionPreflightResult
+  preflight: SchematronExecutionPreflightResult,
+  policy: SchematronExecutionPolicy
 ) {
   return {
     adapterVersion: SCHEMATRON_EXECUTION_ADAPTER_VERSION,
     executionPreflight: preflight.safeSummary,
+    executionPolicy: policy.safeSummary,
     preflightStatus: preflight.status,
     preflightReason: preflight.reason,
+    policyVersion: policy.policyVersion,
+    policyMode: policy.mode,
+    policyReason: policy.reason,
+    engineId: policy.engineId,
+    executionPermitted: false,
     findingContractVersion: SCHEMATRON_FINDING_CONTRACT_VERSION,
     supportedFutureFindingCodes: [...SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES],
     implemented: false,
@@ -131,9 +142,44 @@ function buildSchematronPlaceholderSummary(
   };
 }
 
+function getBooleanLikeEnv(value: string | undefined) {
+  return ["true", "1", "yes"].includes(value?.trim().toLowerCase() ?? "");
+}
+
+function readSchematronExecutionPolicyInputFromEnv(): SchematronExecutionPolicyInput {
+  return {
+    ...(process.env.SCHEMATRON_EXECUTION_MODE !== undefined
+      ? { requestedMode: process.env.SCHEMATRON_EXECUTION_MODE }
+      : {}),
+    ...(process.env.SCHEMATRON_ENGINE !== undefined
+      ? { requestedEngine: process.env.SCHEMATRON_ENGINE }
+      : {}),
+    allowExperimentalExecution: getBooleanLikeEnv(
+      process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION
+    )
+  };
+}
+
+function getAdapterModeForPolicy(
+  policy: SchematronExecutionPolicy
+): SchematronExecutionMode {
+  if (policy.mode === "disabled") {
+    return "disabled";
+  }
+
+  if (policy.mode === "blocked_requested_execution") {
+    return "enabled";
+  }
+
+  return "preflight_only";
+}
+
 async function buildSchematronPlaceholderResult(input: {
   xml: string;
 }): Promise<XmlWorkerCheckResult> {
+  const policy = buildSchematronExecutionPolicy(
+    readSchematronExecutionPolicyInputFromEnv()
+  );
   const diagnostics = await buildSafeSchematronArtifactDiagnostics(
     readSchematronArtifactConfigFromEnv()
   );
@@ -141,7 +187,7 @@ async function buildSchematronPlaceholderResult(input: {
     xml: input.xml,
     requestedLayer: "peppol_bis_billing",
     artifactDiagnostics: diagnostics,
-    mode: "preflight_only"
+    mode: getAdapterModeForPolicy(policy)
   });
   const finding = buildSchematronPlaceholderFinding(diagnostics);
 
@@ -149,7 +195,7 @@ async function buildSchematronPlaceholderResult(input: {
     checkType: "schematron_peppol_placeholder",
     status: "not_implemented",
     findings: [finding],
-    summary: buildSchematronPlaceholderSummary(diagnostics, preflight)
+    summary: buildSchematronPlaceholderSummary(diagnostics, preflight, policy)
   };
 }
 
@@ -331,10 +377,21 @@ export async function runStubXmlValidator(
           schematronPeppolSummary?.adapterVersion ?? undefined,
         executionPreflight:
           schematronPeppolSummary?.executionPreflight ?? undefined,
+        executionPolicy:
+          schematronPeppolSummary?.executionPolicy ?? undefined,
         preflightStatus:
           schematronPeppolSummary?.preflightStatus ?? undefined,
         preflightReason:
           schematronPeppolSummary?.preflightReason ?? undefined,
+        policyVersion:
+          schematronPeppolSummary?.policyVersion ?? undefined,
+        policyMode:
+          schematronPeppolSummary?.policyMode ?? undefined,
+        policyReason:
+          schematronPeppolSummary?.policyReason ?? undefined,
+        engineId:
+          schematronPeppolSummary?.engineId ?? undefined,
+        executionPermitted: false,
         validationExecutionEnabled: false,
         validationExecuted: false,
         markedValid: false,

@@ -458,6 +458,14 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(schematronPeppol.validationExecutionEnabled, false);
   assert.equal(schematronPeppol.validationExecuted, false);
   assert.equal(schematronPeppol.markedValid, false);
+  assert.equal(schematronPeppol.policyVersion, "schematron_policy_v1");
+  assert.equal(schematronPeppol.policyMode, "preflight_only");
+  assert.equal(
+    schematronPeppol.policyReason,
+    "schematron_execution_preflight_only"
+  );
+  assert.equal(schematronPeppol.engineId, "placeholder");
+  assert.equal(schematronPeppol.executionPermitted, false);
   assert.equal(
     schematronPeppol.adapterVersion,
     "schematron_adapter_preflight_v1"
@@ -488,6 +496,17 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(schematronPreflight.validationExecutionEnabled, false);
   assert.equal(schematronPreflight.validationExecuted, false);
   assert.equal(schematronPreflight.markedValid, false);
+  const executionPolicy = readObject(
+    schematronPeppol.executionPolicy,
+    "schematronPeppol.executionPolicy"
+  );
+  assert.equal(executionPolicy.diagnosticKind, "schematron_execution_policy");
+  assert.equal(executionPolicy.policyVersion, "schematron_policy_v1");
+  assert.equal(executionPolicy.mode, "preflight_only");
+  assert.equal(executionPolicy.engineId, "placeholder");
+  assert.equal(executionPolicy.reason, "schematron_execution_preflight_only");
+  assert.equal(executionPolicy.executionPermitted, false);
+  assert.equal(executionPolicy.validationExecutionEnabled, false);
   assert.equal(
     schematronPeppol.findingContractVersion,
     "schematron_contract_v1"
@@ -524,6 +543,14 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(schematronCheckSummary.validationExecutionEnabled, false);
   assert.equal(schematronCheckSummary.validationExecuted, false);
   assert.equal(schematronCheckSummary.markedValid, false);
+  assert.equal(schematronCheckSummary.policyVersion, "schematron_policy_v1");
+  assert.equal(schematronCheckSummary.policyMode, "preflight_only");
+  assert.equal(
+    schematronCheckSummary.policyReason,
+    "schematron_execution_preflight_only"
+  );
+  assert.equal(schematronCheckSummary.engineId, "placeholder");
+  assert.equal(schematronCheckSummary.executionPermitted, false);
   assert.equal(
     schematronCheckSummary.adapterVersion,
     "schematron_adapter_preflight_v1"
@@ -537,6 +564,7 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
     schematronCheckSummary.executionPreflight,
     schematronPreflight
   );
+  assert.deepEqual(schematronCheckSummary.executionPolicy, executionPolicy);
   assert.equal(
     schematronCheckSummary.findingContractVersion,
     "schematron_contract_v1"
@@ -588,6 +616,106 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
 
   assert.equal(storedData?.includes(simpleUblInvoiceXml), false);
   assert.equal(storedData?.includes("<Invoice"), false);
+});
+
+test("Schematron execution-like policy request is blocked without validation execution", async () => {
+  const rootElement = detectXmlRootElement(simpleUblInvoiceXml);
+  const documentType = detectXmlDocumentType(rootElement);
+  const completion = await buildXmlValidationJobCompletion({
+    xml: simpleUblInvoiceXml,
+    xmlSha256: sha256(simpleUblInvoiceXml),
+    xmlSizeBytes: Buffer.byteLength(simpleUblInvoiceXml, "utf8"),
+    requestedChecks: ["schematron_peppol_placeholder"],
+    safety: inspectXmlSafety(simpleUblInvoiceXml),
+    rootElement,
+    documentType,
+    schematronExecutionPolicyInput: {
+      requestedMode: "enabled",
+      requestedEngine: "saxon"
+    }
+  });
+  const schematronPeppol = readObject(
+    completion.resultSummary.schematronPeppol,
+    "completion.schematronPeppol"
+  );
+  const executionPolicy = readObject(
+    schematronPeppol.executionPolicy,
+    "schematronPeppol.executionPolicy"
+  );
+
+  assert.deepEqual(completion.completedChecks, []);
+  assert.deepEqual(completion.failedChecks, [
+    "schematron_peppol_placeholder"
+  ]);
+  assert.equal(schematronPeppol.status, "not_implemented");
+  assert.equal(schematronPeppol.policyVersion, "schematron_policy_v1");
+  assert.equal(schematronPeppol.policyMode, "blocked_requested_execution");
+  assert.equal(
+    schematronPeppol.policyReason,
+    "schematron_execution_requested_but_blocked"
+  );
+  assert.equal(schematronPeppol.engineId, "future_xslt2");
+  assert.equal(schematronPeppol.executionPermitted, false);
+  assert.equal(schematronPeppol.validationExecutionEnabled, false);
+  assert.equal(schematronPeppol.validationExecuted, false);
+  assert.equal(schematronPeppol.markedValid, false);
+  assert.equal(schematronPeppol.preflightStatus, "unsupported");
+  assert.equal(
+    schematronPeppol.preflightReason,
+    "schematron_execution_engine_not_implemented"
+  );
+  assert.equal(executionPolicy.mode, "blocked_requested_execution");
+  assert.equal(executionPolicy.engineId, "future_xslt2");
+  assert.equal(executionPolicy.executionPermitted, false);
+  assert.equal(executionPolicy.validationExecutionEnabled, false);
+  assert.equal(JSON.stringify(completion).includes(simpleUblInvoiceXml), false);
+  assert.equal(JSON.stringify(completion).includes("<Invoice"), false);
+});
+
+test("Schematron disabled policy reports disabled preflight without execution", async () => {
+  const rootElement = detectXmlRootElement(simpleUblInvoiceXml);
+  const documentType = detectXmlDocumentType(rootElement);
+  const completion = await buildXmlValidationJobCompletion({
+    xml: simpleUblInvoiceXml,
+    xmlSha256: sha256(simpleUblInvoiceXml),
+    xmlSizeBytes: Buffer.byteLength(simpleUblInvoiceXml, "utf8"),
+    requestedChecks: ["schematron_peppol_placeholder"],
+    safety: inspectXmlSafety(simpleUblInvoiceXml),
+    rootElement,
+    documentType,
+    schematronExecutionPolicyInput: {
+      requestedMode: "disabled",
+      requestedEngine: "none"
+    }
+  });
+  const schematronPeppol = readObject(
+    completion.resultSummary.schematronPeppol,
+    "completion.schematronPeppol"
+  );
+  const executionPolicy = readObject(
+    schematronPeppol.executionPolicy,
+    "schematronPeppol.executionPolicy"
+  );
+
+  assert.deepEqual(completion.completedChecks, []);
+  assert.deepEqual(completion.failedChecks, [
+    "schematron_peppol_placeholder"
+  ]);
+  assert.equal(schematronPeppol.status, "not_implemented");
+  assert.equal(schematronPeppol.policyMode, "disabled");
+  assert.equal(
+    schematronPeppol.policyReason,
+    "schematron_execution_disabled_by_policy"
+  );
+  assert.equal(schematronPeppol.engineId, "none");
+  assert.equal(schematronPeppol.executionPermitted, false);
+  assert.equal(schematronPeppol.validationExecutionEnabled, false);
+  assert.equal(schematronPeppol.validationExecuted, false);
+  assert.equal(schematronPeppol.markedValid, false);
+  assert.equal(schematronPeppol.preflightStatus, "disabled");
+  assert.equal(schematronPeppol.preflightReason, "schematron_execution_disabled");
+  assert.equal(executionPolicy.mode, "disabled");
+  assert.equal(executionPolicy.engineId, "none");
 });
 
 test("configured missing UBL XSD artefact paths produce safe not_configured metadata", async () => {
@@ -874,6 +1002,14 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.equal(schematronPeppol.validationExecutionEnabled, false);
     assert.equal(schematronPeppol.validationExecuted, false);
     assert.equal(schematronPeppol.markedValid, false);
+    assert.equal(schematronPeppol.policyVersion, "schematron_policy_v1");
+    assert.equal(schematronPeppol.policyMode, "preflight_only");
+    assert.equal(
+      schematronPeppol.policyReason,
+      "schematron_execution_preflight_only"
+    );
+    assert.equal(schematronPeppol.engineId, "placeholder");
+    assert.equal(schematronPeppol.executionPermitted, false);
     assert.equal(
       schematronPeppol.adapterVersion,
       "schematron_adapter_preflight_v1"
@@ -910,6 +1046,20 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.equal(executionPreflight.validationExecutionEnabled, false);
     assert.equal(executionPreflight.validationExecuted, false);
     assert.equal(executionPreflight.markedValid, false);
+    const executionPolicy = readObject(
+      schematronPeppol.executionPolicy,
+      "schematronPeppol.executionPolicy"
+    );
+    assert.equal(executionPolicy.diagnosticKind, "schematron_execution_policy");
+    assert.equal(executionPolicy.policyVersion, "schematron_policy_v1");
+    assert.equal(executionPolicy.mode, "preflight_only");
+    assert.equal(executionPolicy.engineId, "placeholder");
+    assert.equal(
+      executionPolicy.reason,
+      "schematron_execution_preflight_only"
+    );
+    assert.equal(executionPolicy.executionPermitted, false);
+    assert.equal(executionPolicy.validationExecutionEnabled, false);
     assert.equal(
       schematronPeppol.findingContractVersion,
       "schematron_contract_v1"
@@ -947,6 +1097,14 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.equal(schematronCheckSummary.validationExecutionEnabled, false);
     assert.equal(schematronCheckSummary.validationExecuted, false);
     assert.equal(schematronCheckSummary.markedValid, false);
+    assert.equal(schematronCheckSummary.policyVersion, "schematron_policy_v1");
+    assert.equal(schematronCheckSummary.policyMode, "preflight_only");
+    assert.equal(
+      schematronCheckSummary.policyReason,
+      "schematron_execution_preflight_only"
+    );
+    assert.equal(schematronCheckSummary.engineId, "placeholder");
+    assert.equal(schematronCheckSummary.executionPermitted, false);
     assert.equal(
       schematronCheckSummary.adapterVersion,
       "schematron_adapter_preflight_v1"
@@ -963,6 +1121,7 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
       schematronCheckSummary.executionPreflight,
       executionPreflight
     );
+    assert.deepEqual(schematronCheckSummary.executionPolicy, executionPolicy);
     assert.equal(
       schematronCheckSummary.findingContractVersion,
       "schematron_contract_v1"
