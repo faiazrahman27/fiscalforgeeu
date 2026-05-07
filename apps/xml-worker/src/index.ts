@@ -3,6 +3,10 @@ import path from "node:path";
 import { createXmlValidationQueueRepositoryFromEnv } from "./queue-repositories.js";
 import { runXmlValidationQueueOnce } from "./queue-runner.js";
 import { runStubXmlValidator } from "./stub-validator.js";
+import {
+  DEFAULT_TRANSIENT_XML_PAYLOAD_MAX_BYTES,
+  getDefaultTransientXmlPayloadRootDir
+} from "./transient-xml-payload-store.js";
 import type { XmlWorkerCheck } from "./worker-types.js";
 
 const allowedChecks = new Set<XmlWorkerCheck>([
@@ -58,11 +62,46 @@ function normalizeStorage(value: string | undefined): QueueRunnerCliStorage {
   return "auto";
 }
 
+function getMonorepoRootFromCwd() {
+  const cwd = process.cwd();
+  const baseName = path.basename(cwd);
+
+  if (baseName === "api" || baseName === "xml-worker" || baseName === "web") {
+    return path.resolve(cwd, "..", "..");
+  }
+
+  if (baseName === "apps") {
+    return path.resolve(cwd, "..");
+  }
+
+  return cwd;
+}
+
+function getDefaultXmlValidationJobDataDir() {
+  return path.join(getMonorepoRootFromCwd(), "apps", "api", ".data");
+}
+
+function normalizePositiveInteger(value: string | undefined, fallback: number) {
+  const numericValue = Number(value);
+
+  return Number.isInteger(numericValue) && numericValue > 0
+    ? numericValue
+    : fallback;
+}
+
 async function runQueueOnce(args: readonly string[]) {
   const storage = normalizeStorage(readCliOption(args, "--storage"));
   const dataDir =
-    readCliOption(args, "--data-dir") ?? path.join(process.cwd(), ".data");
+    readCliOption(args, "--data-dir") ??
+    process.env.XML_VALIDATION_JOB_DATA_DIR?.trim() ??
+    getDefaultXmlValidationJobDataDir();
   const organizationId = readCliOption(args, "--organization-id");
+  const transientPayloadRootDir =
+    readCliOption(args, "--payload-dir") ?? getDefaultTransientXmlPayloadRootDir();
+  const transientPayloadMaxBytes = normalizePositiveInteger(
+    process.env.API_BODY_LIMIT_BYTES,
+    DEFAULT_TRANSIENT_XML_PAYLOAD_MAX_BYTES
+  );
   const queueRepository = createXmlValidationQueueRepositoryFromEnv({
     env: process.env,
     dataDir,
@@ -70,7 +109,11 @@ async function runQueueOnce(args: readonly string[]) {
     ...(organizationId ? { organizationId } : {})
   });
   const result = await runXmlValidationQueueOnce({
-    repository: queueRepository.repository
+    repository: queueRepository.repository,
+    transientPayloadStore: {
+      rootDir: transientPayloadRootDir,
+      maxBytes: transientPayloadMaxBytes
+    }
   });
 
   console.log(

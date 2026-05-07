@@ -65,6 +65,7 @@ export type CreateXmlValidationJobInput = {
   xmlSha256: string;
   xmlSizeBytes: number;
   requestedChecks: XmlValidationJobCheck[];
+  resultSummary?: Record<string, unknown>;
   disclaimer: string;
   createdBy?: string | null;
 };
@@ -523,7 +524,7 @@ function buildSupabaseXmlValidationJobValues(input: CreateXmlValidationJobInput)
     requested_checks: input.requestedChecks,
     completed_checks: [],
     failed_checks: [],
-    result_summary: buildQueuedResultSummary(now),
+    result_summary: input.resultSummary ?? buildQueuedResultSummary(now),
     findings: [],
     disclaimer: input.disclaimer,
     created_by: input.createdBy ?? null
@@ -778,7 +779,7 @@ export async function createXmlValidationJob(
     failedAt: null,
     errorCode: null,
     errorMessage: null,
-    resultSummary: buildQueuedResultSummary(now),
+    resultSummary: input.resultSummary ?? buildQueuedResultSummary(now),
     findings: [],
     disclaimer: input.disclaimer,
     createdBy: input.createdBy ?? null,

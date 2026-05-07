@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -17,6 +17,13 @@ import {
   type XmlValidationQueueJob,
   type XmlValidationQueueRepository
 } from "./queue-runner.js";
+import {
+  createTransientXmlPayload,
+  inspectTransientXmlPayloadMetadata,
+  XML_TRANSIENT_PAYLOAD_EXPIRED_CODE,
+  XML_TRANSIENT_PAYLOAD_HASH_MISMATCH_CODE,
+  XML_TRANSIENT_PAYLOAD_MISSING_CODE
+} from "./transient-xml-payload-store.js";
 
 const fixedNow = new Date("2026-05-07T10:30:00.000Z");
 const queuedAt = "2026-05-07T10:00:00.000Z";
@@ -30,8 +37,9 @@ function createClaimedJob(input: {
   xmlSha256?: string;
   xmlSizeBytes?: number;
   requestedChecks?: XmlValidationQueueJob["requestedChecks"];
+  resultSummary?: Record<string, unknown>;
 } = {}): XmlValidationQueueJob {
-  const resultSummary = {
+  const resultSummary = input.resultSummary ?? {
     queue: buildRunningQueueLifecycleFromSummary({
       existingSummary: {
         queue: {
@@ -280,6 +288,234 @@ test("queue runner fails mismatched transient XML without validation output", as
   assert.equal(failInput.resultSummary.xsdUbl instanceof Object, true);
   assert.equal(JSON.stringify(failInput).includes(rawXml), false);
   assert.equal(JSON.stringify(failInput).includes("MISMATCHED-XML-STEP-43"), false);
+});
+
+test("queue runner completes from transient payload reference and deletes payload", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-"));
+  const rawXml = "<Invoice><ID>TRANSIENT-RUNNER-STEP-44</ID></Invoice>";
+
+  try {
+    const reference = await createTransientXmlPayload({
+      xml: rawXml,
+      rootDir,
+      now: fixedNow,
+      ttlSeconds: 600
+    });
+    const job = createClaimedJob({
+      xmlSha256: sha256(rawXml),
+      xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+      requestedChecks: ["worker_readiness"],
+      resultSummary: {
+        queue: buildRunningQueueLifecycleFromSummary({
+          existingSummary: {
+            queue: {
+              queuedAt
+            }
+          },
+          now: startedAt,
+          claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+        }),
+        transientPayload: reference
+      }
+    });
+    const fake = createFakeRepository(job);
+    const result = await runXmlValidationQueueOnce({
+      repository: fake.repository,
+      transientPayloadStore: {
+        rootDir,
+        maxBytes: 2 * 1024 * 1024,
+        now: () => fixedNow
+      },
+      now: () => fixedNow
+    });
+    const completeInput = fake.getCompleteInput();
+    const metadata = await inspectTransientXmlPayloadMetadata({
+      payloadId: reference.payloadId,
+      rootDir
+    });
+
+    assert.equal(result.status, "completed");
+    assert.ok(completeInput);
+    assert.deepEqual(completeInput.completedChecks, ["worker_readiness"]);
+    assert.equal(metadata.exists, false);
+    assert.equal(JSON.stringify(completeInput).includes(rawXml), false);
+    assert.equal(
+      JSON.stringify(completeInput).includes("TRANSIENT-RUNNER-STEP-44"),
+      false
+    );
+  } finally {
+    await rm(rootDir, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("queue runner fails missing transient payload and keeps raw XML absent", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-"));
+  const reference = {
+    payloadId: "xmlpayload_11111111-1111-4111-8111-111111111111",
+    sha256: "1".repeat(64),
+    byteLength: 12,
+    createdAt: fixedNow.toISOString(),
+    expiresAt: new Date(fixedNow.getTime() + 60000).toISOString(),
+    storageProvider: "local_file_v1" as const
+  };
+  const job = createClaimedJob({
+    requestedChecks: ["worker_readiness"],
+    resultSummary: {
+      queue: buildRunningQueueLifecycleFromSummary({
+        existingSummary: {
+          queue: {
+            queuedAt
+          }
+        },
+        now: startedAt,
+        claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+      }),
+      transientPayload: reference
+    }
+  });
+
+  try {
+    const fake = createFakeRepository(job);
+    const result = await runXmlValidationQueueOnce({
+      repository: fake.repository,
+      transientPayloadStore: {
+        rootDir,
+        now: () => fixedNow
+      },
+      now: () => fixedNow
+    });
+    const failInput = fake.getFailInput();
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.errorCode, XML_TRANSIENT_PAYLOAD_MISSING_CODE);
+    assert.ok(failInput);
+    assert.equal(failInput.errorCode, XML_TRANSIENT_PAYLOAD_MISSING_CODE);
+    assert.equal(JSON.stringify(failInput).includes("<Invoice"), false);
+  } finally {
+    await rm(rootDir, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("queue runner fails expired transient payload and deletes payload", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-"));
+  const rawXml = "<Invoice><ID>TRANSIENT-RUNNER-EXPIRED</ID></Invoice>";
+
+  try {
+    const reference = await createTransientXmlPayload({
+      xml: rawXml,
+      rootDir,
+      now: fixedNow,
+      ttlSeconds: 60
+    });
+    const job = createClaimedJob({
+      xmlSha256: sha256(rawXml),
+      xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+      requestedChecks: ["worker_readiness"],
+      resultSummary: {
+        queue: buildRunningQueueLifecycleFromSummary({
+          existingSummary: {
+            queue: {
+              queuedAt
+            }
+          },
+          now: startedAt,
+          claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+        }),
+        transientPayload: reference
+      }
+    });
+    const fake = createFakeRepository(job);
+    const result = await runXmlValidationQueueOnce({
+      repository: fake.repository,
+      transientPayloadStore: {
+        rootDir,
+        now: () => new Date(fixedNow.getTime() + 61000)
+      },
+      now: () => fixedNow
+    });
+    const metadata = await inspectTransientXmlPayloadMetadata({
+      payloadId: reference.payloadId,
+      rootDir
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.errorCode, XML_TRANSIENT_PAYLOAD_EXPIRED_CODE);
+    assert.equal(metadata.exists, false);
+    assert.equal(JSON.stringify(result).includes(rawXml), false);
+    assert.equal(JSON.stringify(result).includes("TRANSIENT-RUNNER-EXPIRED"), false);
+  } finally {
+    await rm(rootDir, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("queue runner fails hash-mismatched transient payload and deletes payload", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-"));
+  const rawXml = "<Invoice><ID>TRANSIENT-RUNNER-HASH</ID></Invoice>";
+
+  try {
+    const reference = await createTransientXmlPayload({
+      xml: rawXml,
+      rootDir,
+      now: fixedNow,
+      ttlSeconds: 600
+    });
+    await writeFile(
+      join(rootDir, `${reference.payloadId}.xml`),
+      "<Invoice><ID>TRANSIENT-RUNNER-MASH</ID></Invoice>",
+      "utf8"
+    );
+
+    const job = createClaimedJob({
+      xmlSha256: sha256(rawXml),
+      xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+      requestedChecks: ["worker_readiness"],
+      resultSummary: {
+        queue: buildRunningQueueLifecycleFromSummary({
+          existingSummary: {
+            queue: {
+              queuedAt
+            }
+          },
+          now: startedAt,
+          claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+        }),
+        transientPayload: reference
+      }
+    });
+    const fake = createFakeRepository(job);
+    const result = await runXmlValidationQueueOnce({
+      repository: fake.repository,
+      transientPayloadStore: {
+        rootDir,
+        now: () => fixedNow
+      },
+      now: () => fixedNow
+    });
+    const metadata = await inspectTransientXmlPayloadMetadata({
+      payloadId: reference.payloadId,
+      rootDir
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.errorCode, XML_TRANSIENT_PAYLOAD_HASH_MISMATCH_CODE);
+    assert.equal(metadata.exists, false);
+    assert.equal(JSON.stringify(result).includes(rawXml), false);
+    assert.equal(JSON.stringify(result).includes("TRANSIENT-RUNNER-MASH"), false);
+  } finally {
+    await rm(rootDir, {
+      force: true,
+      recursive: true
+    });
+  }
 });
 
 test("local queue repository claims and fails a metadata-only job without storing raw XML", async () => {

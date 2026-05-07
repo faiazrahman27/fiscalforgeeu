@@ -13,6 +13,11 @@ import {
   detectXmlDocumentType,
   detectXmlRootElement
 } from "../../services/xml-validation-job-service.js";
+import {
+  deleteTransientXmlPayload,
+  inspectTransientXmlPayloadMetadata,
+  type TransientXmlPayloadReference
+} from "../../services/transient-xml-payload-store.js";
 
 const xmlValidationJobDataPath = join(
   process.cwd(),
@@ -124,6 +129,21 @@ function readObject(value: unknown, label: string): Record<string, unknown> {
   assert.equal(isPlainObject(value), true, `${label} should be an object`);
 
   return value as Record<string, unknown>;
+}
+
+function readTransientPayloadReference(
+  value: unknown
+): TransientXmlPayloadReference {
+  const reference = readObject(value, "transientPayload");
+
+  assert.equal(typeof reference.payloadId, "string");
+  assert.equal(typeof reference.sha256, "string");
+  assert.equal(typeof reference.byteLength, "number");
+  assert.equal(typeof reference.createdAt, "string");
+  assert.equal(typeof reference.expiresAt, "string");
+  assert.equal(reference.storageProvider, "local_file_v1");
+
+  return reference as TransientXmlPayloadReference;
 }
 
 async function createXmlValidationJob(requestedChecks = ["worker_readiness"]) {
@@ -241,6 +261,83 @@ test("XML validation job stores metadata, SHA-256, queue lifecycle, and complete
   assert.match(storedData ?? "", /xmlSha256/);
   assert.match(storedData ?? "", /"queue"/);
   assert.match(storedData ?? "", /"status"\s*:\s*"completed"/);
+});
+
+test("async XML validation job queues metadata and temporary payload reference only", async (t) => {
+  const app = await buildApp();
+  let transientPayload: TransientXmlPayloadReference | null = null;
+
+  t.after(async () => {
+    await app.close();
+
+    if (transientPayload) {
+      await deleteTransientXmlPayload({
+        payloadId: transientPayload.payloadId
+      });
+    }
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/xml/validation-jobs",
+    headers: {
+      "x-api-key": env.DEV_API_KEY,
+      "content-type": "application/json"
+    },
+    payload: {
+      xml: simpleUblInvoiceXml,
+      filename: "async-job-test.xml",
+      sourceType: "api_payload",
+      processingMode: "async_worker",
+      requestedChecks: ["worker_readiness"]
+    }
+  });
+
+  assert.equal(response.statusCode, 202);
+  assert.equal(response.body.includes(simpleUblInvoiceXml), false);
+  assert.equal(response.body.includes("<Invoice"), false);
+
+  const body = response.json() as Record<string, unknown>;
+  const job = readObject(body.job, "body.job");
+
+  assert.equal(job.status, "queued");
+  assert.deepEqual(job.completedChecks, []);
+  assert.deepEqual(job.failedChecks, []);
+  assert.equal(job.xmlSha256, sha256(simpleUblInvoiceXml));
+  assert.equal(job.xmlSizeBytes, Buffer.byteLength(simpleUblInvoiceXml, "utf8"));
+
+  const resultSummary = readObject(job.resultSummary, "job.resultSummary");
+  const queue = readObject(resultSummary.queue, "job.resultSummary.queue");
+
+  assert.equal(queue.status, "queued");
+  assert.equal(queue.mode, "async_worker");
+
+  transientPayload = readTransientPayloadReference(
+    resultSummary.transientPayload
+  );
+
+  assert.equal(transientPayload.sha256, sha256(simpleUblInvoiceXml));
+  assert.equal(
+    transientPayload.byteLength,
+    Buffer.byteLength(simpleUblInvoiceXml, "utf8")
+  );
+  assert.equal(JSON.stringify(transientPayload).includes(simpleUblInvoiceXml), false);
+  assert.equal(JSON.stringify(transientPayload).includes("<Invoice"), false);
+
+  const metadata = await inspectTransientXmlPayloadMetadata({
+    payloadId: transientPayload.payloadId
+  });
+
+  assert.equal(metadata.exists, true);
+  assert.equal(metadata.byteLength, Buffer.byteLength(simpleUblInvoiceXml, "utf8"));
+
+  const storedData = await readOptionalFile(xmlValidationJobDataPath);
+
+  assert.notEqual(storedData, null);
+  assert.equal(storedData?.includes(simpleUblInvoiceXml), false);
+  assert.equal(storedData?.includes("<Invoice"), false);
+  assert.match(storedData ?? "", /"status"\s*:\s*"queued"/);
+  assert.match(storedData ?? "", /"transientPayload"/);
 });
 
 test("XML validation job completion builds inline queue lifecycle metadata", async () => {

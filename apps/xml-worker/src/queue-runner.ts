@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
+import { inspectXmlSafety } from "@invoice-lantern/ubl";
 import { runStubXmlValidator } from "./stub-validator.js";
+import {
+  deleteTransientXmlPayload,
+  readTransientXmlPayload,
+  readTransientXmlPayloadReferenceFromSummary
+} from "./transient-xml-payload-store.js";
 import type {
   XmlWorkerCheck,
   XmlWorkerFinding,
@@ -26,6 +32,10 @@ const XML_VALIDATION_JOB_TRANSIENT_XML_MISMATCH_CODE =
   "XML_VALIDATION_JOB_TRANSIENT_XML_MISMATCH";
 const XML_VALIDATION_JOB_TRANSIENT_XML_MISMATCH_MESSAGE =
   "The transient XML input did not match the queued job metadata. No XML validation was executed and no success result was inferred.";
+const XML_VALIDATION_JOB_TRANSIENT_XML_UNSAFE_CODE =
+  "XML_VALIDATION_JOB_TRANSIENT_XML_UNSAFE";
+const XML_VALIDATION_JOB_TRANSIENT_XML_UNSAFE_MESSAGE =
+  "The transient XML input failed XML safety inspection. No XML validation was executed and no success result was inferred.";
 const XML_VALIDATION_JOB_WORKER_EXCEPTION_CODE =
   "XML_VALIDATION_JOB_WORKER_EXCEPTION";
 const XML_VALIDATION_JOB_WORKER_EXCEPTION_MESSAGE =
@@ -152,6 +162,11 @@ export type XmlValidationQueueRunnerResult = {
 export type RunXmlValidationQueueOnceInput = {
   repository: XmlValidationQueueRepository;
   loadTransientXml?: XmlValidationTransientXmlProvider;
+  transientPayloadStore?: {
+    rootDir?: string;
+    maxBytes?: number;
+    now?: () => Date;
+  };
   workerName?: string;
   workerVersion?: string;
   now?: () => Date;
@@ -673,6 +688,97 @@ async function failClaimedJob(input: {
   };
 }
 
+async function deleteTransientPayloadForJob(input: {
+  job: XmlValidationQueueJob;
+  rootDir?: string;
+}) {
+  const reference = readTransientXmlPayloadReferenceFromSummary(
+    input.job.resultSummary
+  );
+
+  if (!reference) {
+    return false;
+  }
+
+  try {
+    return await deleteTransientXmlPayload({
+      payloadId: reference.payloadId,
+      ...(input.rootDir ? { rootDir: input.rootDir } : {})
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function loadTransientXmlFromStore(input: {
+  job: XmlValidationQueueJob;
+  store: NonNullable<RunXmlValidationQueueOnceInput["transientPayloadStore"]>;
+}) {
+  const reference = readTransientXmlPayloadReferenceFromSummary(
+    input.job.resultSummary
+  );
+
+  if (!reference) {
+    return {
+      status: "failed" as const,
+      errorCode: XML_VALIDATION_JOB_XML_UNAVAILABLE_CODE,
+      errorMessage: XML_VALIDATION_JOB_XML_UNAVAILABLE_MESSAGE,
+      retryable: false
+    };
+  }
+
+  return readTransientXmlPayload({
+    reference,
+    ...(input.store.rootDir ? { rootDir: input.store.rootDir } : {}),
+    ...(input.store.maxBytes !== undefined
+      ? { maxBytes: input.store.maxBytes }
+      : {}),
+    ...(input.store.now ? { now: input.store.now() } : {})
+  });
+}
+
+function validateTransientXmlForJob(input: {
+  xml: string;
+  job: XmlValidationQueueJob;
+  maxBytes?: number;
+}):
+  | {
+      safe: true;
+    }
+  | {
+      safe: false;
+      errorCode: string;
+      errorMessage: string;
+    } {
+  if (
+    calculateXmlSha256(input.xml) !== input.job.xmlSha256 ||
+    getUtf8ByteLength(input.xml) !== input.job.xmlSizeBytes
+  ) {
+    return {
+      safe: false,
+      errorCode: XML_VALIDATION_JOB_TRANSIENT_XML_MISMATCH_CODE,
+      errorMessage: XML_VALIDATION_JOB_TRANSIENT_XML_MISMATCH_MESSAGE
+    };
+  }
+
+  const safety = inspectXmlSafety(input.xml, {
+    ...(input.maxBytes !== undefined ? { maxBytes: input.maxBytes } : {})
+  });
+
+  if (!safety.safe) {
+    return {
+      safe: false,
+      errorCode:
+        safety.code ?? XML_VALIDATION_JOB_TRANSIENT_XML_UNSAFE_CODE,
+      errorMessage: XML_VALIDATION_JOB_TRANSIENT_XML_UNSAFE_MESSAGE
+    };
+  }
+
+  return {
+    safe: true
+  };
+}
+
 export async function runXmlValidationQueueOnce(
   input: RunXmlValidationQueueOnceInput
 ): Promise<XmlValidationQueueRunnerResult> {
@@ -694,8 +800,41 @@ export async function runXmlValidationQueueOnce(
   }
 
   const failedAt = now().toISOString();
+  const transientPayloadRootDir = input.transientPayloadStore?.rootDir;
+  let transientXml: string | null = null;
+  let shouldDeleteTransientPayload = false;
 
-  if (!input.loadTransientXml) {
+  if (input.loadTransientXml) {
+    transientXml = await input.loadTransientXml(job);
+  } else if (input.transientPayloadStore) {
+    const payloadResult = await loadTransientXmlFromStore({
+      job,
+      store: input.transientPayloadStore
+    });
+
+    if (payloadResult.status === "failed") {
+      const result = await failClaimedJob({
+        repository: input.repository,
+        job,
+        failedAt,
+        workerName,
+        workerVersion,
+        errorCode: payloadResult.errorCode,
+        errorMessage: payloadResult.errorMessage,
+        retryable: payloadResult.retryable
+      });
+
+      await deleteTransientPayloadForJob({
+        job,
+        ...(transientPayloadRootDir ? { rootDir: transientPayloadRootDir } : {})
+      });
+
+      return result;
+    }
+
+    transientXml = payloadResult.xml;
+    shouldDeleteTransientPayload = true;
+  } else {
     return failClaimedJob({
       repository: input.repository,
       job,
@@ -707,11 +846,9 @@ export async function runXmlValidationQueueOnce(
       retryable: false
     });
   }
-
-  const transientXml = await input.loadTransientXml(job);
 
   if (!transientXml) {
-    return failClaimedJob({
+    const result = await failClaimedJob({
       repository: input.repository,
       job,
       failedAt,
@@ -721,22 +858,45 @@ export async function runXmlValidationQueueOnce(
       errorMessage: XML_VALIDATION_JOB_XML_UNAVAILABLE_MESSAGE,
       retryable: false
     });
+
+    if (shouldDeleteTransientPayload) {
+      await deleteTransientPayloadForJob({
+        job,
+        ...(transientPayloadRootDir ? { rootDir: transientPayloadRootDir } : {})
+      });
+    }
+
+    return result;
   }
 
-  if (
-    calculateXmlSha256(transientXml) !== job.xmlSha256 ||
-    getUtf8ByteLength(transientXml) !== job.xmlSizeBytes
-  ) {
-    return failClaimedJob({
+  const transientXmlValidation = validateTransientXmlForJob({
+    xml: transientXml,
+    job,
+    ...(input.transientPayloadStore?.maxBytes !== undefined
+      ? { maxBytes: input.transientPayloadStore.maxBytes }
+      : {})
+  });
+
+  if (!transientXmlValidation.safe) {
+    const result = await failClaimedJob({
       repository: input.repository,
       job,
       failedAt,
       workerName,
       workerVersion,
-      errorCode: XML_VALIDATION_JOB_TRANSIENT_XML_MISMATCH_CODE,
-      errorMessage: XML_VALIDATION_JOB_TRANSIENT_XML_MISMATCH_MESSAGE,
+      errorCode: transientXmlValidation.errorCode,
+      errorMessage: transientXmlValidation.errorMessage,
       retryable: false
     });
+
+    if (shouldDeleteTransientPayload) {
+      await deleteTransientPayloadForJob({
+        job,
+        ...(transientPayloadRootDir ? { rootDir: transientPayloadRootDir } : {})
+      });
+    }
+
+    return result;
   }
 
   try {
@@ -764,7 +924,7 @@ export async function runXmlValidationQueueOnce(
       job: completedJob ?? job
     };
   } catch {
-    return failClaimedJob({
+    return await failClaimedJob({
       repository: input.repository,
       job,
       failedAt,
@@ -774,5 +934,12 @@ export async function runXmlValidationQueueOnce(
       errorMessage: XML_VALIDATION_JOB_WORKER_EXCEPTION_MESSAGE,
       retryable: true
     });
+  } finally {
+    if (shouldDeleteTransientPayload) {
+      await deleteTransientPayloadForJob({
+        job,
+        ...(transientPayloadRootDir ? { rootDir: transientPayloadRootDir } : {})
+      });
+    }
   }
 }

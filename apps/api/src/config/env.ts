@@ -54,6 +54,14 @@ const envSchema = z.object({
   UBL_CREDIT_NOTE_XSD_PATH: optionalLocalPathSchema,
   UBL_XSD_ARTIFACT_VERSION: optionalLocalPathSchema,
 
+  XML_TRANSIENT_PAYLOAD_DIR: optionalLocalPathSchema,
+  XML_TRANSIENT_PAYLOAD_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(60)
+    .max(3600)
+    .default(600),
+
   /*
    * Supabase server-side configuration.
    *

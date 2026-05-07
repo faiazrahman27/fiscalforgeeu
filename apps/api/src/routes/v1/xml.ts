@@ -49,12 +49,18 @@ import {
   XML_VALIDATION_JOB_DISCLAIMER,
   XML_VALIDATION_JOB_WORKER_NAME,
   XML_VALIDATION_JOB_WORKER_VERSION,
+  buildQueuedXmlValidationJobLifecycle,
   buildXmlValidationJobCompletion,
   calculateXmlSha256,
   detectXmlDocumentType,
   detectXmlRootElement,
   normalizeRequestedXmlValidationChecks
 } from "../../services/xml-validation-job-service.js";
+import {
+  createTransientXmlPayload,
+  deleteTransientXmlPayload,
+  type TransientXmlPayloadReference
+} from "../../services/transient-xml-payload-store.js";
 
 const xmlBodySchema = z.string().min(1, "XML body cannot be empty");
 
@@ -87,11 +93,17 @@ const xmlValidationJobCheckSchema = z.enum([
   "schematron_peppol_placeholder"
 ]);
 
+const xmlValidationJobProcessingModeSchema = z.enum([
+  "inline",
+  "async_worker"
+]);
+
 const xmlValidationJobBodySchema = z
   .object({
     xml: z.string().min(1, "XML body cannot be empty."),
     filename: z.string().trim().max(180).optional(),
     sourceType: xmlValidationJobSourceTypeSchema.optional(),
+    processingMode: xmlValidationJobProcessingModeSchema.optional(),
     requestedChecks: z.array(xmlValidationJobCheckSchema).max(3).optional(),
     xmlReadinessReportId: z.string().uuid().nullable().optional(),
     invoiceDraftId: z.string().uuid().nullable().optional(),
@@ -239,6 +251,47 @@ function buildValidationError(message: string, details: unknown) {
 
 function sanitizeOptionalFileName(value: string | undefined) {
   return value ? safeFileName(value) : null;
+}
+
+function buildAsyncXmlValidationJobResultSummary(input: {
+  xmlSha256: string;
+  xmlSizeBytes: number;
+  rootElement: string;
+  documentType: string;
+  requestedChecks: readonly string[];
+  transientPayload: TransientXmlPayloadReference;
+}) {
+  return {
+    workerReady: false,
+    xmlSha256: input.xmlSha256,
+    xmlSizeBytes: input.xmlSizeBytes,
+    rootElement: input.rootElement,
+    documentType: input.documentType,
+    safetyPolicyPassed: true,
+    requestedChecks: input.requestedChecks,
+    completedChecks: [],
+    failedChecks: [],
+    queue: buildQueuedXmlValidationJobLifecycle(),
+    transientPayload: input.transientPayload,
+    activeValidation: {
+      xsd: false,
+      schematron: false,
+      peppolArtifacts: false,
+      en16931Certification: false
+    },
+    xsdUbl: {
+      requested: input.requestedChecks.includes("xsd_ubl"),
+      configured: false,
+      validationExecuted: false,
+      markedValid: false
+    },
+    schematronPeppol: {
+      requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
+      implemented: false,
+      validationExecuted: false,
+      markedValid: false
+    }
+  };
 }
 
 function formatXmlValidationJob(job: XmlValidationJobRecord) {
@@ -433,11 +486,30 @@ export async function xmlRoutes(app: FastifyInstance) {
       const documentType = detectXmlDocumentType(rootElement);
       const xmlSha256 = calculateXmlSha256(xml);
       const filename = sanitizeOptionalFileName(parsedBody.data.filename);
+      const processingMode = parsedBody.data.processingMode ?? "inline";
+      let transientPayload: TransientXmlPayloadReference | null = null;
 
       try {
         const authenticatedContext = getAuthenticatedXmlValidationJobContext(
           request
         );
+        transientPayload =
+          processingMode === "async_worker"
+            ? await createTransientXmlPayload({
+                xml,
+                maxBytes: env.API_BODY_LIMIT_BYTES
+              })
+            : null;
+        const asyncResultSummary = transientPayload
+          ? buildAsyncXmlValidationJobResultSummary({
+              xmlSha256,
+              xmlSizeBytes,
+              rootElement,
+              documentType,
+              requestedChecks,
+              transientPayload
+            })
+          : null;
         const createInput = {
           xmlReadinessReportId: parsedBody.data.xmlReadinessReportId ?? null,
           invoiceDraftId: parsedBody.data.invoiceDraftId ?? null,
@@ -448,6 +520,7 @@ export async function xmlRoutes(app: FastifyInstance) {
           xmlSha256,
           xmlSizeBytes,
           requestedChecks,
+          ...(asyncResultSummary ? { resultSummary: asyncResultSummary } : {}),
           disclaimer: XML_VALIDATION_JOB_DISCLAIMER
         };
 
@@ -461,6 +534,26 @@ export async function xmlRoutes(app: FastifyInstance) {
             organizationId,
             createdBy: null
           });
+        } else if (authenticatedContext) {
+          job = await createAuthenticatedXmlValidationJob(
+            authenticatedContext,
+            createInput
+          );
+        } else {
+          job = await createXmlValidationJob({
+            ...createInput,
+            organizationId,
+            createdBy: null
+          });
+        }
+
+        if (processingMode === "async_worker") {
+          return reply.status(202).send({
+            job: formatXmlValidationJob(job)
+          });
+        }
+
+        if (request.authenticatedApiKey) {
           await markOrganizationJobRunning({
             organizationId,
             jobId: job.id,
@@ -468,21 +561,12 @@ export async function xmlRoutes(app: FastifyInstance) {
             workerVersion: XML_VALIDATION_JOB_WORKER_VERSION
           });
         } else if (authenticatedContext) {
-          job = await createAuthenticatedXmlValidationJob(
-            authenticatedContext,
-            createInput
-          );
           await markAuthenticatedJobRunning(authenticatedContext, {
             jobId: job.id,
             workerName: XML_VALIDATION_JOB_WORKER_NAME,
             workerVersion: XML_VALIDATION_JOB_WORKER_VERSION
           });
         } else {
-          job = await createXmlValidationJob({
-            ...createInput,
-            organizationId,
-            createdBy: null
-          });
           await markJobRunning({
             organizationId,
             jobId: job.id,
@@ -534,6 +618,16 @@ export async function xmlRoutes(app: FastifyInstance) {
           job: formatXmlValidationJob(completedJob)
         });
       } catch (error) {
+        if (transientPayload) {
+          try {
+            await deleteTransientXmlPayload({
+              payloadId: transientPayload.payloadId
+            });
+          } catch {
+            // Best-effort cleanup only; the original storage error is more useful.
+          }
+        }
+
         return sendXmlValidationJobStorageError(reply, error);
       }
     }
