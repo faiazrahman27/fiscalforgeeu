@@ -1,4 +1,4 @@
-import type { UblXsdArtifactInfo } from "@invoice-lantern/ubl";
+import type { SchematronLayer, UblXsdArtifactInfo } from "@invoice-lantern/ubl";
 
 export type XmlWorkerCheck =
   | "worker_readiness"
@@ -8,6 +8,7 @@ export type XmlWorkerCheck =
 export type XmlWorkerCheckStatus =
   | "passed"
   | "failed"
+  | "warning"
   | "completed"
   | "not_configured"
   | "not_implemented"
@@ -29,6 +30,13 @@ export type XmlWorkerFinding = {
   legalConfidence: XmlWorkerLegalConfidence;
   fixSuggestion?: string;
   sourceLabels?: string[];
+  schematronLayer?: SchematronLayer;
+  ruleId?: string;
+  businessRuleId?: string;
+  ruleLocation?: string;
+  testExpression?: string;
+  assertionText?: string;
+  diagnosticReference?: string;
   technicalMessage?: string;
   technicalCode?: string;
   xmlLine?: number;

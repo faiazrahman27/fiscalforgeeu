@@ -1,4 +1,7 @@
 import {
+  SCHEMATRON_FINDING_CONTRACT_VERSION,
+  SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES,
+  buildSchematronExecutionDisabledFinding,
   buildSafeSchematronArtifactDiagnostics,
   inspectXmlSafety,
   readSchematronArtifactConfigFromEnv,
@@ -63,19 +66,22 @@ function buildWorkerReadinessFinding(): XmlWorkerFinding {
   };
 }
 
-function buildSchematronPlaceholderFinding(): XmlWorkerFinding {
+function buildSchematronPlaceholderFinding(
+  diagnostics: SchematronSafeArtifactDiagnostics
+): XmlWorkerFinding {
+  const finding = buildSchematronExecutionDisabledFinding({
+    configured: diagnostics.configured,
+    usable: diagnostics.usable
+  });
+
   return {
+    ...finding,
     code: "PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED",
-    severity: "warning",
-    checkType: "schematron_peppol_placeholder",
-    field: "xml",
-    message:
-      "Schematron validation is not executed yet. Artefact registry diagnostics may show whether local Schematron artefacts are configured and readable, but this is not Peppol certification or EN 16931 certification.",
-    status: "not_implemented",
-    legalConfidence: "educational_simulation",
-    fixSuggestion:
-      "Use these metadata-only diagnostics to prepare reviewed local artefacts; enable a future Schematron execution worker before relying on Peppol-style business-rule checks.",
-    sourceLabels: ["Schematron artefact registry diagnostics"]
+    technicalCode: finding.code,
+    sourceLabels: [
+      ...(finding.sourceLabels ?? []),
+      "Schematron artefact registry diagnostics"
+    ]
   };
 }
 
@@ -97,6 +103,8 @@ function buildSchematronPlaceholderSummary(
   diagnostics: SchematronSafeArtifactDiagnostics
 ) {
   return {
+    findingContractVersion: SCHEMATRON_FINDING_CONTRACT_VERSION,
+    supportedFutureFindingCodes: [...SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES],
     implemented: false,
     validationExecutionEnabled: false,
     validationExecuted: false,
@@ -116,10 +124,10 @@ function buildSchematronPlaceholderSummary(
 }
 
 async function buildSchematronPlaceholderResult(): Promise<XmlWorkerCheckResult> {
-  const finding = buildSchematronPlaceholderFinding();
   const diagnostics = await buildSafeSchematronArtifactDiagnostics(
     readSchematronArtifactConfigFromEnv()
   );
+  const finding = buildSchematronPlaceholderFinding(diagnostics);
 
   return {
     checkType: "schematron_peppol_placeholder",
@@ -304,6 +312,10 @@ export async function runStubXmlValidator(
         validationExecutionEnabled: false,
         validationExecuted: false,
         markedValid: false,
+        findingContractVersion:
+          schematronPeppolSummary?.findingContractVersion ?? undefined,
+        supportedFutureFindingCodes:
+          schematronPeppolSummary?.supportedFutureFindingCodes ?? undefined,
         configured: getBooleanSummaryValue(
           schematronPeppolSummary,
           "configured"

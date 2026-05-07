@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import {
+  SCHEMATRON_FINDING_CONTRACT_VERSION,
+  SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES,
+  buildSchematronExecutionDisabledFinding,
   buildSafeSchematronArtifactDiagnostics,
   validateUblXsd,
+  type SchematronLayer,
   type SchematronArtifactConfigInput,
   type SchematronSafeArtifactDiagnostics,
   type UblXsdArtifactConfigInput,
@@ -33,6 +37,7 @@ export type XmlValidationJobCheck = (typeof XML_VALIDATION_JOB_CHECKS)[number];
 export type XmlValidationJobCheckStatus =
   | "passed"
   | "failed"
+  | "warning"
   | "completed"
   | "not_configured"
   | "not_implemented"
@@ -57,6 +62,13 @@ export type XmlValidationJobFinding = {
   legalConfidence: "technical" | "educational_simulation";
   fixSuggestion?: string;
   sourceLabels?: string[];
+  schematronLayer?: SchematronLayer;
+  ruleId?: string;
+  businessRuleId?: string;
+  ruleLocation?: string;
+  testExpression?: string;
+  assertionText?: string;
+  diagnosticReference?: string;
   technicalMessage?: string;
   technicalCode?: string;
   xmlLine?: number;
@@ -378,19 +390,22 @@ function buildWorkerReadinessFinding(): XmlValidationJobFinding {
   };
 }
 
-function buildSchematronPlaceholderFinding(): XmlValidationJobFinding {
+function buildSchematronPlaceholderFinding(
+  diagnostics: SchematronSafeArtifactDiagnostics
+): XmlValidationJobFinding {
+  const finding = buildSchematronExecutionDisabledFinding({
+    configured: diagnostics.configured,
+    usable: diagnostics.usable
+  });
+
   return {
+    ...finding,
     code: "PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED",
-    severity: "warning",
-    checkType: "schematron_peppol_placeholder",
-    field: "xml",
-    message:
-      "Schematron validation is not executed yet. Artefact registry diagnostics may show whether local Schematron artefacts are configured and readable, but this is not Peppol certification or EN 16931 certification.",
-    status: "not_implemented",
-    legalConfidence: "educational_simulation",
-    fixSuggestion:
-      "Use these metadata-only diagnostics to prepare reviewed local artefacts; enable a future Schematron execution worker before relying on Peppol-style business-rule checks.",
-    sourceLabels: ["Schematron artefact registry diagnostics"]
+    technicalCode: finding.code,
+    sourceLabels: [
+      ...(finding.sourceLabels ?? []),
+      "Schematron artefact registry diagnostics"
+    ]
   };
 }
 
@@ -430,6 +445,8 @@ function buildSchematronPlaceholderSummary(
   diagnostics: SchematronSafeArtifactDiagnostics
 ) {
   return {
+    findingContractVersion: SCHEMATRON_FINDING_CONTRACT_VERSION,
+    supportedFutureFindingCodes: [...SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES],
     implemented: false,
     validationExecutionEnabled: false,
     validationExecuted: false,
@@ -451,10 +468,10 @@ function buildSchematronPlaceholderSummary(
 async function buildSchematronPlaceholderResult(input: {
   artifactConfig?: SchematronArtifactConfigInput;
 }): Promise<XmlValidationJobCheckResult> {
-  const finding = buildSchematronPlaceholderFinding();
   const diagnostics = await buildSafeSchematronArtifactDiagnostics(
     input.artifactConfig ?? getDefaultSchematronArtifactConfig()
   );
+  const finding = buildSchematronPlaceholderFinding(diagnostics);
 
   return {
     checkType: "schematron_peppol_placeholder",
@@ -780,6 +797,10 @@ export async function buildXmlValidationJobCompletion(input: {
         validationExecutionEnabled: false,
         validationExecuted: false,
         markedValid: false,
+        findingContractVersion:
+          schematronPeppolSummary?.findingContractVersion ?? undefined,
+        supportedFutureFindingCodes:
+          schematronPeppolSummary?.supportedFutureFindingCodes ?? undefined,
         configured: getBooleanSummaryValue(
           schematronPeppolSummary,
           "configured"

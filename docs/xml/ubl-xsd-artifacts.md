@@ -19,6 +19,16 @@ validation is still not executed, Peppol and EN 16931 are not certified, and no
 raw XML, Schematron file contents, or absolute local filesystem paths are
 returned.
 
+Step 49 adds the stable `schematron_contract_v1` Schematron finding/result
+contract foundation for future rule-level findings. Optional future fields
+include `ruleId`, `businessRuleId`, `schematronLayer`, `ruleLocation`,
+`testExpression`, `assertionText`, and `diagnosticReference`. These fields are
+sanitized and must not contain raw XML, local absolute paths, or file contents.
+This is contract preparation only: Schematron validation is still not executed,
+Schematron rules are not parsed or evaluated, and there is no certification,
+compliance guarantee, legal/tax/accounting conclusion, or authority acceptance
+claim.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -249,9 +259,10 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 and 48. The Schematron registry can inspect
-  configured files and XML validation jobs can report safe diagnostics, but
-  they do not execute Schematron validation yet.
+: This is expected in Steps 47 through 49. The Schematron registry can inspect
+  configured files, XML validation jobs can report safe diagnostics, and the
+  shared finding contract can describe future sanitized rule metadata, but they
+  do not execute Schematron validation yet.
 
 Hash mismatch
 
@@ -263,7 +274,7 @@ Hash mismatch
 
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
-- Schematron execution is not enabled in Steps 47 or 48.
+- Schematron execution is not enabled in Steps 47 through 49.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -275,6 +286,7 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 48. `xml_validation_jobs.result_summary`
-and `xml_validation_jobs.findings` are JSONB and can already store richer safe
-metadata. No raw XML column is added and no schema change is required.
+No Supabase migration is needed for Step 49. `xml_validation_jobs.result_summary`
+and `xml_validation_jobs.findings` are JSONB and can already store the safe
+Schematron finding contract metadata. No raw XML column is added and no schema
+change is required.

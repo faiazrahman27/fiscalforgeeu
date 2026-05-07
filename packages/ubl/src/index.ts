@@ -15,6 +15,7 @@ import {
 export * from "./xsd-validation-adapter.js";
 export * from "./xsd-artifact-registry.js";
 export * from "./xsd-error-mapper.js";
+export * from "./schematron-finding-contract.js";
 
 const UBL_INVOICE_NAMESPACE =
   "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";

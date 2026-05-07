@@ -196,12 +196,30 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(findingSchema, /technicalMessage/);
   assert.match(findingSchema, /technicalCode/);
   assert.match(findingSchema, /xmlLine/);
+  assert.match(findingSchema, /schematronLayer/);
+  assert.match(findingSchema, /ruleId/);
+  assert.match(findingSchema, /businessRuleId/);
+  assert.match(findingSchema, /ruleLocation/);
+  assert.match(findingSchema, /testExpression/);
+  assert.match(findingSchema, /assertionText/);
+  assert.match(findingSchema, /diagnosticReference/);
+  assert.match(findingSchema, /SCHEMATRON_EXECUTION_NOT_ENABLED/);
+  assert.match(findingSchema, /SCHEMATRON_ASSERTION_FAILED/);
+  assert.match(findingSchema, /PEPPOL_SCHEMATRON_RULE_FAILED/);
+  assert.match(findingSchema, /EN16931_SCHEMATRON_RULE_FAILED/);
   assert.match(findingSchema, /never raw XML/);
   assert.match(findingSchema, /PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED/);
   assert.match(jobSchema, /xsd_ubl/);
   assert.match(jobSchema, /artifactInfo/);
   assert.match(jobSchema, /schematron_artifacts/);
   assert.match(jobSchema, /validationExecutionEnabled/);
+  assert.match(jobSchema, /findingContractVersion/);
+  assert.match(jobSchema, /schematron_contract_v1/);
+  assert.match(jobSchema, /supportedFutureFindingCodes/);
+  assert.match(serializedPost, /findingContractVersion/);
+  assert.match(serializedPost, /schematronLayer/);
+  assert.match(serializedPost, /ruleId/);
+  assert.match(serializedPost, /businessRuleId/);
   assert.doesNotMatch(jobSchema, /xsd_ubl_placeholder/);
   assert.doesNotMatch(
     serializedPost,

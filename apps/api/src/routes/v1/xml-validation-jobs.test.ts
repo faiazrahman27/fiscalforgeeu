@@ -403,7 +403,13 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
     findings.some(
       (finding) =>
         finding.code === "PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED" &&
-        finding.status === "not_implemented"
+        finding.status === "not_implemented" &&
+        finding.technicalCode === "SCHEMATRON_EXECUTION_NOT_ENABLED" &&
+        finding.schematronLayer === "peppol_bis_billing" &&
+        Array.isArray(finding.sourceLabels) &&
+        (finding.sourceLabels as string[]).includes(
+          "SCHEMATRON_EXECUTION_NOT_ENABLED"
+        )
     ),
     true
   );
@@ -452,6 +458,34 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(schematronPeppol.validationExecutionEnabled, false);
   assert.equal(schematronPeppol.validationExecuted, false);
   assert.equal(schematronPeppol.markedValid, false);
+  assert.equal(
+    schematronPeppol.findingContractVersion,
+    "schematron_contract_v1"
+  );
+  assert.equal(
+    (schematronPeppol.supportedFutureFindingCodes as string[]).includes(
+      "SCHEMATRON_EXECUTION_NOT_ENABLED"
+    ),
+    true
+  );
+  assert.equal(
+    (schematronPeppol.supportedFutureFindingCodes as string[]).includes(
+      "SCHEMATRON_ASSERTION_FAILED"
+    ),
+    true
+  );
+  assert.equal(
+    (schematronPeppol.supportedFutureFindingCodes as string[]).includes(
+      "PEPPOL_SCHEMATRON_RULE_FAILED"
+    ),
+    true
+  );
+  assert.equal(
+    (schematronPeppol.supportedFutureFindingCodes as string[]).includes(
+      "EN16931_SCHEMATRON_RULE_FAILED"
+    ),
+    true
+  );
   assert.equal(schematronPeppol.configured, false);
   assert.equal(schematronPeppol.usable, false);
   assert.equal(schematronPeppol.readyArtifactCount, 0);
@@ -460,6 +494,16 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(schematronCheckSummary.validationExecutionEnabled, false);
   assert.equal(schematronCheckSummary.validationExecuted, false);
   assert.equal(schematronCheckSummary.markedValid, false);
+  assert.equal(
+    schematronCheckSummary.findingContractVersion,
+    "schematron_contract_v1"
+  );
+  assert.equal(
+    (schematronCheckSummary.supportedFutureFindingCodes as string[]).includes(
+      "SCHEMATRON_ASSERTION_FAILED"
+    ),
+    true
+  );
   assert.equal(schematronCheckSummary.validatorAvailable, false);
   assert.equal(schematronDiagnostics.diagnosticKind, "schematron_artifacts");
   assert.equal(schematronDiagnostics.configured, false);
@@ -786,6 +830,34 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.equal(schematronPeppol.validationExecutionEnabled, false);
     assert.equal(schematronPeppol.validationExecuted, false);
     assert.equal(schematronPeppol.markedValid, false);
+    assert.equal(
+      schematronPeppol.findingContractVersion,
+      "schematron_contract_v1"
+    );
+    assert.equal(
+      (schematronPeppol.supportedFutureFindingCodes as string[]).includes(
+        "SCHEMATRON_EXECUTION_NOT_ENABLED"
+      ),
+      true
+    );
+    assert.equal(
+      (schematronPeppol.supportedFutureFindingCodes as string[]).includes(
+        "SCHEMATRON_ASSERTION_FAILED"
+      ),
+      true
+    );
+    assert.equal(
+      (schematronPeppol.supportedFutureFindingCodes as string[]).includes(
+        "PEPPOL_SCHEMATRON_RULE_FAILED"
+      ),
+      true
+    );
+    assert.equal(
+      (schematronPeppol.supportedFutureFindingCodes as string[]).includes(
+        "EN16931_SCHEMATRON_RULE_FAILED"
+      ),
+      true
+    );
     assert.equal(schematronPeppol.configured, true);
     assert.equal(schematronPeppol.usable, true);
     assert.equal(schematronPeppol.readyArtifactCount, 2);
@@ -795,6 +867,16 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.equal(schematronCheckSummary.validationExecutionEnabled, false);
     assert.equal(schematronCheckSummary.validationExecuted, false);
     assert.equal(schematronCheckSummary.markedValid, false);
+    assert.equal(
+      schematronCheckSummary.findingContractVersion,
+      "schematron_contract_v1"
+    );
+    assert.equal(
+      (schematronCheckSummary.supportedFutureFindingCodes as string[]).includes(
+        "SCHEMATRON_ASSERTION_FAILED"
+      ),
+      true
+    );
     assert.equal(schematronCheckSummary.configured, true);
     assert.equal(schematronCheckSummary.usable, true);
     assert.equal(schematronCheckSummary.readyArtifactCount, 2);
@@ -823,6 +905,16 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.match(String(en16931Artifact.sha256), /^[a-f0-9]{64}$/);
     assert.equal(en16931Artifact.label, "tc434/EN16931-TC434.sch");
     assert.equal(en16931Artifact.basename, "EN16931-TC434.sch");
+    assert.equal(
+      completion.findings.some(
+        (finding) =>
+          finding.code === "PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED" &&
+          finding.technicalCode === "SCHEMATRON_EXECUTION_NOT_ENABLED" &&
+          finding.schematronLayer === "peppol_bis_billing" &&
+          finding.status === "not_implemented"
+      ),
+      true
+    );
     assert.equal(serialized.includes(simpleUblInvoiceXml), false);
     assert.equal(serialized.includes("<Invoice"), false);
     assert.equal(serialized.includes(peppolSentinel), false);
