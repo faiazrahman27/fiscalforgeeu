@@ -13,7 +13,7 @@
   },
   "scripts": {
     "prebuild": "npm --prefix ../invoice-core run build",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "precheck": "npm --prefix ../invoice-core run build",
     "check": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm --prefix ../invoice-core run build",
