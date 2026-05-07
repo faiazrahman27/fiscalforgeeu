@@ -131,6 +131,46 @@ function readObject(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function assertSchematronEngineCandidate(input: {
+  value: unknown;
+  label: string;
+  engineId: string;
+  availabilityStatus: string;
+  executionSupported: boolean;
+}) {
+  const engineCandidate = readObject(input.value, input.label);
+  const serialized = JSON.stringify(engineCandidate);
+
+  assert.equal(
+    engineCandidate.diagnosticKind,
+    "schematron_engine_candidate"
+  );
+  assert.equal(
+    engineCandidate.engineCandidateVersion,
+    "schematron_engine_candidate_v1"
+  );
+  assert.equal(engineCandidate.engineId, input.engineId);
+  assert.equal(
+    engineCandidate.availabilityStatus,
+    input.availabilityStatus
+  );
+  assert.equal(engineCandidate.executionSupported, input.executionSupported);
+  assert.equal(engineCandidate.executionEnabledByDefault, false);
+  assert.equal(Array.isArray(engineCandidate.capabilities), true);
+  assert.equal(serialized.includes(simpleUblInvoiceXml), false);
+  assert.equal(serialized.includes("<Invoice"), false);
+  assert.equal(serialized.includes("<schema>"), false);
+  assert.doesNotMatch(serialized, /[A-Za-z]:[\\/][^"\\s]+/);
+  assert.doesNotMatch(serialized, /\/tmp\/schematron\/[A-Za-z0-9_.-]+/);
+  assert.doesNotMatch(serialized, /file:\/\/\//i);
+  assert.doesNotMatch(
+    serialized,
+    /\bcertified\b|\bcompliant\b|\baccepted by authority\b|\blegally valid\b|\bPeppol passed\b|\bEN 16931 passed\b/i
+  );
+
+  return engineCandidate;
+}
+
 function readTransientPayloadReference(
   value: unknown
 ): TransientXmlPayloadReference {
@@ -465,6 +505,19 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
     "schematron_execution_preflight_only"
   );
   assert.equal(schematronPeppol.engineId, "placeholder");
+  assert.equal(
+    schematronPeppol.engineCandidateVersion,
+    "schematron_engine_candidate_v1"
+  );
+  assert.equal(schematronPeppol.engineAvailabilityStatus, "placeholder_only");
+  assert.equal(schematronPeppol.engineExecutionSupported, false);
+  const engineCandidate = assertSchematronEngineCandidate({
+    value: schematronPeppol.engineCandidate,
+    label: "schematronPeppol.engineCandidate",
+    engineId: "placeholder",
+    availabilityStatus: "placeholder_only",
+    executionSupported: false
+  });
   assert.equal(schematronPeppol.executionPermitted, false);
   assert.equal(
     schematronPeppol.adapterVersion,
@@ -550,6 +603,16 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
     "schematron_execution_preflight_only"
   );
   assert.equal(schematronCheckSummary.engineId, "placeholder");
+  assert.equal(
+    schematronCheckSummary.engineCandidateVersion,
+    "schematron_engine_candidate_v1"
+  );
+  assert.equal(
+    schematronCheckSummary.engineAvailabilityStatus,
+    "placeholder_only"
+  );
+  assert.equal(schematronCheckSummary.engineExecutionSupported, false);
+  assert.deepEqual(schematronCheckSummary.engineCandidate, engineCandidate);
   assert.equal(schematronCheckSummary.executionPermitted, false);
   assert.equal(
     schematronCheckSummary.adapterVersion,
@@ -631,7 +694,7 @@ test("Schematron execution-like policy request is blocked without validation exe
     documentType,
     schematronExecutionPolicyInput: {
       requestedMode: "enabled",
-      requestedEngine: "saxon"
+      requestedEngine: "future_xslt2"
     }
   });
   const schematronPeppol = readObject(
@@ -655,6 +718,23 @@ test("Schematron execution-like policy request is blocked without validation exe
     "schematron_execution_requested_but_blocked"
   );
   assert.equal(schematronPeppol.engineId, "future_xslt2");
+  assert.equal(
+    schematronPeppol.engineCandidateVersion,
+    "schematron_engine_candidate_v1"
+  );
+  assert.equal(schematronPeppol.engineAvailabilityStatus, "unavailable");
+  assert.equal(schematronPeppol.engineExecutionSupported, false);
+  const engineCandidate = assertSchematronEngineCandidate({
+    value: schematronPeppol.engineCandidate,
+    label: "schematronPeppol.engineCandidate",
+    engineId: "future_xslt2",
+    availabilityStatus: "unavailable",
+    executionSupported: false
+  });
+  assert.equal(
+    engineCandidate.reason,
+    "schematron_xslt2_engine_not_installed"
+  );
   assert.equal(schematronPeppol.executionPermitted, false);
   assert.equal(schematronPeppol.validationExecutionEnabled, false);
   assert.equal(schematronPeppol.validationExecuted, false);
@@ -668,6 +748,10 @@ test("Schematron execution-like policy request is blocked without validation exe
   assert.equal(executionPolicy.engineId, "future_xslt2");
   assert.equal(executionPolicy.executionPermitted, false);
   assert.equal(executionPolicy.validationExecutionEnabled, false);
+  assert.equal(
+    JSON.stringify(completion).includes("schematron_xslt2_engine_not_installed"),
+    true
+  );
   assert.equal(JSON.stringify(completion).includes(simpleUblInvoiceXml), false);
   assert.equal(JSON.stringify(completion).includes("<Invoice"), false);
 });
@@ -708,6 +792,19 @@ test("Schematron disabled policy reports disabled preflight without execution", 
     "schematron_execution_disabled_by_policy"
   );
   assert.equal(schematronPeppol.engineId, "none");
+  assert.equal(
+    schematronPeppol.engineCandidateVersion,
+    "schematron_engine_candidate_v1"
+  );
+  assert.equal(schematronPeppol.engineAvailabilityStatus, "not_selected");
+  assert.equal(schematronPeppol.engineExecutionSupported, false);
+  assertSchematronEngineCandidate({
+    value: schematronPeppol.engineCandidate,
+    label: "schematronPeppol.engineCandidate",
+    engineId: "none",
+    availabilityStatus: "not_selected",
+    executionSupported: false
+  });
   assert.equal(schematronPeppol.executionPermitted, false);
   assert.equal(schematronPeppol.validationExecutionEnabled, false);
   assert.equal(schematronPeppol.validationExecuted, false);
@@ -1009,6 +1106,19 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
       "schematron_execution_preflight_only"
     );
     assert.equal(schematronPeppol.engineId, "placeholder");
+    assert.equal(
+      schematronPeppol.engineCandidateVersion,
+      "schematron_engine_candidate_v1"
+    );
+    assert.equal(schematronPeppol.engineAvailabilityStatus, "placeholder_only");
+    assert.equal(schematronPeppol.engineExecutionSupported, false);
+    const engineCandidate = assertSchematronEngineCandidate({
+      value: schematronPeppol.engineCandidate,
+      label: "schematronPeppol.engineCandidate",
+      engineId: "placeholder",
+      availabilityStatus: "placeholder_only",
+      executionSupported: false
+    });
     assert.equal(schematronPeppol.executionPermitted, false);
     assert.equal(
       schematronPeppol.adapterVersion,
@@ -1104,6 +1214,16 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
       "schematron_execution_preflight_only"
     );
     assert.equal(schematronCheckSummary.engineId, "placeholder");
+    assert.equal(
+      schematronCheckSummary.engineCandidateVersion,
+      "schematron_engine_candidate_v1"
+    );
+    assert.equal(
+      schematronCheckSummary.engineAvailabilityStatus,
+      "placeholder_only"
+    );
+    assert.equal(schematronCheckSummary.engineExecutionSupported, false);
+    assert.deepEqual(schematronCheckSummary.engineCandidate, engineCandidate);
     assert.equal(schematronCheckSummary.executionPermitted, false);
     assert.equal(
       schematronCheckSummary.adapterVersion,

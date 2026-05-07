@@ -7,8 +7,10 @@ import {
   buildSchematronExecutionPreflight,
   buildSchematronExecutionDisabledFinding,
   buildSafeSchematronArtifactDiagnostics,
+  inspectSchematronEngineCandidate,
   validateUblXsd,
   type SchematronExecutionMode,
+  type SchematronEngineCandidateInfo,
   type SchematronExecutionPolicy,
   type SchematronExecutionPolicyInput,
   type SchematronExecutionPreflightResult,
@@ -451,18 +453,23 @@ function buildWorkerReadinessResult(): XmlValidationJobCheckResult {
 function buildSchematronPlaceholderSummary(
   diagnostics: SchematronSafeArtifactDiagnostics,
   preflight: SchematronExecutionPreflightResult,
-  policy: SchematronExecutionPolicy
+  policy: SchematronExecutionPolicy,
+  engineCandidate: SchematronEngineCandidateInfo
 ) {
   return {
     adapterVersion: SCHEMATRON_EXECUTION_ADAPTER_VERSION,
     executionPreflight: preflight.safeSummary,
     executionPolicy: policy.safeSummary,
+    engineCandidate: engineCandidate.safeSummary,
     preflightStatus: preflight.status,
     preflightReason: preflight.reason,
     policyVersion: policy.policyVersion,
     policyMode: policy.mode,
     policyReason: policy.reason,
     engineId: policy.engineId,
+    engineCandidateVersion: engineCandidate.engineCandidateVersion,
+    engineAvailabilityStatus: engineCandidate.availabilityStatus,
+    engineExecutionSupported: engineCandidate.executionSupported,
     executionPermitted: false,
     findingContractVersion: SCHEMATRON_FINDING_CONTRACT_VERSION,
     supportedFutureFindingCodes: [...SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES],
@@ -516,13 +523,21 @@ async function buildSchematronPlaceholderResult(input: {
     artifactDiagnostics: diagnostics,
     mode: getAdapterModeForPolicy(policy)
   });
+  const engineCandidate = await inspectSchematronEngineCandidate({
+    engineId: policy.engineId
+  });
   const finding = buildSchematronPlaceholderFinding(diagnostics);
 
   return {
     checkType: "schematron_peppol_placeholder",
     status: "not_implemented",
     findings: [finding],
-    summary: buildSchematronPlaceholderSummary(diagnostics, preflight, policy)
+    summary: buildSchematronPlaceholderSummary(
+      diagnostics,
+      preflight,
+      policy,
+      engineCandidate
+    )
   };
 }
 
@@ -861,6 +876,8 @@ export async function buildXmlValidationJobCompletion(input: {
           schematronPeppolSummary?.executionPreflight ?? undefined,
         executionPolicy:
           schematronPeppolSummary?.executionPolicy ?? undefined,
+        engineCandidate:
+          schematronPeppolSummary?.engineCandidate ?? undefined,
         preflightStatus:
           schematronPeppolSummary?.preflightStatus ?? undefined,
         preflightReason:
@@ -873,6 +890,12 @@ export async function buildXmlValidationJobCompletion(input: {
           schematronPeppolSummary?.policyReason ?? undefined,
         engineId:
           schematronPeppolSummary?.engineId ?? undefined,
+        engineCandidateVersion:
+          schematronPeppolSummary?.engineCandidateVersion ?? undefined,
+        engineAvailabilityStatus:
+          schematronPeppolSummary?.engineAvailabilityStatus ?? undefined,
+        engineExecutionSupported:
+          schematronPeppolSummary?.engineExecutionSupported ?? undefined,
         executionPermitted: false,
         validationExecutionEnabled: false,
         validationExecuted: false,

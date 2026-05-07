@@ -17,6 +17,46 @@ function readObject(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function assertSchematronEngineCandidate(input: {
+  value: unknown;
+  label: string;
+  engineId: string;
+  availabilityStatus: string;
+  executionSupported: boolean;
+}) {
+  const engineCandidate = readObject(input.value, input.label);
+  const serialized = JSON.stringify(engineCandidate);
+
+  assert.equal(
+    engineCandidate.diagnosticKind,
+    "schematron_engine_candidate"
+  );
+  assert.equal(
+    engineCandidate.engineCandidateVersion,
+    "schematron_engine_candidate_v1"
+  );
+  assert.equal(engineCandidate.engineId, input.engineId);
+  assert.equal(
+    engineCandidate.availabilityStatus,
+    input.availabilityStatus
+  );
+  assert.equal(engineCandidate.executionSupported, input.executionSupported);
+  assert.equal(engineCandidate.executionEnabledByDefault, false);
+  assert.equal(Array.isArray(engineCandidate.capabilities), true);
+  assert.equal(serialized.includes(simpleXml), false);
+  assert.equal(serialized.includes("<Invoice"), false);
+  assert.equal(serialized.includes("<schema>"), false);
+  assert.doesNotMatch(serialized, /[A-Za-z]:[\\/][^"\\s]+/);
+  assert.doesNotMatch(serialized, /\/tmp\/schematron\/[A-Za-z0-9_.-]+/);
+  assert.doesNotMatch(serialized, /file:\/\/\//i);
+  assert.doesNotMatch(
+    serialized,
+    /\bcertified\b|\bcompliant\b|\baccepted by authority\b|\blegally valid\b|\bPeppol passed\b|\bEN 16931 passed\b/i
+  );
+
+  return engineCandidate;
+}
+
 test("stub validator returns safe metadata-only Schematron placeholder diagnostics", async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-worker-sch-"));
   const peppolBisPath = join(tempRoot, "peppol", "PEPPOL-BIS-Billing.sch");
@@ -97,6 +137,19 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
       "schematron_execution_preflight_only"
     );
     assert.equal(schematronPeppol.engineId, "placeholder");
+    assert.equal(
+      schematronPeppol.engineCandidateVersion,
+      "schematron_engine_candidate_v1"
+    );
+    assert.equal(schematronPeppol.engineAvailabilityStatus, "placeholder_only");
+    assert.equal(schematronPeppol.engineExecutionSupported, false);
+    const engineCandidate = assertSchematronEngineCandidate({
+      value: schematronPeppol.engineCandidate,
+      label: "schematronPeppol.engineCandidate",
+      engineId: "placeholder",
+      availabilityStatus: "placeholder_only",
+      executionSupported: false
+    });
     assert.equal(schematronPeppol.executionPermitted, false);
     assert.equal(
       schematronPeppol.adapterVersion,
@@ -186,6 +239,13 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
       "schematron_execution_preflight_only"
     );
     assert.equal(checkSummary.engineId, "placeholder");
+    assert.equal(
+      checkSummary.engineCandidateVersion,
+      "schematron_engine_candidate_v1"
+    );
+    assert.equal(checkSummary.engineAvailabilityStatus, "placeholder_only");
+    assert.equal(checkSummary.engineExecutionSupported, false);
+    assert.deepEqual(checkSummary.engineCandidate, engineCandidate);
     assert.equal(checkSummary.executionPermitted, false);
     assert.equal(
       checkSummary.adapterVersion,
@@ -270,7 +330,7 @@ test("stub validator blocks execution-like Schematron policy env without executi
 
   try {
     process.env.SCHEMATRON_EXECUTION_MODE = "production";
-    process.env.SCHEMATRON_ENGINE = "saxon";
+    process.env.SCHEMATRON_ENGINE = "future_xslt2";
     delete process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION;
 
     const result = await runStubXmlValidator({
@@ -302,6 +362,23 @@ test("stub validator blocks execution-like Schematron policy env without executi
       "schematron_execution_requested_but_blocked"
     );
     assert.equal(schematronPeppol.engineId, "future_xslt2");
+    assert.equal(
+      schematronPeppol.engineCandidateVersion,
+      "schematron_engine_candidate_v1"
+    );
+    assert.equal(schematronPeppol.engineAvailabilityStatus, "unavailable");
+    assert.equal(schematronPeppol.engineExecutionSupported, false);
+    const engineCandidate = assertSchematronEngineCandidate({
+      value: schematronPeppol.engineCandidate,
+      label: "schematronPeppol.engineCandidate",
+      engineId: "future_xslt2",
+      availabilityStatus: "unavailable",
+      executionSupported: false
+    });
+    assert.equal(
+      engineCandidate.reason,
+      "schematron_xslt2_engine_not_installed"
+    );
     assert.equal(schematronPeppol.executionPermitted, false);
     assert.equal(schematronPeppol.validationExecutionEnabled, false);
     assert.equal(schematronPeppol.validationExecuted, false);

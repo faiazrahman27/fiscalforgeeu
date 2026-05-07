@@ -12,6 +12,7 @@ export type SchematronEngineId =
   | "placeholder"
   | "future_xslt2"
   | "future_schxslt"
+  | "internal_test_candidate"
   | "unknown";
 
 export type SchematronExecutionPolicyInput = {
@@ -74,7 +75,8 @@ const SAFE_ENGINE_ECHO_VALUES = new Set([
   "saxon",
   "future_xslt2",
   "schxslt",
-  "future_schxslt"
+  "future_schxslt",
+  "internal_test_candidate"
 ]);
 
 function normalizedToken(value: unknown) {
@@ -140,6 +142,10 @@ export function normalizeSchematronEngineId(
 
   if (token === "schxslt" || token === "future_schxslt") {
     return "future_schxslt";
+  }
+
+  if (token === "internal_test_candidate") {
+    return "internal_test_candidate";
   }
 
   return "unknown";

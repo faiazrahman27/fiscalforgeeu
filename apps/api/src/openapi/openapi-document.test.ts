@@ -130,6 +130,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const schematronPolicySchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronExecutionPolicy")
   );
+  const schematronEngineCandidateSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchematronEngineCandidate")
+  );
   const schematronArtifactSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronArtifactFileDiagnostics")
   );
@@ -160,14 +163,23 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /schematron_adapter_preflight_v1/);
   assert.match(serializedPost, /executionPreflight/);
   assert.match(serializedPost, /executionPolicy/);
+  assert.match(serializedPost, /engineCandidate/);
   assert.match(serializedPost, /schematron_policy_v1/);
+  assert.match(serializedPost, /schematron_engine_candidate_v1/);
   assert.match(serializedPost, /SCHEMATRON_EXECUTION_MODE/);
   assert.match(serializedPost, /SCHEMATRON_ENGINE/);
   assert.match(serializedPost, /SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION/);
   assert.match(serializedPost, /blocked_requested_execution/);
   assert.match(serializedPost, /schematron_execution_requested_but_blocked/);
   assert.match(serializedPost, /executionPermitted/);
+  assert.match(serializedPost, /engineCandidateVersion/);
+  assert.match(serializedPost, /engineAvailabilityStatus/);
+  assert.match(serializedPost, /engineExecutionSupported/);
+  assert.match(serializedPost, /placeholder_only/);
+  assert.match(serializedPost, /not_selected/);
+  assert.match(serializedPost, /unavailable/);
   assert.match(serializedPost, /policy metadata/);
+  assert.match(serializedPost, /Engine candidate metadata does not enable validation/);
   assert.match(serializedPost, /ready_for_future_execution/);
   assert.match(serializedPost, /schematron_execution_disabled/);
   assert.match(serializedPost, /schematron_execution_engine_not_implemented/);
@@ -224,6 +236,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronPolicySchema, /placeholder/);
   assert.match(schematronPolicySchema, /future_xslt2/);
   assert.match(schematronPolicySchema, /future_schxslt/);
+  assert.match(schematronPolicySchema, /internal_test_candidate/);
   assert.match(schematronPolicySchema, /unknown/);
   assert.match(schematronPolicySchema, /executionPermitted/);
   assert.match(schematronPolicySchema, /validationExecutionEnabled/);
@@ -248,6 +261,40 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   );
   assert.match(schematronPolicySchema, /does not enable validation/);
   assert.match(schematronPolicySchema, /Execution-like values are blocked/i);
+  assert.match(schematronEngineCandidateSchema, /schematron_engine_candidate/);
+  assert.match(
+    schematronEngineCandidateSchema,
+    /schematron_engine_candidate_v1/
+  );
+  assert.match(schematronEngineCandidateSchema, /engineCandidateVersion/);
+  assert.match(schematronEngineCandidateSchema, /availabilityStatus/);
+  assert.match(schematronEngineCandidateSchema, /executionSupported/);
+  assert.match(schematronEngineCandidateSchema, /executionEnabledByDefault/);
+  assert.match(schematronEngineCandidateSchema, /packageName/);
+  assert.match(schematronEngineCandidateSchema, /packageVersion/);
+  assert.match(schematronEngineCandidateSchema, /none/);
+  assert.match(schematronEngineCandidateSchema, /placeholder/);
+  assert.match(schematronEngineCandidateSchema, /future_xslt2/);
+  assert.match(schematronEngineCandidateSchema, /future_schxslt/);
+  assert.match(schematronEngineCandidateSchema, /internal_test_candidate/);
+  assert.match(schematronEngineCandidateSchema, /not_selected/);
+  assert.match(schematronEngineCandidateSchema, /placeholder_only/);
+  assert.match(schematronEngineCandidateSchema, /available/);
+  assert.match(schematronEngineCandidateSchema, /unavailable/);
+  assert.match(schematronEngineCandidateSchema, /unsupported/);
+  assert.match(schematronEngineCandidateSchema, /schematron_xslt2_engine_not_installed/);
+  assert.match(
+    schematronEngineCandidateSchema,
+    /schematron_schxslt_engine_not_installed/
+  );
+  assert.match(
+    schematronEngineCandidateSchema,
+    /schematron_internal_test_candidate_available/
+  );
+  assert.match(
+    schematronEngineCandidateSchema,
+    /does not enable normal API or worker XML validation jobs/
+  );
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
   assert.match(schematronArtifactSchema, /basename/);
   assert.match(schematronArtifactSchema, /sha256/);
@@ -280,12 +327,16 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(jobSchema, /adapterVersion/);
   assert.match(jobSchema, /executionPreflight/);
   assert.match(jobSchema, /executionPolicy/);
+  assert.match(jobSchema, /engineCandidate/);
   assert.match(jobSchema, /preflightStatus/);
   assert.match(jobSchema, /preflightReason/);
   assert.match(jobSchema, /policyVersion/);
   assert.match(jobSchema, /policyMode/);
   assert.match(jobSchema, /policyReason/);
   assert.match(jobSchema, /engineId/);
+  assert.match(jobSchema, /engineCandidateVersion/);
+  assert.match(jobSchema, /engineAvailabilityStatus/);
+  assert.match(jobSchema, /engineExecutionSupported/);
   assert.match(jobSchema, /executionPermitted/);
   assert.match(jobSchema, /findingContractVersion/);
   assert.match(jobSchema, /schematron_contract_v1/);

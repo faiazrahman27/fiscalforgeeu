@@ -52,6 +52,17 @@ Schematron execution is available yet. This does not certify Peppol or EN
 16931, prove compliance, provide legal/tax/accounting conclusions, or indicate
 authority acceptance.
 
+Step 52 adds the `schematron_engine_candidate_v1` Schematron engine candidate
+metadata layer. XML validation jobs can now report safe metadata for the
+selected candidate engine, including `engineCandidate`,
+`engineCandidateVersion`, `engineAvailabilityStatus`, and
+`engineExecutionSupported`. This is preparatory engine-readiness metadata only.
+It does not enable normal API or XML worker jobs to execute Schematron
+validation, parse production Schematron rules, evaluate XPath assertions, or
+mark Peppol BIS Billing / EN 16931 validation as passed. It does not certify
+Peppol or EN 16931, prove compliance, provide legal/tax/accounting conclusions,
+or indicate authority acceptance.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -73,6 +84,13 @@ The Schematron registry diagnostics use:
 - Local EN 16931 / TC434 Schematron artefact paths.
 - Metadata-only file inspection.
 - SHA-256 hashes for readable configured artefact files.
+
+The Schematron engine candidate diagnostics use:
+
+- Local metadata-only candidate inspection.
+- Candidate IDs such as `none`, `placeholder`, `future_xslt2`,
+  `future_schxslt`, and `internal_test_candidate`.
+- Availability status values only; no rule execution is enabled.
 
 The validator and diagnostics do not fetch remote schema or Schematron files.
 All artefact files must already exist locally and be readable by the process
@@ -153,8 +171,10 @@ This setup does not add or provide:
 
 : Optional future engine metadata selector. Supported metadata values include
   `none`, `placeholder`, `xslt2`, `saxon`, `future_xslt2`, `schxslt`, and
-  `future_schxslt`. Unknown values are classified as `unknown`. This does not
-  load, parse, or run any engine in Step 51.
+  `future_schxslt`. Step 52 also recognizes the controlled
+  `internal_test_candidate` selector for package-level readiness metadata.
+  Unknown values are classified safely. This does not enable normal API or XML
+  worker Schematron validation.
 
 `SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION`
 
@@ -291,8 +311,57 @@ The same placeholder result can also include `executionPolicy` with:
   `schematron_experimental_execution_not_available`.
 - `executionPermitted: false` and `validationExecutionEnabled: false`.
 
+The same placeholder result can also include `engineCandidate` with:
+
+- `engineCandidateVersion: "schematron_engine_candidate_v1"`.
+- `engineId` values such as `none`, `placeholder`, `future_xslt2`,
+  `future_schxslt`, or `internal_test_candidate`.
+- `availabilityStatus` values such as `not_selected`, `placeholder_only`,
+  `available`, `unavailable`, `unsupported`, or `error`.
+- `executionSupported` candidate metadata and
+  `executionEnabledByDefault: false`.
+- `capabilities`, `packageName`, `packageVersion`, and `reason` metadata.
+- Direct summary fields `engineCandidateVersion`,
+  `engineAvailabilityStatus`, and `engineExecutionSupported`.
+
+Engine candidate metadata does not enable validation. Even when a candidate is
+reported as available, normal XML validation jobs still return
+`validationExecutionEnabled: false`, `validationExecuted: false`, and
+`markedValid: false` for Schematron.
+
 The diagnostics do not return raw XML, schema file contents, Schematron file
 contents, secrets, or full absolute local filesystem paths.
+
+## Schematron Engine Candidate Statuses
+
+`not_selected`
+
+: No Schematron execution engine candidate is selected.
+
+`placeholder_only`
+
+: The placeholder metadata engine is selected. It never executes Schematron.
+
+`available`
+
+: A controlled candidate reports local availability. This is readiness metadata
+  only and does not enable normal XML validation job execution.
+
+`unavailable`
+
+: The selected future local engine dependency is not installed or cannot be
+  detected.
+
+`unsupported`
+
+: The selected candidate is recognized but not supported for execution by the
+  current runtime boundary.
+
+`error`
+
+: Candidate inspection failed in a controlled way. The public summary must stay
+  sanitized and must not include raw XML, Schematron file contents, or absolute
+  paths.
 
 ## Troubleshooting
 
@@ -331,12 +400,14 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 through 51. The Schematron registry can inspect
+: This is expected in Steps 47 through 52. The Schematron registry can inspect
   configured files, XML validation jobs can report safe diagnostics, the shared
   finding contract can describe future sanitized rule metadata, the Step 50
   preflight adapter can report `ready_for_future_execution`, and the Step 51
-  policy layer can report engine/policy selection metadata, but they do not
-  execute Schematron validation yet. Execution-like policy values are blocked.
+  policy layer can report engine/policy selection metadata. Step 52 can also
+  report engine candidate availability metadata, but normal API and worker jobs
+  do not execute Schematron validation yet. Execution-like policy values are
+  blocked.
 
 Hash mismatch
 
@@ -348,9 +419,12 @@ Hash mismatch
 
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
-- Schematron execution is not enabled in Steps 47 through 51.
+- Schematron execution is not enabled in Steps 47 through 52.
 - Step 51 policy variables are metadata controls only and must not be used to
   configure production execution.
+- Step 52 engine candidate metadata is preparatory only and must not be treated
+  as Peppol validation, EN 16931 validation, certification, compliance, or
+  authority acceptance.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -362,7 +436,7 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 51. `xml_validation_jobs.result_summary`
+No Supabase migration is needed for Step 52. `xml_validation_jobs.result_summary`
 and `xml_validation_jobs.findings` are JSONB and can already store the safe
-Schematron finding contract, preflight metadata, and policy metadata. No raw XML
-column is added and no schema change is required.
+Schematron finding contract, preflight metadata, policy metadata, and engine
+candidate metadata. No raw XML column is added and no schema change is required.

@@ -286,7 +286,7 @@ const openApiDocument = {
     {
       name: "XML Validation Jobs",
       description:
-        "Metadata-only XML validation job endpoints for the validation worker foundation. UBL XSD checks are configuration-gated local technical XSD validation when local artefacts are available. Schematron placeholder results include safe Schematron artifact diagnostics, the schematron_contract_v1 finding contract foundation, schematron_adapter_preflight_v1 execution preflight metadata, and schematron_policy_v1 execution policy metadata only; Schematron execution, Peppol validation, and EN 16931 validation remain disabled."
+        "Metadata-only XML validation job endpoints for the validation worker foundation. UBL XSD checks are configuration-gated local technical XSD validation when local artefacts are available. Schematron placeholder results include safe Schematron artifact diagnostics, the schematron_contract_v1 finding contract foundation, schematron_adapter_preflight_v1 execution preflight metadata, schematron_policy_v1 execution policy metadata, and schematron_engine_candidate_v1 engine candidate metadata only; Schematron execution, Peppol validation, and EN 16931 validation remain disabled."
     },
     {
       name: "VAT",
@@ -709,7 +709,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "List XML validation jobs",
         description:
-          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results include safe local artefact metadata such as configured paths, artefact version, schema readability, schema hashes, validator name/availability, and dependency graph status where inspected. Failed UBL XSD checks return mapped Invoice Lantern findings with stable codes, safe fields, source labels, sanitized technical messages, and technical confidence only. UBL XSD may report not_configured when local UBL XSD artefacts are unavailable, passed or failed only after a real local XSD validation operation executes, or error for controlled validator/runtime failures. schematron_peppol_placeholder results may include metadata-only safe Schematron artifact diagnostics with configured/readable/usable status, safe labels, basenames, relativePathUnderRoot, SHA-256 hashes, checkedAt, and a disclaimer. Step 50 adds schematron_adapter_preflight_v1 executionPreflight metadata with preflightStatus values such as disabled, not_configured, artifact_unreadable, ready_for_future_execution, and unsupported, plus reasons such as schematron_execution_disabled and schematron_execution_engine_not_implemented. Step 51 adds schematron_policy_v1 executionPolicy metadata with policyVersion, policyMode, policyReason, engineId, executionPermitted, and validationExecutionEnabled. Server-side policy metadata can be influenced by SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION, but these variables do not enable validation. Execution-like values are blocked as blocked_requested_execution with schematron_execution_requested_but_blocked until a future step explicitly implements a reviewed engine. The preflight and policy metadata do not execute Schematron validation, parse Schematron rules, evaluate XPath assertions, certify Peppol/EN16931, prove compliance, or include raw XML, Schematron file contents, or full absolute paths. Step 49 also prepares the schematron_contract_v1 finding/result contract for future rule-level results, including optional sanitized schematronLayer, ruleId, businessRuleId, ruleLocation, testExpression, assertionText, and diagnosticReference fields. Schematron execution is not implemented, validationExecutionEnabled is false, validationExecuted is false, markedValid is false, and executionPermitted is false. Public responses do not include raw XML, Schematron contents, full absolute Schematron paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance.",
+          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results include safe local artefact metadata such as configured paths, artefact version, schema readability, schema hashes, validator name/availability, and dependency graph status where inspected. Failed UBL XSD checks return mapped Invoice Lantern findings with stable codes, safe fields, source labels, sanitized technical messages, and technical confidence only. UBL XSD may report not_configured when local UBL XSD artefacts are unavailable, passed or failed only after a real local XSD validation operation executes, or error for controlled validator/runtime failures. schematron_peppol_placeholder results may include metadata-only safe Schematron artifact diagnostics with configured/readable/usable status, safe labels, basenames, relativePathUnderRoot, SHA-256 hashes, checkedAt, and a disclaimer. Step 50 adds schematron_adapter_preflight_v1 executionPreflight metadata with preflightStatus values such as disabled, not_configured, artifact_unreadable, ready_for_future_execution, and unsupported, plus reasons such as schematron_execution_disabled and schematron_execution_engine_not_implemented. Step 51 adds schematron_policy_v1 executionPolicy metadata with policyVersion, policyMode, policyReason, engineId, executionPermitted, and validationExecutionEnabled. Step 52 adds schematron_engine_candidate_v1 engineCandidate metadata with engineCandidateVersion, engineAvailabilityStatus, engineExecutionSupported, availability statuses not_selected, placeholder_only, available, unavailable, unsupported, and error, and candidate IDs none, placeholder, future_xslt2, future_schxslt, and internal_test_candidate. Engine candidate metadata does not enable validation. Server-side policy metadata can be influenced by SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION, but these variables do not enable validation. Execution-like values are blocked as blocked_requested_execution with schematron_execution_requested_but_blocked until a future step explicitly implements a reviewed engine. The preflight, policy, and engine candidate metadata do not execute Schematron validation, parse Schematron rules, evaluate XPath assertions, certify Peppol/EN16931, prove compliance, or include raw XML, Schematron file contents, or full absolute paths. Step 49 also prepares the schematron_contract_v1 finding/result contract for future rule-level results, including optional sanitized schematronLayer, ruleId, businessRuleId, ruleLocation, testExpression, assertionText, and diagnosticReference fields. Schematron execution is not implemented, validationExecutionEnabled is false, validationExecuted is false, markedValid is false, and executionPermitted is false. Public responses do not include raw XML, Schematron contents, full absolute Schematron paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance.",
         scope: "xml:validation_jobs",
         parameters: [
           {
@@ -745,7 +745,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "Create an XML validation job",
         description:
-          "Creates a metadata-only XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, and schematron_peppol_placeholder metadata diagnostics. UBL XSD returns not_configured when local UBL XSD artefacts for Invoice or CreditNote are missing, unreadable, outside the configured root, or not configured; passed or failed only after a real local XSD validation operation executes; and error for controlled validator/runtime or schema dependency failures. Failed UBL XSD results map xmllint-wasm messages into mapped Invoice Lantern findings with stable codes such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, and UBL_XSD_VALUE_INVALID. Server-side UBL XSD artefact configuration uses UBL_XSD_ROOT_DIR, UBL_INVOICE_XSD_PATH, UBL_CREDIT_NOTE_XSD_PATH, and UBL_XSD_ARTIFACT_VERSION. Server-side Schematron artifact diagnostics use PEPPOL_SCHEMATRON_ROOT_DIR, PEPPOL_BIS_SCHEMATRON_PATH, EN16931_SCHEMATRON_PATH, and SCHEMATRON_ARTIFACT_VERSION. Server-side Schematron execution policy metadata uses SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION. These Step 51 variables only affect policy metadata and do not enable validation; execution-like values such as enabled, execute, real, or production are blocked as blocked_requested_execution with schematron_execution_requested_but_blocked until a future step explicitly implements a reviewed engine. Schematron metadata may include configured/readable/usable status, validatorName, validatorAvailable, artifactVersion, safe labels, basenames, relativePathUnderRoot, SHA-256 hashes, checkedAt, adapterVersion, executionPreflight, executionPolicy, policyVersion, policyMode, policyReason, engineId, executionPermitted, preflightStatus, preflightReason, validationExecutionEnabled, validationExecuted, markedValid, findingContractVersion, supportedFutureFindingCodes, and a disclaimer. schematron_adapter_preflight_v1 is preflight metadata only; ready_for_future_execution means local artefact metadata looks usable for a future engine, but no Schematron rules are parsed or executed. schematron_policy_v1 is policy metadata only and keeps executionPermitted false in Step 51. Other future adapter reasons include schematron_execution_disabled and schematron_execution_engine_not_implemented. The Step 49 Schematron finding contract is prepared for future rule results and documents optional sanitized schematronLayer, ruleId, businessRuleId, ruleLocation, testExpression, assertionText, and diagnosticReference fields. Schematron execution is not implemented; validationExecutionEnabled is false, validationExecuted is false, markedValid is false, and executionPermitted is false. Public responses do not include raw XML, Schematron contents, full absolute Schematron paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance. This endpoint performs no certification, no authority acceptance, no filing, and no legal/tax/accounting compliance validation.",
+          "Creates a metadata-only XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, and schematron_peppol_placeholder metadata diagnostics. UBL XSD returns not_configured when local UBL XSD artefacts for Invoice or CreditNote are missing, unreadable, outside the configured root, or not configured; passed or failed only after a real local XSD validation operation executes; and error for controlled validator/runtime or schema dependency failures. Failed UBL XSD results map xmllint-wasm messages into mapped Invoice Lantern findings with stable codes such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, and UBL_XSD_VALUE_INVALID. Server-side UBL XSD artefact configuration uses UBL_XSD_ROOT_DIR, UBL_INVOICE_XSD_PATH, UBL_CREDIT_NOTE_XSD_PATH, and UBL_XSD_ARTIFACT_VERSION. Server-side Schematron artifact diagnostics use PEPPOL_SCHEMATRON_ROOT_DIR, PEPPOL_BIS_SCHEMATRON_PATH, EN16931_SCHEMATRON_PATH, and SCHEMATRON_ARTIFACT_VERSION. Server-side Schematron execution policy metadata uses SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION. These policy variables only affect policy and engine candidate metadata and do not enable validation; execution-like values such as enabled, execute, real, or production are blocked as blocked_requested_execution with schematron_execution_requested_but_blocked until a future step explicitly implements a reviewed engine. Schematron metadata may include configured/readable/usable status, validatorName, validatorAvailable, artifactVersion, safe labels, basenames, relativePathUnderRoot, SHA-256 hashes, checkedAt, adapterVersion, executionPreflight, executionPolicy, engineCandidate, engineCandidateVersion, engineAvailabilityStatus, engineExecutionSupported, policyVersion, policyMode, policyReason, engineId, executionPermitted, preflightStatus, preflightReason, validationExecutionEnabled, validationExecuted, markedValid, findingContractVersion, supportedFutureFindingCodes, and a disclaimer. schematron_adapter_preflight_v1 is preflight metadata only; ready_for_future_execution means local artefact metadata looks usable for a future engine, but no Schematron rules are parsed or executed. schematron_policy_v1 is policy metadata only and keeps executionPermitted false. schematron_engine_candidate_v1 is engine-readiness metadata only and can report not_selected, placeholder_only, available, unavailable, unsupported, or error for none, placeholder, future_xslt2, future_schxslt, or internal_test_candidate. Engine candidate metadata does not enable validation. Other future adapter reasons include schematron_execution_disabled and schematron_execution_engine_not_implemented. The Step 49 Schematron finding contract is prepared for future rule results and documents optional sanitized schematronLayer, ruleId, businessRuleId, ruleLocation, testExpression, assertionText, and diagnosticReference fields. Schematron execution is not implemented; validationExecutionEnabled is false, validationExecuted is false, markedValid is false, and executionPermitted is false. Public responses do not include raw XML, Schematron contents, full absolute Schematron paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance. This endpoint performs no certification, no authority acceptance, no filing, and no legal/tax/accounting compliance validation.",
         scope: "xml:validation_jobs",
         requestBody: {
           required: true,
@@ -2181,10 +2181,103 @@ const openApiDocument = {
           }
         }
       },
+      XmlValidationJobSchematronEngineCandidate: {
+        type: "object",
+        description:
+          "Metadata-only schematron_engine_candidate_v1 result for selected local Schematron engine readiness. Engine candidate metadata reports availability only; it does not enable normal API or worker XML validation jobs to execute Schematron, parse Schematron rules, evaluate XPath assertions, certify Peppol/EN 16931, prove compliance, return raw XML, return Schematron file contents, or return full absolute local filesystem paths.",
+        required: [
+          "diagnosticKind",
+          "engineCandidateVersion",
+          "engineId",
+          "availabilityStatus",
+          "executionSupported",
+          "executionEnabledByDefault",
+          "capabilities",
+          "packageName",
+          "packageVersion",
+          "reason"
+        ],
+        properties: {
+          diagnosticKind: {
+            type: "string",
+            const: "schematron_engine_candidate"
+          },
+          engineCandidateVersion: {
+            type: "string",
+            const: "schematron_engine_candidate_v1"
+          },
+          engineId: {
+            type: "string",
+            enum: [
+              "none",
+              "placeholder",
+              "future_xslt2",
+              "future_schxslt",
+              "internal_test_candidate"
+            ]
+          },
+          availabilityStatus: {
+            type: "string",
+            enum: [
+              "not_selected",
+              "placeholder_only",
+              "available",
+              "unavailable",
+              "unsupported",
+              "error"
+            ],
+            description:
+              "Availability of the selected candidate. This status does not mean Schematron validation ran."
+          },
+          executionSupported: {
+            type: "boolean",
+            description:
+              "Candidate capability metadata only. Normal XML validation jobs still keep validationExecutionEnabled false and validationExecuted false."
+          },
+          executionEnabledByDefault: {
+            type: "boolean",
+            const: false
+          },
+          capabilities: {
+            type: "array",
+            items: {
+              type: "string",
+              enum: [
+                "metadata_only",
+                "local_execution_candidate",
+                "no_remote_fetch",
+                "windows_compatible",
+                "esm_compatible",
+                "test_only"
+              ]
+            }
+          },
+          packageName: {
+            type: ["string", "null"],
+            description:
+              "Local package name only when a candidate dependency is detected. This field never contains local filesystem paths."
+          },
+          packageVersion: {
+            type: ["string", "null"]
+          },
+          reason: {
+            type: "string",
+            enum: [
+              "schematron_engine_not_selected",
+              "schematron_placeholder_engine_selected",
+              "schematron_xslt2_engine_not_installed",
+              "schematron_xslt2_engine_installed_but_execution_disabled",
+              "schematron_schxslt_engine_not_installed",
+              "schematron_schxslt_engine_installed_but_execution_disabled",
+              "schematron_internal_test_candidate_available"
+            ]
+          }
+        }
+      },
       XmlValidationJobSchematronExecutionPolicy: {
         type: "object",
         description:
-          "Metadata-only schematron_policy_v1 result for future Schematron engine selection. Policy metadata records disabled, preflight_only, or blocked_requested_execution mode and the selected engineId, but it does not enable validation. Step 51 keeps executionPermitted false and validationExecutionEnabled false. SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION only affect policy metadata; execution-like values are blocked with schematron_execution_requested_but_blocked. This policy does not parse Schematron rules, evaluate XPath assertions, execute Schematron validation, certify Peppol/EN 16931, prove compliance, return raw XML, return Schematron file contents, or return full absolute local filesystem paths.",
+          "Metadata-only schematron_policy_v1 result for future Schematron engine selection. Policy metadata records disabled, preflight_only, or blocked_requested_execution mode and the selected engineId, but it does not enable validation. Step 51 keeps executionPermitted false and validationExecutionEnabled false. Step 52 may inspect the selected engineId through schematron_engine_candidate_v1, but engine candidate metadata still does not enable validation. SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION only affect policy metadata; execution-like values are blocked with schematron_execution_requested_but_blocked. This policy does not parse Schematron rules, evaluate XPath assertions, execute Schematron validation, certify Peppol/EN 16931, prove compliance, return raw XML, return Schematron file contents, or return full absolute local filesystem paths.",
         required: [
           "diagnosticKind",
           "policyVersion",
@@ -2221,6 +2314,7 @@ const openApiDocument = {
               "placeholder",
               "future_xslt2",
               "future_schxslt",
+              "internal_test_candidate",
               "unknown"
             ]
           },
@@ -2254,7 +2348,7 @@ const openApiDocument = {
           allowExperimentalExecution: {
             type: "boolean",
             description:
-              "True only when SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION is true-like. Step 51 still blocks execution and does not implement an experimental engine."
+              "True only when SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION is true-like. Execution remains blocked and normal XML validation jobs do not implement an experimental engine."
           }
         }
       },
@@ -2619,12 +2713,27 @@ const openApiDocument = {
                   requestedEngine: null,
                   allowExperimentalExecution: false
                 },
+                engineCandidate: {
+                  diagnosticKind: "schematron_engine_candidate",
+                  engineCandidateVersion: "schematron_engine_candidate_v1",
+                  engineId: "placeholder",
+                  availabilityStatus: "placeholder_only",
+                  executionSupported: false,
+                  executionEnabledByDefault: false,
+                  capabilities: ["metadata_only"],
+                  packageName: null,
+                  packageVersion: null,
+                  reason: "schematron_placeholder_engine_selected"
+                },
                 preflightStatus: "not_configured",
                 preflightReason: "schematron_artifacts_not_configured",
                 policyVersion: "schematron_policy_v1",
                 policyMode: "preflight_only",
                 policyReason: "schematron_execution_preflight_only",
                 engineId: "placeholder",
+                engineCandidateVersion: "schematron_engine_candidate_v1",
+                engineAvailabilityStatus: "placeholder_only",
+                engineExecutionSupported: false,
                 executionPermitted: false,
                 validationExecutionEnabled: false,
                 validationExecuted: false,
