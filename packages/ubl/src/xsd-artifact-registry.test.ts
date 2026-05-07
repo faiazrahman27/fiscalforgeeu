@@ -3,10 +3,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { buildSafeUblXsdArtifactDiagnostics } from "./xsd-artifact-registry.js";
+import {
+  buildSafeSchematronArtifactDiagnostics,
+  buildSafeUblXsdArtifactDiagnostics
+} from "./xsd-artifact-registry.js";
 
 const schemaContentSentinel = "SCHEMA-CONTENT-SENTINEL-STEP-46";
-const rawXmlSentinel = "<Invoice><ID>RAW-XML-SENTINEL-STEP-46</ID></Invoice>";
+const schematronContentSentinel = "SCHEMATRON-CONTENT-SENTINEL-STEP-47";
+const rawXmlSentinel = "<Invoice><ID>RAW-XML-SENTINEL-STEP-47</ID></Invoice>";
 
 function collectStringValues(value: unknown, strings: string[] = []) {
   if (typeof value === "string") {
@@ -81,6 +85,59 @@ async function writeTestOnlyInvoiceXsdFixture(tempRoot: string) {
   return {
     invoiceXsdPath,
     baseXsdPath
+  };
+}
+
+async function writeTestOnlySchematronFixture(tempRoot: string) {
+  const peppolPath = join(
+    tempRoot,
+    "schematron",
+    "peppol",
+    "PEPPOL-BIS-Billing-Test-Only.sch"
+  );
+  const en16931Path = join(
+    tempRoot,
+    "schematron",
+    "tc434",
+    "EN16931-TC434-Test-Only.sch"
+  );
+
+  await mkdir(join(tempRoot, "schematron", "peppol"), {
+    recursive: true
+  });
+  await mkdir(join(tempRoot, "schematron", "tc434"), {
+    recursive: true
+  });
+  await writeFile(
+    peppolPath,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+  <title>${schematronContentSentinel}</title>
+  <pattern id="peppol-test-only">
+    <rule context="Invoice">
+      <assert test="cbc:ID">Test-only Peppol rule.</assert>
+    </rule>
+  </pattern>
+</schema>`,
+    "utf8"
+  );
+  await writeFile(
+    en16931Path,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron">
+  <title>${schematronContentSentinel}</title>
+  <pattern id="en16931-test-only">
+    <rule context="Invoice">
+      <assert test="cbc:IssueDate">Test-only EN 16931 rule.</assert>
+    </rule>
+  </pattern>
+</schema>`,
+    "utf8"
+  );
+
+  return {
+    peppolPath,
+    en16931Path
   };
 }
 
@@ -266,6 +323,170 @@ test("safe UBL XSD diagnostics report blocked external dependencies without leak
     assertNoDiagnosticStringContains(diagnostics, externalSchemaLocation);
     assertNoDiagnosticStringContains(diagnostics, tempRoot);
     assertNoDiagnosticStringContains(diagnostics, invoiceXsdPath);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("safe Schematron diagnostics report no configured artefacts", async () => {
+  const diagnostics = await buildSafeSchematronArtifactDiagnostics(undefined);
+
+  assert.equal(diagnostics.diagnosticKind, "schematron_artifacts");
+  assert.equal(diagnostics.configured, false);
+  assert.equal(diagnostics.usable, false);
+  assert.equal(diagnostics.readyArtifactCount, 0);
+  assert.equal(diagnostics.requiredArtifactCount, 2);
+  assert.equal(diagnostics.allRequiredArtifactsReadable, false);
+  assert.equal(diagnostics.validatorName, "schematron-placeholder");
+  assert.equal(diagnostics.validatorAvailable, false);
+  assert.equal(diagnostics.validationExecutionEnabled, false);
+  assert.equal(diagnostics.artifactVersion, null);
+  assert.match(diagnostics.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(diagnostics.peppolBisArtifact.artifactKind, "peppol_bis_billing");
+  assert.equal(diagnostics.peppolBisArtifact.configured, false);
+  assert.equal(diagnostics.peppolBisArtifact.status, "not_configured");
+  assert.equal(diagnostics.peppolBisArtifact.readable, false);
+  assert.equal(diagnostics.peppolBisArtifact.sha256, null);
+  assert.equal(diagnostics.peppolBisArtifact.label, null);
+  assert.equal(diagnostics.en16931Artifact.artifactKind, "en16931_tc434");
+  assert.equal(diagnostics.en16931Artifact.status, "not_configured");
+  assert.match(diagnostics.disclaimer, /do not execute Schematron validation/i);
+  assert.match(diagnostics.disclaimer, /not official validation/i);
+  assert.match(diagnostics.disclaimer, /not.*compliance guarantee/i);
+  assertNoDiagnosticStringContains(diagnostics, rawXmlSentinel);
+});
+
+test("safe Schematron diagnostics report readable Peppol and EN 16931 metadata only", async () => {
+  const tempRoot = await mkdtemp(
+    join(tmpdir(), "invoice-lantern-sch-diag-")
+  );
+
+  try {
+    const { peppolPath, en16931Path } =
+      await writeTestOnlySchematronFixture(tempRoot);
+    const diagnostics = await buildSafeSchematronArtifactDiagnostics({
+      rootDir: tempRoot,
+      peppolBisSchematronPath: peppolPath,
+      en16931SchematronPath: en16931Path,
+      artifactVersion: "test-only"
+    });
+
+    assert.equal(diagnostics.configured, true);
+    assert.equal(diagnostics.usable, true);
+    assert.equal(diagnostics.readyArtifactCount, 2);
+    assert.equal(diagnostics.requiredArtifactCount, 2);
+    assert.equal(diagnostics.allRequiredArtifactsReadable, true);
+    assert.equal(diagnostics.validatorName, "schematron-placeholder");
+    assert.equal(diagnostics.validatorAvailable, false);
+    assert.equal(diagnostics.validationExecutionEnabled, false);
+    assert.equal(diagnostics.artifactVersion, "test-only");
+    assert.equal(diagnostics.peppolBisArtifact.configured, true);
+    assert.equal(diagnostics.peppolBisArtifact.status, "available");
+    assert.equal(diagnostics.peppolBisArtifact.readable, true);
+    assert.equal(diagnostics.peppolBisArtifact.usable, true);
+    assert.match(diagnostics.peppolBisArtifact.sha256 ?? "", /^[a-f0-9]{64}$/);
+    assert.equal(
+      diagnostics.peppolBisArtifact.label,
+      "schematron/peppol/PEPPOL-BIS-Billing-Test-Only.sch"
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.basename,
+      "PEPPOL-BIS-Billing-Test-Only.sch"
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.relativePathUnderRoot,
+      "schematron/peppol/PEPPOL-BIS-Billing-Test-Only.sch"
+    );
+    assert.equal(diagnostics.en16931Artifact.configured, true);
+    assert.equal(diagnostics.en16931Artifact.status, "available");
+    assert.equal(diagnostics.en16931Artifact.readable, true);
+    assert.match(diagnostics.en16931Artifact.sha256 ?? "", /^[a-f0-9]{64}$/);
+    assert.equal(
+      diagnostics.en16931Artifact.label,
+      "schematron/tc434/EN16931-TC434-Test-Only.sch"
+    );
+    assertNoDiagnosticStringContains(diagnostics, schematronContentSentinel);
+    assertNoDiagnosticStringContains(diagnostics, rawXmlSentinel);
+    assertNoDiagnosticStringContains(diagnostics, tempRoot);
+    assertNoDiagnosticStringContains(diagnostics, peppolPath);
+    assertNoDiagnosticStringContains(diagnostics, en16931Path);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("safe Schematron diagnostics report missing configured files safely", async () => {
+  const tempRoot = await mkdtemp(
+    join(tmpdir(), "invoice-lantern-sch-diag-")
+  );
+  const missingPeppolPath = join(
+    tempRoot,
+    "schematron",
+    "peppol",
+    "PEPPOL-BIS-Billing-Test-Only.sch"
+  );
+
+  try {
+    const diagnostics = await buildSafeSchematronArtifactDiagnostics({
+      rootDir: tempRoot,
+      peppolBisSchematronPath: missingPeppolPath,
+      artifactVersion: "test-only"
+    });
+
+    assert.equal(diagnostics.configured, true);
+    assert.equal(diagnostics.usable, false);
+    assert.equal(diagnostics.readyArtifactCount, 0);
+    assert.equal(diagnostics.peppolBisArtifact.configured, true);
+    assert.equal(diagnostics.peppolBisArtifact.status, "missing");
+    assert.equal(diagnostics.peppolBisArtifact.readable, false);
+    assert.equal(diagnostics.peppolBisArtifact.usable, false);
+    assert.equal(diagnostics.peppolBisArtifact.sha256, null);
+    assert.equal(
+      diagnostics.peppolBisArtifact.relativePathUnderRoot,
+      "schematron/peppol/PEPPOL-BIS-Billing-Test-Only.sch"
+    );
+    assert.equal(diagnostics.en16931Artifact.status, "not_configured");
+    assertNoDiagnosticStringContains(diagnostics, tempRoot);
+    assertNoDiagnosticStringContains(diagnostics, missingPeppolPath);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("safe Schematron diagnostics use basename-only labels without a root", async () => {
+  const tempRoot = await mkdtemp(
+    join(tmpdir(), "invoice-lantern-sch-diag-")
+  );
+
+  try {
+    const { peppolPath } = await writeTestOnlySchematronFixture(tempRoot);
+    const diagnostics = await buildSafeSchematronArtifactDiagnostics({
+      peppolBisSchematronPath: peppolPath,
+      artifactVersion: "test-only"
+    });
+
+    assert.equal(diagnostics.peppolBisArtifact.status, "available");
+    assert.equal(
+      diagnostics.peppolBisArtifact.label,
+      "PEPPOL-BIS-Billing-Test-Only.sch"
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.basename,
+      "PEPPOL-BIS-Billing-Test-Only.sch"
+    );
+    assert.equal("relativePathUnderRoot" in diagnostics.peppolBisArtifact, false);
+    assertNoDiagnosticStringContains(diagnostics, schematronContentSentinel);
+    assertNoDiagnosticStringContains(diagnostics, tempRoot);
+    assertNoDiagnosticStringContains(diagnostics, peppolPath);
   } finally {
     await rm(tempRoot, {
       force: true,

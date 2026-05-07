@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  buildSafeSchematronArtifactDiagnostics,
   buildSafeUblXsdArtifactDiagnostics,
+  readSchematronArtifactConfigFromEnv,
   readUblXsdArtifactConfigFromEnv
 } from "@invoice-lantern/ubl";
 import { createXmlValidationQueueRepositoryFromEnv } from "./queue-repositories.js";
@@ -174,6 +176,14 @@ async function runXsdDiagnostics() {
   console.log(JSON.stringify(diagnostics, null, 2));
 }
 
+async function runSchematronDiagnostics() {
+  const diagnostics = await buildSafeSchematronArtifactDiagnostics(
+    readSchematronArtifactConfigFromEnv(process.env)
+  );
+
+  console.log(JSON.stringify(diagnostics, null, 2));
+}
+
 async function main() {
   const [, , commandOrXmlPath, rawChecks] = process.argv;
 
@@ -192,6 +202,14 @@ async function main() {
     commandOrXmlPath === "xsd:diagnostics"
   ) {
     await runXsdDiagnostics();
+    return;
+  }
+
+  if (
+    commandOrXmlPath === "schematron-diagnostics" ||
+    commandOrXmlPath === "schematron:diagnostics"
+  ) {
+    await runSchematronDiagnostics();
     return;
   }
 

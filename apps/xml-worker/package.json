@@ -13,6 +13,7 @@
     "worker:once": "tsx src/index.ts run-once",
     "worker:cleanup": "tsx src/index.ts cleanup",
     "xsd:diagnostics": "tsx src/index.ts xsd-diagnostics",
+    "schematron:diagnostics": "tsx src/index.ts schematron-diagnostics",
     "pretest": "npm run build:packages",
     "test": "tsx --test src/**/*.test.ts"
   },

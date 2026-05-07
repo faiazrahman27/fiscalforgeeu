@@ -4,6 +4,7 @@ import { access, readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 export const UBL_XSD_VALIDATOR_NAME = "xmllint-wasm";
+export const SCHEMATRON_VALIDATOR_NAME = "schematron-placeholder";
 
 const MAX_SCHEMA_DEPENDENCY_FILES = 500;
 const SCHEMA_LOCATION_ATTRIBUTE_PATTERN =
@@ -23,10 +24,31 @@ export type UblXsdArtifactEnv = {
   UBL_XSD_ARTIFACT_VERSION?: string;
 };
 
+export type SchematronArtifactConfigInput = {
+  rootDir?: string;
+  peppolBisSchematronPath?: string;
+  en16931SchematronPath?: string;
+  artifactVersion?: string;
+};
+
+export type SchematronArtifactEnv = {
+  PEPPOL_SCHEMATRON_ROOT_DIR?: string;
+  PEPPOL_BIS_SCHEMATRON_PATH?: string;
+  EN16931_SCHEMATRON_PATH?: string;
+  SCHEMATRON_ARTIFACT_VERSION?: string;
+};
+
 export type ResolvedUblXsdArtifactConfig = {
   rootPath?: string;
   invoiceXsdPath?: string;
   creditNoteXsdPath?: string;
+  artifactVersion?: string;
+};
+
+export type ResolvedSchematronArtifactConfig = {
+  rootPath?: string;
+  peppolBisSchematronPath?: string;
+  en16931SchematronPath?: string;
   artifactVersion?: string;
 };
 
@@ -42,6 +64,13 @@ export type UblXsdSchemaArtifactStatus =
   | "out_of_root"
   | "not_configured";
 
+export type SchematronArtifactStatus =
+  | "available"
+  | "missing"
+  | "unreadable"
+  | "out_of_root"
+  | "not_configured";
+
 export type UblXsdDependencyGraphStatus =
   | "not_inspected"
   | "ready"
@@ -49,6 +78,8 @@ export type UblXsdDependencyGraphStatus =
   | "unreadable_dependency"
   | "external_reference_blocked"
   | "error";
+
+export type SchematronArtifactKind = "peppol_bis_billing" | "en16931_tc434";
 
 export type UblXsdSchemaArtifactInfo = {
   configured: boolean;
@@ -60,12 +91,37 @@ export type UblXsdSchemaArtifactInfo = {
   reason?: string;
 };
 
+export type SchematronArtifactFileInfo = {
+  artifactKind: SchematronArtifactKind;
+  configured: boolean;
+  readable: boolean;
+  usable: boolean;
+  path: string | null;
+  sha256: string | null;
+  status: SchematronArtifactStatus;
+  reason?: string;
+};
+
 export type UblXsdDependencyGraphInfo = {
   inspected: boolean;
   dependencyCount: number;
   status: UblXsdDependencyGraphStatus;
   schemaResolutionRoot: string | null;
   reason?: string;
+};
+
+export type SchematronArtifactRegistryInfo = {
+  configured: boolean;
+  usable: boolean;
+  rootPath: string | null;
+  peppolBisSchematronPath: string | null;
+  en16931SchematronPath: string | null;
+  artifactVersion: string | null;
+  validatorName: string;
+  validatorAvailable: boolean;
+  peppolBisArtifact: SchematronArtifactFileInfo;
+  en16931Artifact: SchematronArtifactFileInfo;
+  checkedAt: string;
 };
 
 export type UblXsdArtifactInfo = {
@@ -90,12 +146,35 @@ export type UblXsdArtifactInspection = {
   creditNoteSchema: UblXsdSchemaArtifactInfo;
 };
 
+export type SchematronArtifactInspection = {
+  resolvedConfig: ResolvedSchematronArtifactConfig;
+  artifactInfo: SchematronArtifactRegistryInfo;
+  peppolBisArtifact: SchematronArtifactFileInfo;
+  en16931Artifact: SchematronArtifactFileInfo;
+};
+
 export const UBL_XSD_ARTIFACT_DIAGNOSTICS_DISCLAIMER =
   "These are technical configuration diagnostics for local UBL XSD artefacts in Invoice Lantern. They are not official validation, Peppol certification, EN 16931 certification, legal, tax, or accounting advice, official filing, or a compliance guarantee.";
+
+export const SCHEMATRON_ARTIFACT_DIAGNOSTICS_DISCLAIMER =
+  "These are technical configuration diagnostics for local Schematron artefacts in Invoice Lantern. They do not execute Schematron validation and are not official validation, Peppol certification, EN 16931 certification, legal, tax, or accounting advice, official filing, or a compliance guarantee.";
 
 export type UblXsdSafeSchemaArtifactDiagnostics = {
   configured: boolean;
   status: UblXsdSchemaArtifactStatus;
+  readable: boolean;
+  usable: boolean;
+  sha256: string | null;
+  label: string | null;
+  basename: string | null;
+  relativePathUnderRoot?: string;
+  reason?: string;
+};
+
+export type SchematronSafeFileArtifactDiagnostics = {
+  artifactKind: SchematronArtifactKind;
+  configured: boolean;
+  status: SchematronArtifactStatus;
   readable: boolean;
   usable: boolean;
   sha256: string | null;
@@ -129,6 +208,23 @@ export type UblXsdSafeArtifactDiagnostics = {
   invoiceSchema: UblXsdSafeSchemaArtifactDiagnostics;
   creditNoteSchema: UblXsdSafeSchemaArtifactDiagnostics;
   dependencyGraph: UblXsdSafeDependencyGraphDiagnostics;
+  disclaimer: string;
+};
+
+export type SchematronSafeArtifactDiagnostics = {
+  diagnosticKind: "schematron_artifacts";
+  configured: boolean;
+  usable: boolean;
+  readyArtifactCount: number;
+  requiredArtifactCount: 2;
+  allRequiredArtifactsReadable: boolean;
+  validatorName: string;
+  validatorAvailable: boolean;
+  validationExecutionEnabled: false;
+  artifactVersion: string | null;
+  checkedAt: string;
+  peppolBisArtifact: SchematronSafeFileArtifactDiagnostics;
+  en16931Artifact: SchematronSafeFileArtifactDiagnostics;
   disclaimer: string;
 };
 
@@ -183,6 +279,25 @@ export function readUblXsdArtifactConfigFromEnv(
   };
 }
 
+export function readSchematronArtifactConfigFromEnv(
+  env: SchematronArtifactEnv = process.env
+): SchematronArtifactConfigInput {
+  return {
+    ...(env.PEPPOL_SCHEMATRON_ROOT_DIR
+      ? { rootDir: env.PEPPOL_SCHEMATRON_ROOT_DIR }
+      : {}),
+    ...(env.PEPPOL_BIS_SCHEMATRON_PATH
+      ? { peppolBisSchematronPath: env.PEPPOL_BIS_SCHEMATRON_PATH }
+      : {}),
+    ...(env.EN16931_SCHEMATRON_PATH
+      ? { en16931SchematronPath: env.EN16931_SCHEMATRON_PATH }
+      : {}),
+    ...(env.SCHEMATRON_ARTIFACT_VERSION
+      ? { artifactVersion: env.SCHEMATRON_ARTIFACT_VERSION }
+      : {})
+  };
+}
+
 export function resolveUblXsdArtifactConfig(
   input: UblXsdArtifactConfigInput | undefined
 ): ResolvedUblXsdArtifactConfig {
@@ -213,6 +328,26 @@ export function resolveUblXsdArtifactConfig(
   };
 }
 
+export function resolveSchematronArtifactConfig(
+  input: SchematronArtifactConfigInput | undefined
+): ResolvedSchematronArtifactConfig {
+  const rootPath = normalizeConfiguredPath(input?.rootDir);
+  const artifactVersion = cleanOptionalValue(input?.artifactVersion);
+  const peppolBisSchematronPath = normalizeConfiguredPath(
+    input?.peppolBisSchematronPath
+  );
+  const en16931SchematronPath = normalizeConfiguredPath(
+    input?.en16931SchematronPath
+  );
+
+  return {
+    ...(rootPath ? { rootPath } : {}),
+    ...(peppolBisSchematronPath ? { peppolBisSchematronPath } : {}),
+    ...(en16931SchematronPath ? { en16931SchematronPath } : {}),
+    ...(artifactVersion ? { artifactVersion } : {})
+  };
+}
+
 export function isPathInside(parentPath: string, childPath: string) {
   const relativePath = relative(resolve(parentPath), resolve(childPath));
 
@@ -237,6 +372,21 @@ function notConfiguredSchemaArtifact(): UblXsdSchemaArtifactInfo {
     sha256: null,
     status: "not_configured",
     reason: "local_ubl_xsd_artifact_path_not_configured"
+  };
+}
+
+function notConfiguredSchematronArtifact(
+  artifactKind: SchematronArtifactKind
+): SchematronArtifactFileInfo {
+  return {
+    artifactKind,
+    configured: false,
+    readable: false,
+    usable: false,
+    path: null,
+    sha256: null,
+    status: "not_configured",
+    reason: "local_schematron_artifact_path_not_configured"
   };
 }
 
@@ -302,6 +452,73 @@ async function inspectSchemaArtifact(input: {
   }
 }
 
+async function inspectSchematronArtifact(input: {
+  artifactKind: SchematronArtifactKind;
+  artifactPath: string | undefined;
+  rootPath: string | undefined;
+}): Promise<SchematronArtifactFileInfo> {
+  if (!input.artifactPath) {
+    return notConfiguredSchematronArtifact(input.artifactKind);
+  }
+
+  const artifactPath = resolve(input.artifactPath);
+
+  if (input.rootPath && !isPathInside(input.rootPath, artifactPath)) {
+    return {
+      artifactKind: input.artifactKind,
+      configured: true,
+      readable: false,
+      usable: false,
+      path: artifactPath,
+      sha256: null,
+      status: "out_of_root",
+      reason: "local_schematron_artifact_outside_configured_root"
+    };
+  }
+
+  try {
+    const artifactStat = await stat(artifactPath);
+
+    if (!artifactStat.isFile()) {
+      return {
+        artifactKind: input.artifactKind,
+        configured: true,
+        readable: false,
+        usable: false,
+        path: artifactPath,
+        sha256: null,
+        status: "unreadable",
+        reason: "not_a_file"
+      };
+    }
+
+    await access(artifactPath, constants.R_OK);
+
+    return {
+      artifactKind: input.artifactKind,
+      configured: true,
+      readable: true,
+      usable: true,
+      path: artifactPath,
+      sha256: await sha256File(artifactPath),
+      status: "available"
+    };
+  } catch (error) {
+    const code = errorCode(error);
+
+    return {
+      artifactKind: input.artifactKind,
+      configured: true,
+      readable: false,
+      usable: false,
+      path: artifactPath,
+      sha256: null,
+      status: code === "ENOENT" ? "missing" : "unreadable",
+      reason: code
+    };
+  }
+}
+
 function defaultDependencyGraph(): UblXsdDependencyGraphInfo {
   return {
     inspected: false,
@@ -345,6 +562,31 @@ function buildArtifactInfo(input: {
   };
 }
 
+function buildSchematronArtifactInfo(input: {
+  resolvedConfig: ResolvedSchematronArtifactConfig;
+  peppolBisArtifact: SchematronArtifactFileInfo;
+  en16931Artifact: SchematronArtifactFileInfo;
+  checkedAt?: string;
+}): SchematronArtifactRegistryInfo {
+  const usable =
+    input.peppolBisArtifact.usable || input.en16931Artifact.usable;
+
+  return {
+    configured: input.peppolBisArtifact.configured || input.en16931Artifact.configured,
+    usable,
+    rootPath: input.resolvedConfig.rootPath ?? null,
+    peppolBisSchematronPath:
+      input.resolvedConfig.peppolBisSchematronPath ?? null,
+    en16931SchematronPath: input.resolvedConfig.en16931SchematronPath ?? null,
+    artifactVersion: input.resolvedConfig.artifactVersion ?? null,
+    validatorName: SCHEMATRON_VALIDATOR_NAME,
+    validatorAvailable: false,
+    peppolBisArtifact: input.peppolBisArtifact,
+    en16931Artifact: input.en16931Artifact,
+    checkedAt: input.checkedAt ?? new Date().toISOString()
+  };
+}
+
 export async function inspectUblXsdArtifacts(
   config: UblXsdArtifactConfigInput | undefined
 ): Promise<UblXsdArtifactInspection> {
@@ -372,10 +614,45 @@ export async function inspectUblXsdArtifacts(
   };
 }
 
+export async function inspectSchematronArtifacts(
+  config: SchematronArtifactConfigInput | undefined
+): Promise<SchematronArtifactInspection> {
+  const resolvedConfig = resolveSchematronArtifactConfig(config);
+  const [peppolBisArtifact, en16931Artifact] = await Promise.all([
+    inspectSchematronArtifact({
+      artifactKind: "peppol_bis_billing",
+      artifactPath: resolvedConfig.peppolBisSchematronPath,
+      rootPath: resolvedConfig.rootPath
+    }),
+    inspectSchematronArtifact({
+      artifactKind: "en16931_tc434",
+      artifactPath: resolvedConfig.en16931SchematronPath,
+      rootPath: resolvedConfig.rootPath
+    })
+  ]);
+
+  return {
+    resolvedConfig,
+    peppolBisArtifact,
+    en16931Artifact,
+    artifactInfo: buildSchematronArtifactInfo({
+      resolvedConfig,
+      peppolBisArtifact,
+      en16931Artifact
+    })
+  };
+}
+
 export async function buildUblXsdArtifactInfo(
   config: UblXsdArtifactConfigInput | undefined
 ): Promise<UblXsdArtifactInfo> {
   return (await inspectUblXsdArtifacts(config)).artifactInfo;
+}
+
+export async function buildSchematronArtifactInfo(
+  config: SchematronArtifactConfigInput | undefined
+): Promise<SchematronArtifactRegistryInfo> {
+  return (await inspectSchematronArtifacts(config)).artifactInfo;
 }
 
 function getSelectedDocumentType(input: {
@@ -671,6 +948,31 @@ function buildSafeSchemaDiagnostics(input: {
   };
 }
 
+function buildSafeSchematronFileDiagnostics(input: {
+  artifact: SchematronArtifactFileInfo;
+  rootPath: string | null;
+}): SchematronSafeFileArtifactDiagnostics {
+  const labels = getSafeSchemaPathLabels({
+    schemaPath: input.artifact.path,
+    rootPath: input.rootPath
+  });
+
+  return {
+    artifactKind: input.artifact.artifactKind,
+    configured: input.artifact.configured,
+    status: input.artifact.status,
+    readable: input.artifact.readable,
+    usable: input.artifact.usable,
+    sha256: input.artifact.sha256,
+    label: labels.label,
+    basename: labels.basename,
+    ...(labels.relativePathUnderRoot
+      ? { relativePathUnderRoot: labels.relativePathUnderRoot }
+      : {}),
+    ...(input.artifact.reason ? { reason: input.artifact.reason } : {})
+  };
+}
+
 function getBlockedDependencyGraphCode(graph: UblXsdDependencyGraphInfo) {
   if (graph.status === "missing_dependency") {
     return "schema_dependency_missing";
@@ -835,6 +1137,43 @@ export async function buildSafeUblXsdArtifactDiagnostics(
   };
 }
 
+export async function buildSafeSchematronArtifactDiagnostics(
+  config: SchematronArtifactConfigInput | undefined
+): Promise<SchematronSafeArtifactDiagnostics> {
+  const inspection = await inspectSchematronArtifacts(config);
+  const readyArtifactCount = [
+    inspection.peppolBisArtifact.usable,
+    inspection.en16931Artifact.usable
+  ].filter(Boolean).length;
+
+  return {
+    diagnosticKind: "schematron_artifacts",
+    configured:
+      inspection.peppolBisArtifact.configured ||
+      inspection.en16931Artifact.configured,
+    usable: readyArtifactCount > 0,
+    readyArtifactCount,
+    requiredArtifactCount: 2,
+    allRequiredArtifactsReadable:
+      inspection.peppolBisArtifact.readable &&
+      inspection.en16931Artifact.readable,
+    validatorName: SCHEMATRON_VALIDATOR_NAME,
+    validatorAvailable: false,
+    validationExecutionEnabled: false,
+    artifactVersion: inspection.artifactInfo.artifactVersion,
+    checkedAt: inspection.artifactInfo.checkedAt,
+    peppolBisArtifact: buildSafeSchematronFileDiagnostics({
+      artifact: inspection.peppolBisArtifact,
+      rootPath: inspection.artifactInfo.rootPath
+    }),
+    en16931Artifact: buildSafeSchematronFileDiagnostics({
+      artifact: inspection.en16931Artifact,
+      rootPath: inspection.artifactInfo.rootPath
+    }),
+    disclaimer: SCHEMATRON_ARTIFACT_DIAGNOSTICS_DISCLAIMER
+  };
+}
+
 export function withUblXsdDependencyGraph(
   artifactInfo: UblXsdArtifactInfo,
   dependencyGraph: UblXsdDependencyGraphInfo
@@ -868,6 +1207,23 @@ export async function getUblXsdArtifactHealth(
     status:
       readyCount === 2 ? "ready" : readyCount === 1 ? "partial" : "not_configured",
     readySchemaCount: readyCount,
+    artifactInfo: inspection.artifactInfo
+  };
+}
+
+export async function getSchematronArtifactHealth(
+  config: SchematronArtifactConfigInput | undefined
+) {
+  const inspection = await inspectSchematronArtifacts(config);
+  const readyCount = [
+    inspection.peppolBisArtifact.usable,
+    inspection.en16931Artifact.usable
+  ].filter(Boolean).length;
+
+  return {
+    status:
+      readyCount === 2 ? "ready" : readyCount === 1 ? "partial" : "not_configured",
+    readyArtifactCount: readyCount,
     artifactInfo: inspection.artifactInfo
   };
 }
