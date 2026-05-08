@@ -136,6 +136,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const schematronResultMapperSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronResultMappingContract")
   );
+  const peppolBisExecutionPathSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobPeppolBisExecutionPathFoundation")
+  );
   const schematronArtifactSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronArtifactFileDiagnostics")
   );
@@ -176,6 +179,16 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     /not exposed as a public XML validation job check/
   );
   assert.match(serializedPost, /schematron_result_mapper_v1/);
+  assert.match(serializedPost, /peppol_bis_execution_path_v1/);
+  assert.match(serializedPost, /package-level\/internal test-only/i);
+  assert.match(
+    serializedPost,
+    /normal API and worker XML validation jobs still do not execute Schematron/i
+  );
+  assert.match(
+    serializedPost,
+    /do not call peppol_bis_execution_path_v1/
+  );
   assert.match(
     serializedPost,
     /future mapping layer for sanitized SVRL-style failed assertions and successful reports/
@@ -350,6 +363,32 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     schematronResultMapperSchema,
     /Normal API and worker XML validation jobs do not call this mapper/
   );
+  assert.match(peppolBisExecutionPathSchema, /peppol_bis_execution_path_v1/);
+  assert.match(peppolBisExecutionPathSchema, /peppol_bis_billing/);
+  assert.match(peppolBisExecutionPathSchema, /normalJobExecutionEnabled/);
+  assert.match(peppolBisExecutionPathSchema, /normalJobValidationExecuted/);
+  assert.match(peppolBisExecutionPathSchema, /internal_test_only/);
+  assert.match(peppolBisExecutionPathSchema, /blocked_by_policy/);
+  assert.match(peppolBisExecutionPathSchema, /engine_unavailable/);
+  assert.match(peppolBisExecutionPathSchema, /ready_for_future_execution/);
+  assert.match(peppolBisExecutionPathSchema, /unsafe_input/);
+  assert.match(peppolBisExecutionPathSchema, /PEPPOL_SCHEMATRON_RULE_FAILED/);
+  assert.match(peppolBisExecutionPathSchema, /SCHEMATRON_REPORT_WARNING/);
+  assert.match(peppolBisExecutionPathSchema, /rawXmlReturned/);
+  assert.match(
+    peppolBisExecutionPathSchema,
+    /schematronFileContentsReturned/
+  );
+  assert.match(
+    peppolBisExecutionPathSchema,
+    /fullAbsoluteLocalPathsReturned/
+  );
+  assert.match(peppolBisExecutionPathSchema, /remoteFetching/);
+  assert.match(peppolBisExecutionPathSchema, /javaOrSystemDependencyRequired/);
+  assert.match(
+    peppolBisExecutionPathSchema,
+    /normalApiWorkerExecutionEnabled/
+  );
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
   assert.match(schematronArtifactSchema, /basename/);
   assert.match(schematronArtifactSchema, /sha256/);
@@ -376,6 +415,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(findingSchema, /EN16931_SCHEMATRON_RULE_FAILED/);
   assert.match(findingSchema, /schematron_local_execution_prototype_v1/);
   assert.match(findingSchema, /schematron_result_mapper_v1/);
+  assert.match(findingSchema, /peppol_bis_execution_path_v1/);
   assert.match(findingSchema, /package-level internal test-only calls/);
   assert.match(findingSchema, /never raw XML/);
   assert.match(findingSchema, /PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED/);

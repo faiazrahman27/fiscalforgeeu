@@ -93,6 +93,25 @@ compliance guarantees, legal/tax/accounting conclusions, or authority
 acceptance. The mapper returns no raw XML, no Schematron file contents, no file
 contents, and no full absolute local filesystem paths.
 
+Step 55 adds `peppol_bis_execution_path_v1` in `packages/ubl`. This creates a
+guarded package-level Peppol BIS Billing execution path foundation for future
+integration. It can compose `schematron_policy_v1`,
+`schematron_engine_candidate_v1`,
+`schematron_local_execution_prototype_v1`, and
+`schematron_result_mapper_v1` in explicit package-level/internal test-only
+calls. It proves that Peppol-layer findings can flow to
+`PEPPOL_SCHEMATRON_RULE_FAILED` and that successful reports can flow to
+`SCHEMATRON_REPORT_WARNING` through the existing sanitized contract. Normal API
+and XML worker validation jobs still do not call this execution path, still do
+not execute Peppol Schematron, and still keep
+`schematron_peppol_placeholder` as `not_implemented` with
+`validationExecutionEnabled: false`, `validationExecuted: false`, and
+`markedValid: false`. Step 55 does not provide Peppol certification, EN 16931
+certification, compliance guarantees, legal/tax/accounting conclusions, or
+authority acceptance. It returns no raw XML, no Schematron file contents, no
+file contents, and no full absolute local filesystem paths, and it does not
+fetch remote resources.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -139,6 +158,21 @@ The Step 54 result mapper uses:
 - Technical mapping only; it does not parse Schematron files, fetch remote
   resources, require Java/system dependencies, or execute XPath assertions.
 
+The Step 55 Peppol BIS Billing execution path foundation uses:
+
+- Existing local package code in `packages/ubl`.
+- The Step 51 policy metadata boundary.
+- The Step 52 engine candidate metadata boundary.
+- The Step 53 internal local execution prototype for explicit package-level
+  test-only rule execution.
+- The Step 54 result mapper for already-extracted sanitized SVRL-style results.
+- Default `disabled` mode, a metadata-only `preflight_only` mode, and an
+  explicit `internal_test_only` mode for package tests.
+- Strict XML construct blocking for `DOCTYPE`, `ENTITY`, `SYSTEM`/`PUBLIC`, and
+  `xml-stylesheet` before internal test-only execution.
+- No new production Schematron engine dependency, no Java/system dependency,
+  and no remote fetching.
+
 The validator and diagnostics do not fetch remote schema or Schematron files.
 All artefact files must already exist locally and be readable by the process
 running the worker or API.
@@ -147,9 +181,10 @@ running the worker or API.
 
 This setup does not add or provide:
 
-- Peppol Schematron execution.
-- EN 16931 / TC434 Schematron execution.
+- Normal API/worker Peppol Schematron execution.
+- Normal API/worker EN 16931 / TC434 Schematron execution.
 - Public API or XML worker Schematron execution.
+- Production Peppol BIS Billing execution in public job flow.
 - Full Schematron standard support.
 - Production XPath assertion execution in normal XML validation jobs.
 - Peppol certification.
@@ -409,6 +444,29 @@ The package-level result mapper is also separate from XML validation jobs:
   severity.
 - It is not wired into API or XML worker job execution in Step 54.
 
+The package-level Peppol BIS Billing execution path foundation is also separate
+from XML validation jobs:
+
+- Version: `peppol_bis_execution_path_v1`.
+- Layer: `peppol_bis_billing`.
+- Default mode: `disabled`, with no XML parsing and no rule or mapper
+  execution.
+- Preflight mode: `preflight_only`, using safe artefact diagnostics, policy
+  metadata, and engine candidate metadata only.
+- Internal execution mode: `internal_test_only`, for package-level/internal
+  test-only calls.
+- Status values include `disabled`, `blocked_by_policy`, `not_configured`,
+  `artifact_unreadable`, `engine_unavailable`,
+  `ready_for_future_execution`, `executed`, `failed`, `unsafe_input`, and
+  `unsupported`.
+- When both sanitized SVRL-style results and prototype rules are supplied,
+  sanitized SVRL-style results take precedence for deterministic mapping.
+- Failed Peppol assertions map to `PEPPOL_SCHEMATRON_RULE_FAILED`.
+- Successful reports map to `SCHEMATRON_REPORT_WARNING`.
+- It is not wired into API or XML worker job execution in Step 55.
+- It is not production Peppol BIS Billing validation, not EN 16931 / TC434
+  validation, and not certification or authority acceptance.
+
 The diagnostics do not return raw XML, schema file contents, Schematron file
 contents, secrets, or full absolute local filesystem paths.
 
@@ -480,7 +538,7 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 through 54. The Schematron registry can inspect
+: This is expected in Steps 47 through 55. The Schematron registry can inspect
   configured files, XML validation jobs can report safe diagnostics, the shared
   finding contract can describe future sanitized rule metadata, the Step 50
   preflight adapter can report `ready_for_future_execution`, and the Step 51
@@ -488,8 +546,10 @@ Schematron readable but validation disabled
   report engine candidate availability metadata. Step 53 adds only a
   package-level internal test-only local execution prototype. Step 54 adds only
   a package-level result mapper for already-extracted sanitized SVRL-style
-  outputs. Normal API and worker jobs do not execute Schematron validation yet.
-  Execution-like policy values are blocked.
+  outputs. Step 55 adds only a guarded package-level Peppol BIS Billing
+  execution path foundation for explicit internal/package tests. Normal API and
+  worker jobs do not execute Schematron validation yet. Execution-like policy
+  values are blocked.
 
 Hash mismatch
 
@@ -502,7 +562,7 @@ Hash mismatch
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
 - Schematron execution is not enabled in normal API or XML worker jobs in Steps
-  47 through 54.
+  47 through 55.
 - Step 51 policy variables are metadata controls only and must not be used to
   configure production execution.
 - Step 52 engine candidate metadata is preparatory only and must not be treated
@@ -512,6 +572,10 @@ Hash mismatch
   must not be treated as production Peppol BIS Billing or EN 16931 validation.
 - Step 54 `schematron_result_mapper_v1` is a mapping foundation only and must
   not be treated as production Peppol BIS Billing or EN 16931 validation.
+- Step 55 `peppol_bis_execution_path_v1` is a guarded package-level foundation
+  only and must not be treated as production Peppol BIS Billing validation,
+  EN 16931 validation, certification, compliance, legal/tax/accounting
+  correctness, or authority acceptance.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -523,10 +587,12 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 54. The result mapper is a
-package-level mapping utility, and normal XML validation jobs still store only
-safe metadata in existing JSONB fields such as
-`xml_validation_jobs.result_summary` and `xml_validation_jobs.findings`. Future
-safe mapped findings can fit those existing JSONB fields. No raw XML column is
-added, no Schematron file contents are stored, no absolute local filesystem
+No Supabase migration is needed for Step 55. The Peppol BIS Billing execution
+path foundation is a package-level boundary and normal XML validation jobs still
+do not execute Schematron or persist new durable queryable execution data.
+Existing JSONB fields such as `xml_validation_jobs.result_summary` and
+`xml_validation_jobs.findings` remain sufficient for the current safe
+metadata-only public job results and for future sanitized mapped findings when a
+later step explicitly wires execution under reviewed policy. No raw XML column
+is added, no Schematron file contents are stored, no absolute local filesystem
 paths are stored, and no schema change is required.
