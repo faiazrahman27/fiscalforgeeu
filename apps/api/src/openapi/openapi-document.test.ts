@@ -133,6 +133,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const schematronEngineCandidateSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronEngineCandidate")
   );
+  const schematronResultMapperSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchematronResultMappingContract")
+  );
   const schematronArtifactSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronArtifactFileDiagnostics")
   );
@@ -171,6 +174,15 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(
     serializedPost,
     /not exposed as a public XML validation job check/
+  );
+  assert.match(serializedPost, /schematron_result_mapper_v1/);
+  assert.match(
+    serializedPost,
+    /future mapping layer for sanitized SVRL-style failed assertions and successful reports/
+  );
+  assert.match(
+    serializedPost,
+    /do not produce real mapped Schematron findings from execution/
   );
   assert.match(
     serializedPost,
@@ -315,6 +327,29 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     schematronEngineCandidateSchema,
     /does not enable normal API or worker XML validation jobs/
   );
+  assert.match(schematronResultMapperSchema, /schematron_result_mapper_v1/);
+  assert.match(schematronResultMapperSchema, /schematron_result_mapping/);
+  assert.match(schematronResultMapperSchema, /normalJobExecutionEnabled/);
+  assert.match(schematronResultMapperSchema, /validationExecuted/);
+  assert.match(schematronResultMapperSchema, /SCHEMATRON_ASSERTION_FAILED/);
+  assert.match(schematronResultMapperSchema, /SCHEMATRON_REPORT_WARNING/);
+  assert.match(schematronResultMapperSchema, /PEPPOL_SCHEMATRON_RULE_FAILED/);
+  assert.match(schematronResultMapperSchema, /EN16931_SCHEMATRON_RULE_FAILED/);
+  assert.match(schematronResultMapperSchema, /ruleId/);
+  assert.match(schematronResultMapperSchema, /businessRuleId/);
+  assert.match(schematronResultMapperSchema, /schematronLayer/);
+  assert.match(schematronResultMapperSchema, /ruleLocation/);
+  assert.match(schematronResultMapperSchema, /testExpression/);
+  assert.match(schematronResultMapperSchema, /assertionText/);
+  assert.match(schematronResultMapperSchema, /diagnosticReference/);
+  assert.match(schematronResultMapperSchema, /rawXmlReturned/);
+  assert.match(schematronResultMapperSchema, /schematronFileContentsReturned/);
+  assert.match(schematronResultMapperSchema, /fullAbsoluteLocalPathsReturned/);
+  assert.match(schematronResultMapperSchema, /remoteFetching/);
+  assert.match(
+    schematronResultMapperSchema,
+    /Normal API and worker XML validation jobs do not call this mapper/
+  );
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
   assert.match(schematronArtifactSchema, /basename/);
   assert.match(schematronArtifactSchema, /sha256/);
@@ -336,9 +371,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(findingSchema, /diagnosticReference/);
   assert.match(findingSchema, /SCHEMATRON_EXECUTION_NOT_ENABLED/);
   assert.match(findingSchema, /SCHEMATRON_ASSERTION_FAILED/);
+  assert.match(findingSchema, /SCHEMATRON_REPORT_WARNING/);
   assert.match(findingSchema, /PEPPOL_SCHEMATRON_RULE_FAILED/);
   assert.match(findingSchema, /EN16931_SCHEMATRON_RULE_FAILED/);
   assert.match(findingSchema, /schematron_local_execution_prototype_v1/);
+  assert.match(findingSchema, /schematron_result_mapper_v1/);
   assert.match(findingSchema, /package-level internal test-only calls/);
   assert.match(findingSchema, /never raw XML/);
   assert.match(findingSchema, /PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED/);

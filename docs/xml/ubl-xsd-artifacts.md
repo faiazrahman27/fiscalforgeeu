@@ -75,6 +75,24 @@ prototype, still keep `validationExecutionEnabled: false`,
 `not_implemented`. The prototype returns no raw XML, no Schematron file
 contents, no file contents, and no full absolute local filesystem paths.
 
+Step 54 adds `schematron_result_mapper_v1` in `packages/ubl`. This is a
+production-oriented mapping foundation for future real execution integration. It
+maps already-extracted, sanitized SVRL-style failed assertions and successful
+reports into `schematron_contract_v1` findings, including future codes such as
+`SCHEMATRON_ASSERTION_FAILED`, `SCHEMATRON_REPORT_WARNING`,
+`PEPPOL_SCHEMATRON_RULE_FAILED`, and `EN16931_SCHEMATRON_RULE_FAILED`. It can
+preserve sanitized `ruleId`, `businessRuleId`, `schematronLayer`,
+`ruleLocation`, `testExpression`, `assertionText`, and
+`diagnosticReference` metadata. Normal XML validation jobs still do not execute
+Schematron, still do not call the mapper from public API or XML worker job
+paths, and still keep the `schematron_peppol_placeholder` check
+`not_implemented` with `validationExecutionEnabled: false`,
+`validationExecuted: false`, and `markedValid: false`. Step 54 does not provide
+Peppol BIS Billing execution, EN 16931 / TC434 execution, certification,
+compliance guarantees, legal/tax/accounting conclusions, or authority
+acceptance. The mapper returns no raw XML, no Schematron file contents, no file
+contents, and no full absolute local filesystem paths.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -112,6 +130,14 @@ The Step 53 local execution prototype uses:
 - Strict XML/rule limits and XML construct blocking before parsing.
 - A small internal path/assertion subset only; it is not a general Schematron or
   production XPath engine.
+
+The Step 54 result mapper uses:
+
+- Existing `schematron_contract_v1` finding builders and sanitizer.
+- Already-extracted SVRL-style failed assertion and successful report metadata.
+- A conservative result cap with safe truncation metadata.
+- Technical mapping only; it does not parse Schematron files, fetch remote
+  resources, require Java/system dependencies, or execute XPath assertions.
 
 The validator and diagnostics do not fetch remote schema or Schematron files.
 All artefact files must already exist locally and be readable by the process
@@ -368,6 +394,21 @@ The package-level local prototype is separate from XML validation jobs:
   `SCHEMATRON_ASSERTION_FAILED` depending on the selected layer.
 - It is not wired into API or XML worker job execution in Step 53.
 
+The package-level result mapper is also separate from XML validation jobs:
+
+- Version: `schematron_result_mapper_v1`.
+- Input: sanitized SVRL-style failed assertions and successful reports that have
+  already been extracted by a future execution boundary.
+- Output: `schematron_contract_v1` findings.
+- Default layer: `unknown`.
+- Default result cap: 500 mapped findings.
+- Failed assertions map to `PEPPOL_SCHEMATRON_RULE_FAILED`,
+  `EN16931_SCHEMATRON_RULE_FAILED`, or `SCHEMATRON_ASSERTION_FAILED` depending
+  on the selected layer.
+- Successful reports map to `SCHEMATRON_REPORT_WARNING` with warning or info
+  severity.
+- It is not wired into API or XML worker job execution in Step 54.
+
 The diagnostics do not return raw XML, schema file contents, Schematron file
 contents, secrets, or full absolute local filesystem paths.
 
@@ -439,15 +480,16 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 through 53. The Schematron registry can inspect
+: This is expected in Steps 47 through 54. The Schematron registry can inspect
   configured files, XML validation jobs can report safe diagnostics, the shared
   finding contract can describe future sanitized rule metadata, the Step 50
   preflight adapter can report `ready_for_future_execution`, and the Step 51
   policy layer can report engine/policy selection metadata. Step 52 can also
   report engine candidate availability metadata. Step 53 adds only a
-  package-level internal test-only local execution prototype. Normal API and
-  worker jobs do not execute Schematron validation yet. Execution-like policy
-  values are blocked.
+  package-level internal test-only local execution prototype. Step 54 adds only
+  a package-level result mapper for already-extracted sanitized SVRL-style
+  outputs. Normal API and worker jobs do not execute Schematron validation yet.
+  Execution-like policy values are blocked.
 
 Hash mismatch
 
@@ -460,7 +502,7 @@ Hash mismatch
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
 - Schematron execution is not enabled in normal API or XML worker jobs in Steps
-  47 through 53.
+  47 through 54.
 - Step 51 policy variables are metadata controls only and must not be used to
   configure production execution.
 - Step 52 engine candidate metadata is preparatory only and must not be treated
@@ -468,6 +510,8 @@ Hash mismatch
   authority acceptance.
 - Step 53 `schematron_local_execution_prototype_v1` is internal/test-only and
   must not be treated as production Peppol BIS Billing or EN 16931 validation.
+- Step 54 `schematron_result_mapper_v1` is a mapping foundation only and must
+  not be treated as production Peppol BIS Billing or EN 16931 validation.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -479,9 +523,10 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 53. The local execution prototype is a
-package-level internal/test-only boundary, and normal XML validation jobs still
-store only safe metadata in existing JSONB fields such as
-`xml_validation_jobs.result_summary` and `xml_validation_jobs.findings`. No raw
-XML column is added, no Schematron file contents are stored, and no schema
-change is required.
+No Supabase migration is needed for Step 54. The result mapper is a
+package-level mapping utility, and normal XML validation jobs still store only
+safe metadata in existing JSONB fields such as
+`xml_validation_jobs.result_summary` and `xml_validation_jobs.findings`. Future
+safe mapped findings can fit those existing JSONB fields. No raw XML column is
+added, no Schematron file contents are stored, no absolute local filesystem
+paths are stored, and no schema change is required.
