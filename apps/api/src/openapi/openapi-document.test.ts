@@ -166,6 +166,16 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /engineCandidate/);
   assert.match(serializedPost, /schematron_policy_v1/);
   assert.match(serializedPost, /schematron_engine_candidate_v1/);
+  assert.match(serializedPost, /schematron_local_execution_prototype_v1/);
+  assert.match(serializedPost, /internal test-only/);
+  assert.match(
+    serializedPost,
+    /not exposed as a public XML validation job check/
+  );
+  assert.match(
+    serializedPost,
+    /normal API and worker XML validation jobs still do not execute Schematron/i
+  );
   assert.match(serializedPost, /SCHEMATRON_EXECUTION_MODE/);
   assert.match(serializedPost, /SCHEMATRON_ENGINE/);
   assert.match(serializedPost, /SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION/);
@@ -261,6 +271,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   );
   assert.match(schematronPolicySchema, /does not enable validation/);
   assert.match(schematronPolicySchema, /Execution-like values are blocked/i);
+  assert.match(
+    schematronPolicySchema,
+    /schematron_local_execution_prototype_v1/
+  );
+  assert.match(schematronPolicySchema, /not a public policy mode/);
   assert.match(schematronEngineCandidateSchema, /schematron_engine_candidate/);
   assert.match(
     schematronEngineCandidateSchema,
@@ -293,6 +308,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   );
   assert.match(
     schematronEngineCandidateSchema,
+    /schematron_local_execution_prototype_v1/
+  );
+  assert.match(schematronEngineCandidateSchema, /internal test-only execution/);
+  assert.match(
+    schematronEngineCandidateSchema,
     /does not enable normal API or worker XML validation jobs/
   );
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
@@ -318,6 +338,8 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(findingSchema, /SCHEMATRON_ASSERTION_FAILED/);
   assert.match(findingSchema, /PEPPOL_SCHEMATRON_RULE_FAILED/);
   assert.match(findingSchema, /EN16931_SCHEMATRON_RULE_FAILED/);
+  assert.match(findingSchema, /schematron_local_execution_prototype_v1/);
+  assert.match(findingSchema, /package-level internal test-only calls/);
   assert.match(findingSchema, /never raw XML/);
   assert.match(findingSchema, /PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED/);
   assert.match(jobSchema, /xsd_ubl/);

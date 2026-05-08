@@ -63,6 +63,18 @@ mark Peppol BIS Billing / EN 16931 validation as passed. It does not certify
 Peppol or EN 16931, prove compliance, provide legal/tax/accounting conclusions,
 or indicate authority acceptance.
 
+Step 53 adds `schematron_local_execution_prototype_v1` in `packages/ubl`. This
+is a guarded package-level prototype for explicit internal test-only calls. It
+can execute a tiny deterministic local Schematron-style subset against safe XML
+and can produce sanitized `schematron_contract_v1` findings. It is not full
+Schematron, not Peppol BIS Billing validation, and not EN 16931 / TC434
+validation. Normal API and XML worker validation jobs still do not call the
+prototype, still keep `validationExecutionEnabled: false`,
+`validationExecuted: false`, and `markedValid: false` for
+`schematron_peppol_placeholder`, and still return the placeholder as
+`not_implemented`. The prototype returns no raw XML, no Schematron file
+contents, no file contents, and no full absolute local filesystem paths.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -92,6 +104,15 @@ The Schematron engine candidate diagnostics use:
   `future_schxslt`, and `internal_test_candidate`.
 - Availability status values only; no rule execution is enabled.
 
+The Step 53 local execution prototype uses:
+
+- Existing local Node package code in `packages/ubl`.
+- Existing XML parsing infrastructure already used by the package.
+- Explicit `internal_test_only` mode for package tests and internal calls.
+- Strict XML/rule limits and XML construct blocking before parsing.
+- A small internal path/assertion subset only; it is not a general Schematron or
+  production XPath engine.
+
 The validator and diagnostics do not fetch remote schema or Schematron files.
 All artefact files must already exist locally and be readable by the process
 running the worker or API.
@@ -102,6 +123,9 @@ This setup does not add or provide:
 
 - Peppol Schematron execution.
 - EN 16931 / TC434 Schematron execution.
+- Public API or XML worker Schematron execution.
+- Full Schematron standard support.
+- Production XPath assertion execution in normal XML validation jobs.
 - Peppol certification.
 - EN 16931 certification or business-rule certification.
 - Official EU, tax authority, or filing validation.
@@ -329,6 +353,21 @@ reported as available, normal XML validation jobs still return
 `validationExecutionEnabled: false`, `validationExecuted: false`, and
 `markedValid: false` for Schematron.
 
+The package-level local prototype is separate from XML validation jobs:
+
+- Version: `schematron_local_execution_prototype_v1`.
+- Default mode: `disabled`, with no XML parsing and no rule execution.
+- Internal execution mode: `internal_test_only`.
+- Status values include `disabled`, `executed`, `failed`, `unsupported`, and
+  `unsafe_input`.
+- It rejects DOCTYPE, ENTITY, SYSTEM/PUBLIC external identifier text, and
+  `xml-stylesheet` processing instructions before parsing.
+- Default limits are 256 KB XML and 50 rules.
+- Failed prototype assertions are mapped to sanitized contract findings with
+  `PEPPOL_SCHEMATRON_RULE_FAILED`, `EN16931_SCHEMATRON_RULE_FAILED`, or
+  `SCHEMATRON_ASSERTION_FAILED` depending on the selected layer.
+- It is not wired into API or XML worker job execution in Step 53.
+
 The diagnostics do not return raw XML, schema file contents, Schematron file
 contents, secrets, or full absolute local filesystem paths.
 
@@ -400,14 +439,15 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 through 52. The Schematron registry can inspect
+: This is expected in Steps 47 through 53. The Schematron registry can inspect
   configured files, XML validation jobs can report safe diagnostics, the shared
   finding contract can describe future sanitized rule metadata, the Step 50
   preflight adapter can report `ready_for_future_execution`, and the Step 51
   policy layer can report engine/policy selection metadata. Step 52 can also
-  report engine candidate availability metadata, but normal API and worker jobs
-  do not execute Schematron validation yet. Execution-like policy values are
-  blocked.
+  report engine candidate availability metadata. Step 53 adds only a
+  package-level internal test-only local execution prototype. Normal API and
+  worker jobs do not execute Schematron validation yet. Execution-like policy
+  values are blocked.
 
 Hash mismatch
 
@@ -419,12 +459,15 @@ Hash mismatch
 
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
-- Schematron execution is not enabled in Steps 47 through 52.
+- Schematron execution is not enabled in normal API or XML worker jobs in Steps
+  47 through 53.
 - Step 51 policy variables are metadata controls only and must not be used to
   configure production execution.
 - Step 52 engine candidate metadata is preparatory only and must not be treated
   as Peppol validation, EN 16931 validation, certification, compliance, or
   authority acceptance.
+- Step 53 `schematron_local_execution_prototype_v1` is internal/test-only and
+  must not be treated as production Peppol BIS Billing or EN 16931 validation.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -436,7 +479,9 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 52. `xml_validation_jobs.result_summary`
-and `xml_validation_jobs.findings` are JSONB and can already store the safe
-Schematron finding contract, preflight metadata, policy metadata, and engine
-candidate metadata. No raw XML column is added and no schema change is required.
+No Supabase migration is needed for Step 53. The local execution prototype is a
+package-level internal/test-only boundary, and normal XML validation jobs still
+store only safe metadata in existing JSONB fields such as
+`xml_validation_jobs.result_summary` and `xml_validation_jobs.findings`. No raw
+XML column is added, no Schematron file contents are stored, and no schema
+change is required.
