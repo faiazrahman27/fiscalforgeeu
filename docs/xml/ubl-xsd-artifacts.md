@@ -112,6 +112,25 @@ authority acceptance. It returns no raw XML, no Schematron file contents, no
 file contents, and no full absolute local filesystem paths, and it does not
 fetch remote resources.
 
+Step 56 adds `en16931_execution_path_v1` in `packages/ubl`. This creates the
+parallel guarded package-level EN 16931 / TC434 execution path foundation for
+future integration. It can compose `schematron_policy_v1`,
+`schematron_engine_candidate_v1`,
+`schematron_local_execution_prototype_v1`, and
+`schematron_result_mapper_v1` in explicit package-level/internal test-only
+calls. It proves that EN 16931-layer findings can flow to
+`EN16931_SCHEMATRON_RULE_FAILED` and that successful reports can flow to
+`SCHEMATRON_REPORT_WARNING` through the existing sanitized contract. Normal API
+and XML worker validation jobs still do not call this execution path, still do
+not execute EN 16931 Schematron, and still keep
+`schematron_peppol_placeholder` as `not_implemented` with
+`validationExecutionEnabled: false`, `validationExecuted: false`, and
+`markedValid: false`. Step 56 does not provide Peppol certification, EN 16931
+certification, compliance guarantees, legal/tax/accounting conclusions, or
+authority acceptance. It returns no raw XML, no Schematron file contents, no
+file contents, and no full absolute local filesystem paths, and it does not
+fetch remote resources.
+
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
 This is not official EU software, not a tax authority system, not
@@ -173,6 +192,21 @@ The Step 55 Peppol BIS Billing execution path foundation uses:
 - No new production Schematron engine dependency, no Java/system dependency,
   and no remote fetching.
 
+The Step 56 EN 16931 / TC434 execution path foundation uses:
+
+- Existing local package code in `packages/ubl`.
+- The Step 51 policy metadata boundary.
+- The Step 52 engine candidate metadata boundary.
+- The Step 53 internal local execution prototype for explicit package-level
+  test-only rule execution.
+- The Step 54 result mapper for already-extracted sanitized SVRL-style results.
+- Default `disabled` mode, a metadata-only `preflight_only` mode, and an
+  explicit `internal_test_only` mode for package tests.
+- Strict XML construct blocking for `DOCTYPE`, `ENTITY`, `SYSTEM`/`PUBLIC`, and
+  `xml-stylesheet` before internal test-only execution.
+- No new production Schematron engine dependency, no Java/system dependency,
+  and no remote fetching.
+
 The validator and diagnostics do not fetch remote schema or Schematron files.
 All artefact files must already exist locally and be readable by the process
 running the worker or API.
@@ -185,6 +219,7 @@ This setup does not add or provide:
 - Normal API/worker EN 16931 / TC434 Schematron execution.
 - Public API or XML worker Schematron execution.
 - Production Peppol BIS Billing execution in public job flow.
+- Production EN 16931 / TC434 execution in public job flow.
 - Full Schematron standard support.
 - Production XPath assertion execution in normal XML validation jobs.
 - Peppol certification.
@@ -467,6 +502,29 @@ from XML validation jobs:
 - It is not production Peppol BIS Billing validation, not EN 16931 / TC434
   validation, and not certification or authority acceptance.
 
+The package-level EN 16931 / TC434 execution path foundation is also separate
+from XML validation jobs:
+
+- Version: `en16931_execution_path_v1`.
+- Layer: `en16931_tc434`.
+- Default mode: `disabled`, with no XML parsing and no rule or mapper
+  execution.
+- Preflight mode: `preflight_only`, using safe EN 16931 artefact diagnostics,
+  policy metadata, and engine candidate metadata only.
+- Internal execution mode: `internal_test_only`, for package-level/internal
+  test-only calls.
+- Status values include `disabled`, `blocked_by_policy`, `not_configured`,
+  `artifact_unreadable`, `engine_unavailable`,
+  `ready_for_future_execution`, `executed`, `failed`, `unsafe_input`, and
+  `unsupported`.
+- When both sanitized SVRL-style results and prototype rules are supplied,
+  sanitized SVRL-style results take precedence for deterministic mapping.
+- Failed EN 16931 assertions map to `EN16931_SCHEMATRON_RULE_FAILED`.
+- Successful reports map to `SCHEMATRON_REPORT_WARNING`.
+- It is not wired into API or XML worker job execution in Step 56.
+- It is not production EN 16931 / TC434 validation, not Peppol BIS Billing
+  validation, and not certification or authority acceptance.
+
 The diagnostics do not return raw XML, schema file contents, Schematron file
 contents, secrets, or full absolute local filesystem paths.
 
@@ -538,7 +596,7 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 through 55. The Schematron registry can inspect
+: This is expected in Steps 47 through 56. The Schematron registry can inspect
   configured files, XML validation jobs can report safe diagnostics, the shared
   finding contract can describe future sanitized rule metadata, the Step 50
   preflight adapter can report `ready_for_future_execution`, and the Step 51
@@ -547,9 +605,11 @@ Schematron readable but validation disabled
   package-level internal test-only local execution prototype. Step 54 adds only
   a package-level result mapper for already-extracted sanitized SVRL-style
   outputs. Step 55 adds only a guarded package-level Peppol BIS Billing
-  execution path foundation for explicit internal/package tests. Normal API and
-  worker jobs do not execute Schematron validation yet. Execution-like policy
-  values are blocked.
+  execution path foundation for explicit internal/package tests. Step 56 adds
+  only the parallel guarded package-level EN 16931 / TC434 execution path
+  foundation for explicit internal/package tests. Normal API and worker jobs do
+  not execute Schematron validation yet. Execution-like policy values are
+  blocked.
 
 Hash mismatch
 
@@ -562,7 +622,7 @@ Hash mismatch
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
 - Schematron execution is not enabled in normal API or XML worker jobs in Steps
-  47 through 55.
+  47 through 56.
 - Step 51 policy variables are metadata controls only and must not be used to
   configure production execution.
 - Step 52 engine candidate metadata is preparatory only and must not be treated
@@ -576,6 +636,10 @@ Hash mismatch
   only and must not be treated as production Peppol BIS Billing validation,
   EN 16931 validation, certification, compliance, legal/tax/accounting
   correctness, or authority acceptance.
+- Step 56 `en16931_execution_path_v1` is a guarded package-level foundation
+  only and must not be treated as production EN 16931 / TC434 validation,
+  Peppol BIS Billing validation, certification, compliance,
+  legal/tax/accounting correctness, or authority acceptance.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -587,10 +651,10 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 55. The Peppol BIS Billing execution
-path foundation is a package-level boundary and normal XML validation jobs still
-do not execute Schematron or persist new durable queryable execution data.
-Existing JSONB fields such as `xml_validation_jobs.result_summary` and
+No Supabase migration is needed for Step 56. The EN 16931 / TC434 execution path
+foundation is a package-level boundary and normal XML validation jobs still do
+not execute Schematron or persist new durable queryable execution data. Existing
+JSONB fields such as `xml_validation_jobs.result_summary` and
 `xml_validation_jobs.findings` remain sufficient for the current safe
 metadata-only public job results and for future sanitized mapped findings when a
 later step explicitly wires execution under reviewed policy. No raw XML column
