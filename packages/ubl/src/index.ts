@@ -23,6 +23,7 @@ export * from "./schematron-local-execution-prototype.js";
 export * from "./schematron-result-mapper.js";
 export * from "./schematron-peppol-bis-execution.js";
 export * from "./schematron-en16931-execution.js";
+export * from "./schematron-execution-orchestrator.js";
 
 const UBL_INVOICE_NAMESPACE =
   "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2";
