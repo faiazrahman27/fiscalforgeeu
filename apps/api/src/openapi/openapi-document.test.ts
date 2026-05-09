@@ -148,6 +148,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
       "XmlValidationJobSchematronExecutionOrchestratorFoundation"
     )
   );
+  const xmlWorkerSchematronOrchestrationSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobXmlWorkerSchematronOrchestration")
+  );
   const schematronArtifactSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronArtifactFileDiagnostics")
   );
@@ -191,22 +194,21 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /peppol_bis_execution_path_v1/);
   assert.match(serializedPost, /en16931_execution_path_v1/);
   assert.match(serializedPost, /schematron_execution_orchestrator_v1/);
+  assert.match(serializedPost, /xml_worker_schematron_orchestrator_v1/);
+  assert.match(serializedPost, /workerSchematronOrchestratorVersion/);
+  assert.match(serializedPost, /schematronOrchestration/);
   assert.match(serializedPost, /package-level\/internal test-only/i);
   assert.match(
     serializedPost,
-    /normal API and worker XML validation jobs still do not execute Schematron/i
+    /Normal public API and worker XML validation jobs still do not execute production Schematron/i
   );
   assert.match(
     serializedPost,
-    /do not call peppol_bis_execution_path_v1/
+    /do not call peppol_bis_execution_path_v1 or en16931_execution_path_v1 as public checks/
   );
   assert.match(
     serializedPost,
-    /do not call peppol_bis_execution_path_v1 or en16931_execution_path_v1/
-  );
-  assert.match(
-    serializedPost,
-    /do not call peppol_bis_execution_path_v1, en16931_execution_path_v1, or schematron_execution_orchestrator_v1/
+    /xml_worker_schematron_orchestrator_v1 inside the XML worker as a default-safe bridge/
   );
   assert.match(
     serializedPost,
@@ -214,11 +216,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   );
   assert.match(
     serializedPost,
-    /do not produce real mapped Schematron findings from execution/
+    /do not produce real mapped Schematron findings from production execution/
   );
   assert.match(
     serializedPost,
-    /normal API and worker XML validation jobs still do not execute Schematron/i
+    /Normal public API and worker XML validation jobs still do not execute production Schematron/i
   );
   assert.match(serializedPost, /SCHEMATRON_EXECUTION_MODE/);
   assert.match(serializedPost, /SCHEMATRON_ENGINE/);
@@ -489,6 +491,41 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     schematronExecutionOrchestratorSchema,
     /normalApiWorkerExecutionEnabled/
   );
+  assert.match(
+    xmlWorkerSchematronOrchestrationSchema,
+    /xml_worker_schematron_orchestrator_v1/
+  );
+  assert.match(
+    xmlWorkerSchematronOrchestrationSchema,
+    /xml_worker_schematron_orchestration/
+  );
+  assert.match(
+    xmlWorkerSchematronOrchestrationSchema,
+    /schematron_execution_orchestrator_v1/
+  );
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /preflight_only/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /internal_test_only/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /not public\/default/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /unsafe_input/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /engine_unavailable/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /findingCount/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /fatalCount/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /warningCount/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /infoCount/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /raw XML/);
+  assert.match(
+    xmlWorkerSchematronOrchestrationSchema,
+    /Schematron file contents/
+  );
+  assert.match(
+    xmlWorkerSchematronOrchestrationSchema,
+    /full absolute local filesystem paths/
+  );
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /remote fetch/);
+  assert.match(
+    xmlWorkerSchematronOrchestrationSchema,
+    /Java\/system dependency/
+  );
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
   assert.match(schematronArtifactSchema, /basename/);
   assert.match(schematronArtifactSchema, /sha256/);
@@ -538,6 +575,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(jobSchema, /engineCandidateVersion/);
   assert.match(jobSchema, /engineAvailabilityStatus/);
   assert.match(jobSchema, /engineExecutionSupported/);
+  assert.match(jobSchema, /schematronOrchestration/);
+  assert.match(jobSchema, /workerSchematronOrchestratorVersion/);
+  assert.match(jobSchema, /orchestrationStatus/);
+  assert.match(jobSchema, /orchestrationReason/);
   assert.match(jobSchema, /executionPermitted/);
   assert.match(jobSchema, /findingContractVersion/);
   assert.match(jobSchema, /schematron_contract_v1/);

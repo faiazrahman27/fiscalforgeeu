@@ -150,6 +150,48 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
       availabilityStatus: "placeholder_only",
       executionSupported: false
     });
+    assert.equal(
+      schematronPeppol.workerSchematronOrchestratorVersion,
+      "xml_worker_schematron_orchestrator_v1"
+    );
+    assert.equal(schematronPeppol.orchestrationMode, "preflight_only");
+    assert.equal(schematronPeppol.orchestrationStatus, "engine_unavailable");
+    assert.equal(
+      schematronPeppol.orchestrationReason,
+      "schematron_execution_orchestrator_preflight_engine_unavailable"
+    );
+    const schematronOrchestration = readObject(
+      schematronPeppol.schematronOrchestration,
+      "schematronPeppol.schematronOrchestration"
+    );
+    assert.equal(
+      schematronOrchestration.diagnosticKind,
+      "xml_worker_schematron_orchestration"
+    );
+    assert.equal(
+      schematronOrchestration.workerSchematronOrchestratorVersion,
+      "xml_worker_schematron_orchestrator_v1"
+    );
+    assert.equal(schematronOrchestration.mode, "preflight_only");
+    assert.equal(schematronOrchestration.status, "engine_unavailable");
+    assert.equal(schematronOrchestration.validationExecutionEnabled, false);
+    assert.equal(schematronOrchestration.validationExecuted, false);
+    assert.equal(schematronOrchestration.markedValid, false);
+    const nestedOrchestrator = readObject(
+      schematronOrchestration.orchestrator,
+      "schematronOrchestration.orchestrator"
+    );
+    assert.equal(
+      nestedOrchestrator.diagnosticKind,
+      "schematron_execution_orchestrator"
+    );
+    assert.equal(
+      nestedOrchestrator.orchestratorVersion,
+      "schematron_execution_orchestrator_v1"
+    );
+    assert.equal(nestedOrchestrator.mode, "preflight_only");
+    assert.equal(nestedOrchestrator.validationExecutionEnabled, false);
+    assert.equal(nestedOrchestrator.validationExecuted, false);
     assert.equal(schematronPeppol.executionPermitted, false);
     assert.equal(
       schematronPeppol.adapterVersion,
@@ -246,6 +288,20 @@ test("stub validator returns safe metadata-only Schematron placeholder diagnosti
     assert.equal(checkSummary.engineAvailabilityStatus, "placeholder_only");
     assert.equal(checkSummary.engineExecutionSupported, false);
     assert.deepEqual(checkSummary.engineCandidate, engineCandidate);
+    assert.deepEqual(
+      checkSummary.schematronOrchestration,
+      schematronOrchestration
+    );
+    assert.equal(
+      checkSummary.workerSchematronOrchestratorVersion,
+      "xml_worker_schematron_orchestrator_v1"
+    );
+    assert.equal(checkSummary.orchestrationMode, "preflight_only");
+    assert.equal(checkSummary.orchestrationStatus, "engine_unavailable");
+    assert.equal(
+      checkSummary.orchestrationReason,
+      "schematron_execution_orchestrator_preflight_engine_unavailable"
+    );
     assert.equal(checkSummary.executionPermitted, false);
     assert.equal(
       checkSummary.adapterVersion,

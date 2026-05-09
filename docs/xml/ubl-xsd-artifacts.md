@@ -136,12 +136,26 @@ creates a unified guarded package-level orchestration foundation for the Peppol
 BIS Billing and EN 16931 / TC434 execution paths. It can compose the package
 level Peppol and EN paths in explicit internal/package tests, aggregate layer
 statuses, build layer summaries, merge sanitized findings, and report safe
-fatal/warning/info counts. Normal API and XML worker validation jobs still do
-not call the orchestrator and still do not execute Schematron. Step 57 does not
+fatal/warning/info counts. Step 57 itself does not wire the orchestrator into
+normal API or XML worker job execution. Step 57 does not
 provide Peppol certification, EN 16931 certification, compliance guarantees,
 legal/tax/accounting conclusions, or authority acceptance. It returns no raw
 XML, no Schematron file contents, no file contents, and no full absolute local
 filesystem paths, and it does not fetch remote resources.
+
+Step 58 adds `xml_worker_schematron_orchestrator_v1` in `apps/xml-worker`. This
+is the first XML worker bridge to the unified package-level orchestrator. When
+`schematron_peppol_placeholder` is requested, the worker can now build safe
+Schematron orchestration metadata through `schematron_execution_orchestrator_v1`
+in disabled or `preflight_only` mode. The placeholder still remains
+`not_implemented` by default, with `validationExecutionEnabled: false`,
+`validationExecuted: false`, and `markedValid: false`. `internal_test_only`
+orchestration is explicit local worker test behavior only and is not public
+production execution. Normal public API and worker results still do not certify
+Peppol or EN 16931 and do not claim official validation, legal/tax/accounting
+correctness, or authority acceptance. The worker bridge returns no raw XML, no
+Schematron file contents, no full absolute local filesystem paths, performs no
+remote fetching, and adds no Java/system dependency.
 
 These diagnostics are configuration checks only. Invoice Lantern is an
 independent, non-official EU e-invoice validation and ViDA-readiness sandbox.
@@ -232,6 +246,24 @@ The Step 57 unified Schematron execution orchestrator foundation uses:
 - No new production Schematron engine dependency, no Java/system dependency,
   and no remote fetching.
 
+The Step 58 XML worker Schematron orchestrator bridge uses:
+
+- Existing local worker code in `apps/xml-worker`.
+- The Step 57 `schematron_execution_orchestrator_v1` package boundary.
+- Default-safe worker mode selection for `schematron_peppol_placeholder`.
+- Worker summary fields such as `schematronOrchestration`,
+  `workerSchematronOrchestratorVersion`, `orchestrationStatus`, and
+  `orchestrationReason`.
+- `preflight_only` worker summaries for normal job metadata, with
+  `validationExecutionEnabled: false`, `validationExecuted: false`, and
+  `markedValid: false`.
+- `internal_test_only` only for explicit local worker tests or local worker test
+  options, not public/default behavior.
+- Existing XML safety checks before worker-side preflight/internal
+  orchestration.
+- No raw XML storage, no Schematron file content exposure, no full absolute
+  local path exposure, no remote fetching, and no Java/system dependency.
+
 The validator and diagnostics do not fetch remote schema or Schematron files.
 All artefact files must already exist locally and be readable by the process
 running the worker or API.
@@ -247,7 +279,8 @@ This setup does not add or provide:
 - Production EN 16931 / TC434 execution in public job flow.
 - Full Schematron standard support.
 - Production XPath assertion execution in normal XML validation jobs.
-- Public API or XML worker calls to `schematron_execution_orchestrator_v1`.
+- Public/default `internal_test_only` worker execution.
+- Public API inline execution through `schematron_execution_orchestrator_v1`.
 - Peppol certification.
 - EN 16931 certification or business-rule certification.
 - Official EU, tax authority, or filing validation.
@@ -551,8 +584,8 @@ from XML validation jobs:
 - It is not production EN 16931 / TC434 validation, not Peppol BIS Billing
   validation, and not certification or authority acceptance.
 
-The package-level unified Schematron execution orchestrator foundation is also
-separate from XML validation jobs:
+The package-level unified Schematron execution orchestrator foundation is the
+package boundary now used by the Step 58 XML worker bridge:
 
 - Version: `schematron_execution_orchestrator_v1`.
 - Default mode: `disabled`, with no XML parsing and no Peppol or EN execution
@@ -569,7 +602,26 @@ separate from XML validation jobs:
   `unsafe_input`, and `unsupported`.
 - It produces `layerSummaries` with safe counts and reason strings.
 - It merges sanitized findings from selected Peppol and EN paths.
-- It is not wired into API or XML worker job execution in Step 57.
+- Step 57 itself did not wire it into API or XML worker job execution.
+- It is not production Peppol BIS Billing validation, not production EN 16931 /
+  TC434 validation, not certification, not a compliance guarantee, and not
+  authority acceptance.
+
+The XML worker Schematron orchestration bridge is part of XML worker job
+summaries:
+
+- Version: `xml_worker_schematron_orchestrator_v1`.
+- Default helper mode: `disabled`.
+- Normal placeholder job mode: `preflight_only`, selected by the worker for
+  safe metadata summaries unless policy explicitly disables it.
+- It calls `schematron_execution_orchestrator_v1` only for safe disabled,
+  preflight, or explicit local `internal_test_only` worker test behavior.
+- It returns `schematronOrchestration`,
+  `workerSchematronOrchestratorVersion`, `orchestrationStatus`, and
+  `orchestrationReason` in the Schematron placeholder summary.
+- The public/default placeholder remains `not_implemented`; it is still kept in
+  failed/inactive checks and still has `validationExecutionEnabled: false`,
+  `validationExecuted: false`, and `markedValid: false`.
 - It is not production Peppol BIS Billing validation, not production EN 16931 /
   TC434 validation, not certification, not a compliance guarantee, and not
   authority acceptance.
@@ -645,7 +697,7 @@ External UBL dependency blocked
 
 Schematron readable but validation disabled
 
-: This is expected in Steps 47 through 57. The Schematron registry can inspect
+: This is expected in Steps 47 through 58. The Schematron registry can inspect
   configured files, XML validation jobs can report safe diagnostics, the shared
   finding contract can describe future sanitized rule metadata, the Step 50
   preflight adapter can report `ready_for_future_execution`, and the Step 51
@@ -656,10 +708,12 @@ Schematron readable but validation disabled
   outputs. Step 55 adds only a guarded package-level Peppol BIS Billing
   execution path foundation for explicit internal/package tests. Step 56 adds
   only the parallel guarded package-level EN 16931 / TC434 execution path
-  foundation for explicit internal/package tests. Step 57 adds only the unified
+  foundation for explicit internal/package tests. Step 57 adds the unified
   package-level orchestration foundation for explicit internal/package tests.
-  Normal API and worker jobs do not execute Schematron validation yet.
-  Execution-like policy values are blocked.
+  Step 58 lets the XML worker call that unified orchestrator for disabled or
+  preflight-safe metadata summaries, while keeping the public/default placeholder
+  non-executing. Normal public API and worker jobs do not execute production
+  Schematron validation yet. Execution-like policy values are blocked.
 
 Hash mismatch
 
@@ -671,8 +725,8 @@ Hash mismatch
 
 - Use local reviewed artefacts only.
 - Remote schema fetching is blocked.
-- Schematron execution is not enabled in normal API or XML worker jobs in Steps
-  47 through 57.
+- Production Schematron execution is not enabled in normal public API or XML
+  worker jobs in Steps 47 through 58.
 - Step 51 policy variables are metadata controls only and must not be used to
   configure production execution.
 - Step 52 engine candidate metadata is preparatory only and must not be treated
@@ -694,6 +748,9 @@ Hash mismatch
   foundation only and must not be treated as production Schematron execution,
   Peppol BIS Billing validation, EN 16931 / TC434 validation, certification,
   compliance, legal/tax/accounting correctness, or authority acceptance.
+- Step 58 `xml_worker_schematron_orchestrator_v1` is a worker-side metadata
+  bridge only. Its normal public/default path remains disabled/preflight-safe,
+  and `internal_test_only` must remain explicit local worker test behavior.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -705,12 +762,9 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 57. The unified Schematron execution
-orchestrator foundation is a package-level boundary and normal XML validation
-jobs still do not execute Schematron or persist new durable queryable execution
-data. Existing JSONB fields such as `xml_validation_jobs.result_summary` and
-`xml_validation_jobs.findings` remain sufficient for the current safe
-metadata-only public job results and for future sanitized mapped findings when a
-later step explicitly wires execution under reviewed policy. No raw XML column
-is added, no Schematron file contents are stored, no absolute local filesystem
-paths are stored, and no schema change is required.
+No Supabase migration is needed for Step 58. The worker orchestration bridge
+adds safe metadata and sanitized findings that fit the existing
+`xml_validation_jobs.result_summary` and `xml_validation_jobs.findings` JSONB
+fields. It does not introduce new durable query requirements, raw XML storage,
+Schematron file content storage, full absolute local path storage, RLS changes,
+grants, RPCs, indexes, or storage objects. No schema change is required.

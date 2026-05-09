@@ -26,6 +26,10 @@ import type {
   XmlWorkerRequest,
   XmlWorkerResult
 } from "./worker-types.js";
+import {
+  runXmlWorkerSchematronOrchestration,
+  type XmlWorkerSchematronResult
+} from "./schematron-worker-orchestrator.js";
 
 export const XML_WORKER_STUB_DISCLAIMER =
   "This XML validation job is a technical sandbox worker-readiness and configured-check result. It does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance.";
@@ -112,7 +116,8 @@ function buildSchematronPlaceholderSummary(
   diagnostics: SchematronSafeArtifactDiagnostics,
   preflight: SchematronExecutionPreflightResult,
   policy: SchematronExecutionPolicy,
-  engineCandidate: SchematronEngineCandidateInfo
+  engineCandidate: SchematronEngineCandidateInfo,
+  orchestration: XmlWorkerSchematronResult
 ) {
   return {
     adapterVersion: SCHEMATRON_EXECUTION_ADAPTER_VERSION,
@@ -128,6 +133,12 @@ function buildSchematronPlaceholderSummary(
     engineCandidateVersion: engineCandidate.engineCandidateVersion,
     engineAvailabilityStatus: engineCandidate.availabilityStatus,
     engineExecutionSupported: engineCandidate.executionSupported,
+    schematronOrchestration: orchestration.safeSummary,
+    workerSchematronOrchestratorVersion:
+      orchestration.workerSchematronOrchestratorVersion,
+    orchestrationMode: orchestration.mode,
+    orchestrationStatus: orchestration.status,
+    orchestrationReason: orchestration.reason,
     executionPermitted: false,
     findingContractVersion: SCHEMATRON_FINDING_CONTRACT_VERSION,
     supportedFutureFindingCodes: [...SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES],
@@ -199,6 +210,11 @@ async function buildSchematronPlaceholderResult(input: {
   const engineCandidate = await inspectSchematronEngineCandidate({
     engineId: policy.engineId
   });
+  const orchestration = await runXmlWorkerSchematronOrchestration({
+    xml: input.xml,
+    requestedChecks: ["schematron_peppol_placeholder"],
+    mode: policy.mode === "disabled" ? "disabled" : "preflight_only"
+  });
   const finding = buildSchematronPlaceholderFinding(diagnostics);
 
   return {
@@ -209,7 +225,8 @@ async function buildSchematronPlaceholderResult(input: {
       diagnostics,
       preflight,
       policy,
-      engineCandidate
+      engineCandidate,
+      orchestration
     )
   };
 }
@@ -414,6 +431,17 @@ export async function runStubXmlValidator(
           schematronPeppolSummary?.engineAvailabilityStatus ?? undefined,
         engineExecutionSupported:
           schematronPeppolSummary?.engineExecutionSupported ?? undefined,
+        schematronOrchestration:
+          schematronPeppolSummary?.schematronOrchestration ?? undefined,
+        workerSchematronOrchestratorVersion:
+          schematronPeppolSummary?.workerSchematronOrchestratorVersion ??
+          undefined,
+        orchestrationMode:
+          schematronPeppolSummary?.orchestrationMode ?? undefined,
+        orchestrationStatus:
+          schematronPeppolSummary?.orchestrationStatus ?? undefined,
+        orchestrationReason:
+          schematronPeppolSummary?.orchestrationReason ?? undefined,
         executionPermitted: false,
         validationExecutionEnabled: false,
         validationExecuted: false,

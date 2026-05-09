@@ -579,6 +579,96 @@ test("queue runner completes from transient payload reference and deletes payloa
   }
 });
 
+test("queue runner stores worker Schematron orchestration metadata without raw XML", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-sch-"));
+  const rawXml =
+    "<Invoice><ID>TRANSIENT-RUNNER-SCHEMATRON-58</ID></Invoice>";
+
+  try {
+    const reference = await createTransientXmlPayload({
+      xml: rawXml,
+      rootDir,
+      now: fixedNow,
+      ttlSeconds: 600
+    });
+    const job = createClaimedJob({
+      xmlSha256: sha256(rawXml),
+      xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+      requestedChecks: ["schematron_peppol_placeholder"],
+      resultSummary: {
+        queue: buildRunningQueueLifecycleFromSummary({
+          existingSummary: {
+            queue: {
+              queuedAt
+            }
+          },
+          now: startedAt,
+          claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+        }),
+        transientPayload: reference
+      }
+    });
+    const fake = createFakeRepository(job);
+    const result = await runXmlValidationQueueOnce({
+      repository: fake.repository,
+      transientPayloadStore: {
+        rootDir,
+        maxBytes: 2 * 1024 * 1024,
+        now: () => fixedNow
+      },
+      now: () => fixedNow
+    });
+    const completeInput = fake.getCompleteInput();
+    const metadata = await inspectTransientXmlPayloadMetadata({
+      payloadId: reference.payloadId,
+      rootDir
+    });
+
+    assert.equal(result.status, "completed");
+    assert.ok(completeInput);
+    assert.deepEqual(completeInput.completedChecks, []);
+    assert.deepEqual(completeInput.failedChecks, [
+      "schematron_peppol_placeholder"
+    ]);
+    assert.equal(metadata.exists, false);
+
+    const schematronPeppol = completeInput.resultSummary
+      .schematronPeppol as Record<string, unknown>;
+    const orchestration = schematronPeppol.schematronOrchestration as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(
+      schematronPeppol.workerSchematronOrchestratorVersion,
+      "xml_worker_schematron_orchestrator_v1"
+    );
+    assert.equal(schematronPeppol.orchestrationMode, "preflight_only");
+    assert.equal(orchestration.validationExecutionEnabled, false);
+    assert.equal(orchestration.validationExecuted, false);
+    assert.equal(orchestration.markedValid, false);
+    assert.equal(JSON.stringify(completeInput).includes(rawXml), false);
+    assert.equal(
+      JSON.stringify(completeInput).includes("TRANSIENT-RUNNER-SCHEMATRON-58"),
+      false
+    );
+    assert.equal(JSON.stringify(result).includes(rawXml), false);
+    assert.equal(
+      JSON.stringify(result).includes("TRANSIENT-RUNNER-SCHEMATRON-58"),
+      false
+    );
+    assert.doesNotMatch(
+      JSON.stringify(completeInput),
+      /\bcertified\b|\bcompliant\b|\baccepted by authority\b|\blegally valid\b|\bPeppol passed\b|\bEN 16931 passed\b/i
+    );
+  } finally {
+    await rm(rootDir, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
 test("queue runner fails missing transient payload and keeps raw XML absent", async () => {
   const rootDir = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-"));
   const reference = {
