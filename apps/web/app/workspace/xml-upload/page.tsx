@@ -257,6 +257,59 @@ type XmlValidationJob = {
   validationRunId: string | null;
 };
 
+type XmlSchematronOrchestrationSummary = {
+  diagnosticKind: string;
+  workerSchematronOrchestratorVersion: string;
+  status: string;
+  mode: string;
+  requested: boolean;
+  validationExecutionEnabled: boolean;
+  validationExecuted: boolean;
+  markedValid: false;
+  findingCount: number;
+  fatalCount: number;
+  warningCount: number;
+  infoCount: number;
+  reason: string;
+  orchestrator?: Record<string, unknown>;
+};
+
+type XmlSchematronPeppolJobSummary = {
+  requested: boolean;
+  implemented: boolean;
+  adapterVersion?: string;
+  policyVersion?: string;
+  policyMode?: string;
+  policyReason?: string;
+  engineId?: string;
+  engineCandidateVersion?: string;
+  engineAvailabilityStatus?: string;
+  engineExecutionSupported?: boolean;
+  workerSchematronOrchestratorVersion?: string;
+  orchestrationMode?: string;
+  orchestrationStatus?: string;
+  orchestrationReason?: string;
+  validationExecutionEnabled: boolean;
+  validationExecuted: boolean;
+  markedValid: boolean;
+  configured?: boolean;
+  usable?: boolean;
+  readyArtifactCount?: number;
+  requiredArtifactCount?: number;
+  status?: string;
+  schematronOrchestration?: XmlSchematronOrchestrationSummary;
+};
+
+type XmlSchematronLayerSummary = {
+  layer: string;
+  status: string;
+  findingCount: number;
+  fatalCount: number;
+  warningCount: number;
+  infoCount: number;
+  reason: string;
+};
+
 type ApiXmlValidationJobResponse = {
   job?: unknown;
 };
@@ -893,6 +946,226 @@ function formatValidationJobChecks(checks: XmlValidationJobCheck[]) {
   }
 
   return checks.map((check) => formatStatus(check)).join(", ");
+}
+
+function readOptionalStringField(record: Record<string, unknown>, key: string) {
+  const value = readStringField(record, key, "");
+
+  return value || undefined;
+}
+
+function readOptionalBooleanField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function readOptionalNumberField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function readSchematronOrchestrationSummary(
+  value: unknown
+): XmlSchematronOrchestrationSummary | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  if (value.markedValid !== false) {
+    return null;
+  }
+
+  const diagnosticKind = readStringField(value, "diagnosticKind", "");
+  const workerSchematronOrchestratorVersion = readStringField(
+    value,
+    "workerSchematronOrchestratorVersion",
+    ""
+  );
+  const status = readStringField(value, "status", "");
+  const mode = readStringField(value, "mode", "");
+
+  if (!diagnosticKind || !workerSchematronOrchestratorVersion || !status || !mode) {
+    return null;
+  }
+
+  return {
+    diagnosticKind,
+    workerSchematronOrchestratorVersion,
+    status,
+    mode,
+    requested: readBooleanField(value, "requested", false),
+    validationExecutionEnabled: readBooleanField(
+      value,
+      "validationExecutionEnabled",
+      false
+    ),
+    validationExecuted: readBooleanField(value, "validationExecuted", false),
+    markedValid: false,
+    findingCount: readNumberField(value, "findingCount", 0),
+    fatalCount: readNumberField(value, "fatalCount", 0),
+    warningCount: readNumberField(value, "warningCount", 0),
+    infoCount: readNumberField(value, "infoCount", 0),
+    reason: readStringField(value, "reason", "not_reported"),
+    ...(isPlainObject(value.orchestrator)
+      ? { orchestrator: value.orchestrator }
+      : {})
+  };
+}
+
+function readSchematronPeppolJobSummary(
+  resultSummary: Record<string, unknown>
+): XmlSchematronPeppolJobSummary | null {
+  const value = resultSummary.schematronPeppol;
+
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const orchestration = readSchematronOrchestrationSummary(
+    value.schematronOrchestration
+  );
+  const requested = readBooleanField(value, "requested", false);
+
+  if (!requested && !orchestration) {
+    return null;
+  }
+
+  return {
+    requested,
+    implemented: readBooleanField(value, "implemented", false),
+    adapterVersion: readOptionalStringField(value, "adapterVersion"),
+    policyVersion: readOptionalStringField(value, "policyVersion"),
+    policyMode: readOptionalStringField(value, "policyMode"),
+    policyReason: readOptionalStringField(value, "policyReason"),
+    engineId: readOptionalStringField(value, "engineId"),
+    engineCandidateVersion: readOptionalStringField(
+      value,
+      "engineCandidateVersion"
+    ),
+    engineAvailabilityStatus: readOptionalStringField(
+      value,
+      "engineAvailabilityStatus"
+    ),
+    engineExecutionSupported: readOptionalBooleanField(
+      value,
+      "engineExecutionSupported"
+    ),
+    workerSchematronOrchestratorVersion: readOptionalStringField(
+      value,
+      "workerSchematronOrchestratorVersion"
+    ),
+    orchestrationMode: readOptionalStringField(value, "orchestrationMode"),
+    orchestrationStatus: readOptionalStringField(value, "orchestrationStatus"),
+    orchestrationReason: readOptionalStringField(value, "orchestrationReason"),
+    validationExecutionEnabled: readBooleanField(
+      value,
+      "validationExecutionEnabled",
+      false
+    ),
+    validationExecuted: readBooleanField(value, "validationExecuted", false),
+    markedValid: readBooleanField(value, "markedValid", false),
+    configured: readOptionalBooleanField(value, "configured"),
+    usable: readOptionalBooleanField(value, "usable"),
+    readyArtifactCount: readOptionalNumberField(value, "readyArtifactCount"),
+    requiredArtifactCount: readOptionalNumberField(value, "requiredArtifactCount"),
+    status: readOptionalStringField(value, "status"),
+    ...(orchestration ? { schematronOrchestration: orchestration } : {})
+  };
+}
+
+function readSchematronLayerSummaries(
+  orchestrator: Record<string, unknown> | undefined
+): XmlSchematronLayerSummary[] {
+  const value = orchestrator?.layerSummaries;
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isPlainObject)
+    .map((record) => ({
+      layer: readStringField(record, "layer", "unknown_layer"),
+      status: readStringField(record, "status", "not_reported"),
+      findingCount: readNumberField(record, "findingCount", 0),
+      fatalCount: readNumberField(record, "fatalCount", 0),
+      warningCount: readNumberField(record, "warningCount", 0),
+      infoCount: readNumberField(record, "infoCount", 0),
+      reason: readStringField(record, "reason", "not_reported")
+    }))
+    .slice(0, 6);
+}
+
+function formatBooleanStatus(value: boolean) {
+  return value ? "Yes" : "No";
+}
+
+function formatOptionalStatus(value: string | undefined) {
+  return value ? formatStatus(value) : "Not reported";
+}
+
+function getSchematronOrchestrationTone(
+  summary: XmlSchematronOrchestrationSummary | null | undefined
+): "good" | "warn" | "neutral" {
+  if (!summary) {
+    return "neutral";
+  }
+
+  if (summary.validationExecutionEnabled || summary.validationExecuted) {
+    return "warn";
+  }
+
+  if (
+    summary.status === "not_configured" ||
+    summary.status === "artifact_unreadable" ||
+    summary.status === "engine_unavailable" ||
+    summary.status === "partial" ||
+    summary.status === "unsupported" ||
+    summary.status === "unsafe_input"
+  ) {
+    return "warn";
+  }
+
+  if (summary.status === "disabled") {
+    return "good";
+  }
+
+  return "neutral";
+}
+
+function getSchematronJobBadge(job: XmlValidationJob) {
+  if (!job.requestedChecks.includes("schematron_peppol_placeholder")) {
+    return null;
+  }
+
+  const summary = readSchematronPeppolJobSummary(job.resultSummary);
+  const status =
+    summary?.orchestrationStatus ??
+    summary?.schematronOrchestration?.status ??
+    summary?.policyMode ??
+    summary?.status;
+
+  if (status === "disabled") {
+    return "Schematron disabled";
+  }
+
+  if (status === "not_configured") {
+    return "Schematron not configured";
+  }
+
+  if (status === "engine_unavailable") {
+    return "Schematron engine unavailable";
+  }
+
+  if (status === "ready_for_future_execution") {
+    return "Schematron planned";
+  }
+
+  return "Schematron preflight";
 }
 
 function isUblParseFindingSeverity(
@@ -1666,6 +1939,23 @@ export default function WorkspaceXmlUploadPage() {
     historySearchQuery.trim().length > 0 ||
     readinessFilter !== "all" ||
     documentFilter !== "all";
+
+  const selectedSchematronPeppolSummary = selectedValidationJob
+    ? readSchematronPeppolJobSummary(selectedValidationJob.resultSummary)
+    : null;
+  const selectedSchematronOrchestration =
+    selectedSchematronPeppolSummary?.schematronOrchestration ?? null;
+  const selectedSchematronOrchestrator =
+    selectedSchematronOrchestration?.orchestrator;
+  const selectedSchematronLayers = selectedSchematronOrchestrator
+    ? readStringArrayField(selectedSchematronOrchestrator, "selectedLayers")
+    : [];
+  const selectedSchematronLayerSummaries = readSchematronLayerSummaries(
+    selectedSchematronOrchestrator
+  );
+  const selectedSchematronTone = getSchematronOrchestrationTone(
+    selectedSchematronOrchestration
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -2628,6 +2918,252 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           </div>
         ) : null}
 
+        {selectedSchematronPeppolSummary ? (
+          <div
+            className={`schematron-orchestration-panel is-${selectedSchematronTone}`}
+          >
+            <div className="schematron-orchestration-head">
+              <div>
+                <p>Worker bridge</p>
+                <h3>Schematron orchestration</h3>
+              </div>
+
+              <span className="status-pill">Not official validation</span>
+            </div>
+
+            <div className="schematron-notice-list">
+              <div className="alert-item">
+                <span />
+                <p>This is orchestration/preflight metadata, not official validation.</p>
+              </div>
+
+              <div className="alert-item">
+                <span />
+                <p>
+                  Invoice Lantern does not certify Peppol or EN 16931
+                  acceptance.
+                </p>
+              </div>
+
+              <div className="alert-item">
+                <span />
+                <p>No raw XML is stored in this job result.</p>
+              </div>
+            </div>
+
+            <div className="schematron-metadata-grid">
+              <div className="workspace-data-card">
+                <p>Check requested</p>
+                <strong>
+                  {formatBooleanStatus(selectedSchematronPeppolSummary.requested)}
+                </strong>
+                <span>schematron_peppol_placeholder</span>
+              </div>
+
+              <div className="workspace-data-card is-warn">
+                <p>Placeholder status</p>
+                <strong>
+                  {formatOptionalStatus(selectedSchematronPeppolSummary.status) ||
+                    "Not implemented / inactive"}
+                </strong>
+                <span>Not implemented / inactive</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Worker orchestrator version</p>
+                <strong>
+                  {selectedSchematronPeppolSummary.workerSchematronOrchestratorVersion ??
+                    selectedSchematronOrchestration?.workerSchematronOrchestratorVersion ??
+                    "Not reported"}
+                </strong>
+                <span>Worker bridge metadata only.</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Orchestration mode</p>
+                <strong>
+                  {formatOptionalStatus(
+                    selectedSchematronPeppolSummary.orchestrationMode ??
+                      selectedSchematronOrchestration?.mode
+                  )}
+                </strong>
+                <span>Execution disabled unless a future reviewed step changes it.</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Orchestration status</p>
+                <strong>
+                  {formatOptionalStatus(
+                    selectedSchematronPeppolSummary.orchestrationStatus ??
+                      selectedSchematronOrchestration?.status
+                  )}
+                </strong>
+                <span>Preflight status, not a success claim.</span>
+              </div>
+
+              <div className="workspace-data-card is-wide">
+                <p>Orchestration reason</p>
+                <strong>
+                  {selectedSchematronPeppolSummary.orchestrationReason ??
+                    selectedSchematronOrchestration?.reason ??
+                    "Not reported"}
+                </strong>
+                <span>Reason from the worker bridge or package orchestrator.</span>
+              </div>
+
+              <div className="workspace-data-card is-good">
+                <p>Execution enabled</p>
+                <strong>
+                  {formatBooleanStatus(
+                    selectedSchematronPeppolSummary.validationExecutionEnabled
+                  )}
+                </strong>
+                <span>Execution disabled</span>
+              </div>
+
+              <div className="workspace-data-card is-good">
+                <p>Execution executed</p>
+                <strong>
+                  {formatBooleanStatus(
+                    selectedSchematronPeppolSummary.validationExecuted
+                  )}
+                </strong>
+                <span>Execution disabled</span>
+              </div>
+
+              <div className="workspace-data-card is-good">
+                <p>Marked valid</p>
+                <strong>
+                  {formatBooleanStatus(selectedSchematronPeppolSummary.markedValid)}
+                </strong>
+                <span>Not certified</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Artefact configured</p>
+                <strong>
+                  {selectedSchematronPeppolSummary.configured === undefined
+                    ? "Not reported"
+                    : formatBooleanStatus(selectedSchematronPeppolSummary.configured)}
+                </strong>
+                <span>
+                  Ready{" "}
+                  {selectedSchematronPeppolSummary.readyArtifactCount ?? 0} of{" "}
+                  {selectedSchematronPeppolSummary.requiredArtifactCount ?? 0}
+                </span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Artefact usable</p>
+                <strong>
+                  {selectedSchematronPeppolSummary.usable === undefined
+                    ? "Not reported"
+                    : formatBooleanStatus(selectedSchematronPeppolSummary.usable)}
+                </strong>
+                <span>Safe metadata only.</span>
+              </div>
+
+              <div className="workspace-data-card">
+                <p>Engine candidate status</p>
+                <strong>
+                  {formatOptionalStatus(
+                    selectedSchematronPeppolSummary.engineAvailabilityStatus
+                  )}
+                </strong>
+                <span>
+                  Engine{" "}
+                  {selectedSchematronPeppolSummary.engineId ?? "not reported"}.
+                  Execution supported:{" "}
+                  {selectedSchematronPeppolSummary.engineExecutionSupported ===
+                  undefined
+                    ? "Not reported"
+                    : formatBooleanStatus(
+                        selectedSchematronPeppolSummary.engineExecutionSupported
+                      )}
+                  .
+                </span>
+              </div>
+
+              {selectedSchematronOrchestration ? (
+                <div className="workspace-data-card">
+                  <p>Finding counts</p>
+                  <strong>
+                    {selectedSchematronOrchestration.findingCount} total
+                  </strong>
+                  <span>
+                    Fatal {selectedSchematronOrchestration.fatalCount}. Warning{" "}
+                    {selectedSchematronOrchestration.warningCount}. Info{" "}
+                    {selectedSchematronOrchestration.infoCount}.
+                  </span>
+                </div>
+              ) : null}
+
+              {selectedSchematronOrchestrator ? (
+                <div className="workspace-data-card is-wide">
+                  <p>Nested orchestrator</p>
+                  <strong>
+                    {readStringField(
+                      selectedSchematronOrchestrator,
+                      "orchestratorVersion",
+                      "schematron_execution_orchestrator_v1"
+                    )}
+                  </strong>
+                  <span>
+                    Mode{" "}
+                    {formatOptionalStatus(
+                      readOptionalStringField(
+                        selectedSchematronOrchestrator,
+                        "mode"
+                      )
+                    )}
+                    . Status{" "}
+                    {formatOptionalStatus(
+                      readOptionalStringField(
+                        selectedSchematronOrchestrator,
+                        "status"
+                      )
+                    )}
+                    .
+                  </span>
+                </div>
+              ) : null}
+
+              {selectedSchematronLayers.length > 0 ? (
+                <div className="workspace-data-card is-full">
+                  <p>Selected layers</p>
+                  <strong>{selectedSchematronLayers.map(formatStatus).join(", ")}</strong>
+                  <span>Layer selection reported by the nested orchestrator.</span>
+                </div>
+              ) : null}
+            </div>
+
+            {selectedSchematronLayerSummaries.length > 0 ? (
+              <div className="schematron-layer-list">
+                {selectedSchematronLayerSummaries.map((layerSummary) => (
+                  <div
+                    className="schematron-layer-row"
+                    key={`${layerSummary.layer}-${layerSummary.status}`}
+                  >
+                    <div>
+                      <strong>{formatStatus(layerSummary.layer)}</strong>
+                      <span>{formatStatus(layerSummary.status)}</span>
+                    </div>
+
+                    <div>
+                      <span>Findings {layerSummary.findingCount}</span>
+                      <span>Fatal {layerSummary.fatalCount}</span>
+                      <span>Warning {layerSummary.warningCount}</span>
+                      <span>Info {layerSummary.infoCount}</span>
+                    </div>
+
+                    <p>{layerSummary.reason}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {selectedValidationJob ? (
           <div className="finding-console-list">
             {selectedValidationJob.findings.map((finding) => (
@@ -2724,7 +3260,10 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               <FileCode2 size={17} />
             </div>
           ) : (
-            validationJobs.map((job) => (
+            validationJobs.map((job) => {
+              const schematronBadge = getSchematronJobBadge(job);
+
+              return (
               <div className="workspace-table-row" key={job.id}>
                 <div className="workspace-history-summary">
                   <strong>{job.filename ?? job.id}</strong>
@@ -2735,6 +3274,10 @@ DELETE /api/local/xml/uploads/:id`}</pre>
                   <span>
                     Requested: {formatValidationJobChecks(job.requestedChecks)}.
                   </span>
+
+                  {schematronBadge ? (
+                    <span className="status-pill">{schematronBadge}</span>
+                  ) : null}
 
                   <div className="workspace-row-actions">
                     <button
@@ -2760,7 +3303,8 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
                 <FileCode2 size={17} />
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </section>

@@ -264,6 +264,16 @@ The Step 58 XML worker Schematron orchestrator bridge uses:
 - No raw XML storage, no Schematron file content exposure, no full absolute
   local path exposure, no remote fetching, and no Java/system dependency.
 
+Step 59 exposes the safe Step 58 worker Schematron orchestration metadata
+end-to-end through XML validation job API responses and the Workspace XML
+Upload UI. The exposed fields include `schematronOrchestration`,
+`workerSchematronOrchestratorVersion`, `orchestrationMode`,
+`orchestrationStatus`, `orchestrationReason`, nested `selectedLayers`, and
+nested `layerSummaries` when the worker produced them. This is
+orchestration/preflight metadata only. It does not enable official validation,
+does not certify Peppol or EN 16931, does not store raw XML in Supabase, and
+does not add production Schematron execution.
+
 The validator and diagnostics do not fetch remote schema or Schematron files.
 All artefact files must already exist locally and be readable by the process
 running the worker or API.
@@ -751,6 +761,11 @@ Hash mismatch
 - Step 58 `xml_worker_schematron_orchestrator_v1` is a worker-side metadata
   bridge only. Its normal public/default path remains disabled/preflight-safe,
   and `internal_test_only` must remain explicit local worker test behavior.
+- Step 59 only exposes the worker orchestration/preflight metadata already
+  stored on XML validation jobs. It helps users see whether Schematron
+  artefacts, policy, engine candidates, and orchestration are ready, disabled,
+  unavailable, or not configured; it is not official validation and must not be
+  treated as Peppol or EN 16931 certification.
 - Raw XML is not stored in Supabase, local XML validation job JSON storage, API
   request logs, worker output, result summaries, findings, or test snapshots.
 - Diagnostics do not return schema file contents.
@@ -762,9 +777,10 @@ Hash mismatch
 
 ## Supabase
 
-No Supabase migration is needed for Step 58. The worker orchestration bridge
-adds safe metadata and sanitized findings that fit the existing
-`xml_validation_jobs.result_summary` and `xml_validation_jobs.findings` JSONB
-fields. It does not introduce new durable query requirements, raw XML storage,
-Schematron file content storage, full absolute local path storage, RLS changes,
-grants, RPCs, indexes, or storage objects. No schema change is required.
+No Supabase migration is needed for Steps 58 or 59. The worker orchestration
+bridge and UI/API exposure use safe metadata and sanitized findings that fit the
+existing `xml_validation_jobs.result_summary` and
+`xml_validation_jobs.findings` JSONB fields. Step 59 does not introduce new
+durable query requirements, raw XML storage, Schematron file content storage,
+full absolute local path storage, RLS changes, grants, RPCs, indexes, or
+storage objects. No schema change is required.

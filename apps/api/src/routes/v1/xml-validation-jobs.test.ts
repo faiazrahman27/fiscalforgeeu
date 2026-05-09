@@ -13,6 +13,7 @@ import {
   detectXmlDocumentType,
   detectXmlRootElement
 } from "../../services/xml-validation-job-service.js";
+import { completeJob } from "../../repositories/xml-validation-job-repository.js";
 import {
   deleteTransientXmlPayload,
   inspectTransientXmlPayloadMetadata,
@@ -48,6 +49,9 @@ const simpleUblInvoiceXml = `<?xml version="1.0" encoding="UTF-8"?>
   <cbc:IssueDate>2026-04-30</cbc:IssueDate>
   <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
 </Invoice>`;
+
+const forbiddenResponseClaimsPattern =
+  /\bcertified\b|\bcompliant\b|\baccepted by authority\b|\blegally valid\b|\bPeppol passed\b|\bEN 16931 passed\b/i;
 
 before(async () => {
   originalXmlValidationJobData = await readOptionalFile(xmlValidationJobDataPath);
@@ -129,6 +133,99 @@ function readObject(value: unknown, label: string): Record<string, unknown> {
   assert.equal(isPlainObject(value), true, `${label} should be an object`);
 
   return value as Record<string, unknown>;
+}
+
+function assertNoUnsafeXmlValidationResponseContent(
+  serialized: string,
+  input: {
+    rawXmlSentinel?: string;
+    windowsPathSentinel?: string;
+    unixPathSentinel?: string;
+    fileUrlSentinel?: string;
+  } = {}
+) {
+  if (input.rawXmlSentinel) {
+    assert.equal(serialized.includes(input.rawXmlSentinel), false);
+  }
+
+  if (input.windowsPathSentinel) {
+    assert.equal(serialized.includes(input.windowsPathSentinel), false);
+  }
+
+  if (input.unixPathSentinel) {
+    assert.equal(serialized.includes(input.unixPathSentinel), false);
+  }
+
+  if (input.fileUrlSentinel) {
+    assert.equal(serialized.includes(input.fileUrlSentinel), false);
+  }
+
+  assert.equal(serialized.includes("<Invoice"), false);
+  assert.doesNotMatch(serialized, /[A-Za-z]:[\\/][^"\\s]+/);
+  assert.doesNotMatch(serialized, /\/tmp\/schematron\/[A-Za-z0-9_.-]+/);
+  assert.doesNotMatch(serialized, /file:\/\/\//i);
+  assert.doesNotMatch(serialized, forbiddenResponseClaimsPattern);
+}
+
+function assertWorkerSchematronOrchestrationJobShape(
+  job: Record<string, unknown>
+) {
+  assert.deepEqual(job.failedChecks, ["schematron_peppol_placeholder"]);
+
+  const resultSummary = readObject(job.resultSummary, "job.resultSummary");
+  const checkStatuses = readObject(
+    resultSummary.checkStatuses,
+    "job.resultSummary.checkStatuses"
+  );
+  const schematronPeppol = readObject(
+    resultSummary.schematronPeppol,
+    "job.resultSummary.schematronPeppol"
+  );
+  const orchestration = readObject(
+    schematronPeppol.schematronOrchestration,
+    "job.resultSummary.schematronPeppol.schematronOrchestration"
+  );
+  const orchestrator = readObject(
+    orchestration.orchestrator,
+    "job.resultSummary.schematronPeppol.schematronOrchestration.orchestrator"
+  );
+
+  assert.equal(
+    checkStatuses.schematron_peppol_placeholder,
+    "not_implemented"
+  );
+  assert.equal(schematronPeppol.requested, true);
+  assert.equal(schematronPeppol.implemented, false);
+  assert.equal(
+    schematronPeppol.workerSchematronOrchestratorVersion,
+    "xml_worker_schematron_orchestrator_v1"
+  );
+  assert.match(
+    String(schematronPeppol.orchestrationMode),
+    /^(disabled|preflight_only)$/
+  );
+  assert.match(
+    String(schematronPeppol.orchestrationStatus),
+    /^(not_configured|engine_unavailable|ready_for_future_execution|disabled|partial)$/
+  );
+  assert.equal(schematronPeppol.validationExecutionEnabled, false);
+  assert.equal(schematronPeppol.validationExecuted, false);
+  assert.equal(schematronPeppol.markedValid, false);
+  assert.equal(schematronPeppol.status, "not_implemented");
+  assert.equal(
+    orchestration.workerSchematronOrchestratorVersion,
+    "xml_worker_schematron_orchestrator_v1"
+  );
+  assert.equal(orchestration.validationExecutionEnabled, false);
+  assert.equal(orchestration.validationExecuted, false);
+  assert.equal(orchestration.markedValid, false);
+  assert.equal(
+    orchestrator.orchestratorVersion,
+    "schematron_execution_orchestrator_v1"
+  );
+  assert.equal(orchestrator.validationExecutionEnabled, false);
+  assert.equal(orchestrator.validationExecuted, false);
+  assert.equal(orchestrator.markedValid, false);
 }
 
 function assertSchematronEngineCandidate(input: {
@@ -378,6 +475,278 @@ test("async XML validation job queues metadata and temporary payload reference o
   assert.equal(storedData?.includes("<Invoice"), false);
   assert.match(storedData ?? "", /"status"\s*:\s*"queued"/);
   assert.match(storedData ?? "", /"transientPayload"/);
+});
+
+test("API list and read expose completed worker Schematron orchestration metadata safely", async (t) => {
+  const app = await buildApp();
+  let transientPayload: TransientXmlPayloadReference | null = null;
+  const rawXmlSentinel = "STEP59_RAW_XML_SENTINEL";
+  const windowsPathSentinel = "C:\\step59\\schematron\\secret.sch";
+  const unixPathSentinel = "/tmp/schematron/step59-secret.sch";
+  const fileUrlSentinel = "file:///tmp/schematron/step59-secret.sch";
+  const rawXml = `<?xml version="1.0" encoding="UTF-8"?>
+<Invoice><ID>${rawXmlSentinel}</ID><Note>${windowsPathSentinel} ${unixPathSentinel} ${fileUrlSentinel} certified compliant accepted by authority legally valid Peppol passed EN 16931 passed</Note></Invoice>`;
+
+  t.after(async () => {
+    await app.close();
+
+    if (transientPayload) {
+      await deleteTransientXmlPayload({
+        payloadId: transientPayload.payloadId
+      });
+    }
+  });
+
+  const createResponse = await app.inject({
+    method: "POST",
+    url: "/api/v1/xml/validation-jobs",
+    headers: {
+      "x-api-key": env.DEV_API_KEY,
+      "content-type": "application/json"
+    },
+    payload: {
+      xml: rawXml,
+      filename: "step-59-worker-orchestration.xml",
+      sourceType: "api_payload",
+      processingMode: "async_worker",
+      requestedChecks: ["schematron_peppol_placeholder"]
+    }
+  });
+
+  assert.equal(createResponse.statusCode, 202);
+  assertNoUnsafeXmlValidationResponseContent(createResponse.body, {
+    rawXmlSentinel,
+    windowsPathSentinel,
+    unixPathSentinel,
+    fileUrlSentinel
+  });
+
+  const createBody = createResponse.json() as Record<string, unknown>;
+  const createdJob = readObject(createBody.job, "createResponse.job");
+  const createdSummary = readObject(
+    createdJob.resultSummary,
+    "createResponse.job.resultSummary"
+  );
+
+  transientPayload = readTransientPayloadReference(
+    createdSummary.transientPayload
+  );
+
+  const workerFinding = {
+    code: "PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED",
+    severity: "warning" as const,
+    checkType: "schematron_peppol_placeholder" as const,
+    field: "xml",
+    message:
+      "Peppol Schematron execution is not enabled for this technical sandbox job.",
+    status: "not_implemented" as const,
+    legalConfidence: "technical" as const,
+    technicalCode: "SCHEMATRON_EXECUTION_NOT_ENABLED",
+    schematronLayer: "peppol_bis_billing" as const,
+    sourceLabels: ["SCHEMATRON_EXECUTION_NOT_ENABLED"]
+  };
+  const workerResultSummary = {
+    workerReady: true,
+    xmlSha256: sha256(rawXml),
+    xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+    rootElement: "Invoice",
+    documentType: "invoice",
+    safetyPolicyPassed: true,
+    requestedChecks: ["schematron_peppol_placeholder"],
+    completedChecks: [],
+    failedChecks: ["schematron_peppol_placeholder"],
+    inactiveChecks: ["schematron_peppol_placeholder"],
+    checkStatuses: {
+      schematron_peppol_placeholder: "not_implemented"
+    },
+    checkResults: [
+      {
+        checkType: "schematron_peppol_placeholder",
+        status: "not_implemented",
+        findings: [workerFinding],
+        summary: {
+          requested: true,
+          implemented: false,
+          status: "not_implemented",
+          workerSchematronOrchestratorVersion:
+            "xml_worker_schematron_orchestrator_v1",
+          orchestrationMode: "preflight_only",
+          orchestrationStatus: "engine_unavailable",
+          orchestrationReason:
+            "schematron_execution_orchestrator_preflight_engine_unavailable",
+          validationExecutionEnabled: false,
+          validationExecuted: false,
+          markedValid: false
+        }
+      }
+    ],
+    activeValidation: {
+      xsd: false,
+      schematron: false,
+      peppolArtifacts: false,
+      en16931Certification: false
+    },
+    xsdUbl: {
+      requested: false,
+      configured: false,
+      validationExecuted: false,
+      markedValid: false
+    },
+    schematronPeppol: {
+      requested: true,
+      implemented: false,
+      status: "not_implemented",
+      adapterVersion: "schematron_adapter_preflight_v1",
+      policyVersion: "schematron_policy_v1",
+      policyMode: "preflight_only",
+      policyReason: "schematron_execution_preflight_only",
+      engineId: "placeholder",
+      engineCandidateVersion: "schematron_engine_candidate_v1",
+      engineAvailabilityStatus: "placeholder_only",
+      engineExecutionSupported: false,
+      schematronOrchestration: {
+        diagnosticKind: "xml_worker_schematron_orchestration",
+        workerSchematronOrchestratorVersion:
+          "xml_worker_schematron_orchestrator_v1",
+        status: "engine_unavailable",
+        mode: "preflight_only",
+        requested: true,
+        validationExecutionEnabled: false,
+        validationExecuted: false,
+        markedValid: false,
+        findingCount: 1,
+        fatalCount: 0,
+        warningCount: 1,
+        infoCount: 0,
+        reason: "schematron_execution_orchestrator_preflight_engine_unavailable",
+        orchestrator: {
+          diagnosticKind: "schematron_execution_orchestrator",
+          orchestratorVersion: "schematron_execution_orchestrator_v1",
+          mode: "preflight_only",
+          status: "engine_unavailable",
+          selectedLayers: ["peppol_bis_billing", "en16931_tc434"],
+          validationExecutionEnabled: false,
+          validationExecuted: false,
+          markedValid: false,
+          findingCount: 1,
+          fatalCount: 0,
+          warningCount: 1,
+          infoCount: 0,
+          layerSummaries: [
+            {
+              layer: "peppol_bis_billing",
+              status: "engine_unavailable",
+              validationExecutionEnabled: false,
+              validationExecuted: false,
+              markedValid: false,
+              findingCount: 1,
+              fatalCount: 0,
+              warningCount: 1,
+              infoCount: 0,
+              reason: "schematron_placeholder_engine_selected"
+            },
+            {
+              layer: "en16931_tc434",
+              status: "engine_unavailable",
+              validationExecutionEnabled: false,
+              validationExecuted: false,
+              markedValid: false,
+              findingCount: 0,
+              fatalCount: 0,
+              warningCount: 0,
+              infoCount: 0,
+              reason: "schematron_placeholder_engine_selected"
+            }
+          ],
+          reason:
+            "schematron_execution_orchestrator_preflight_engine_unavailable"
+        }
+      },
+      workerSchematronOrchestratorVersion:
+        "xml_worker_schematron_orchestrator_v1",
+      orchestrationMode: "preflight_only",
+      orchestrationStatus: "engine_unavailable",
+      orchestrationReason:
+        "schematron_execution_orchestrator_preflight_engine_unavailable",
+      executionPermitted: false,
+      validationExecutionEnabled: false,
+      validationExecuted: false,
+      markedValid: false,
+      findingContractVersion: "schematron_contract_v1",
+      supportedFutureFindingCodes: [
+        "SCHEMATRON_EXECUTION_NOT_ENABLED",
+        "PEPPOL_SCHEMATRON_RULE_FAILED",
+        "EN16931_SCHEMATRON_RULE_FAILED"
+      ],
+      configured: false,
+      usable: false,
+      readyArtifactCount: 0,
+      requiredArtifactCount: 2
+    }
+  };
+
+  const completedJob = await completeJob({
+    organizationId: "local_development",
+    jobId: String(createdJob.id),
+    completedChecks: [],
+    failedChecks: ["schematron_peppol_placeholder"],
+    workerName: "invoice-lantern-xml-worker",
+    workerVersion: "0.2.0",
+    resultSummary: workerResultSummary,
+    findings: [workerFinding],
+    disclaimer:
+      "This XML validation job is a technical sandbox worker-readiness and configured-check result. It does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance."
+  });
+
+  assert.ok(completedJob);
+
+  const listResponse = await app.inject({
+    method: "GET",
+    url: "/api/v1/xml/validation-jobs?limit=10&status=completed",
+    headers: {
+      "x-api-key": env.DEV_API_KEY
+    }
+  });
+
+  assert.equal(listResponse.statusCode, 200);
+  assertNoUnsafeXmlValidationResponseContent(listResponse.body, {
+    rawXmlSentinel,
+    windowsPathSentinel,
+    unixPathSentinel,
+    fileUrlSentinel
+  });
+
+  const listBody = listResponse.json() as Record<string, unknown>;
+  const listedJobs = Array.isArray(listBody.jobs) ? listBody.jobs : [];
+  const listedJob = listedJobs.find(
+    (job) => isPlainObject(job) && job.id === createdJob.id
+  );
+
+  assert.equal(isPlainObject(listedJob), true);
+  assertWorkerSchematronOrchestrationJobShape(
+    listedJob as Record<string, unknown>
+  );
+
+  const readResponse = await app.inject({
+    method: "GET",
+    url: `/api/v1/xml/validation-jobs/${encodeURIComponent(String(createdJob.id))}`,
+    headers: {
+      "x-api-key": env.DEV_API_KEY
+    }
+  });
+
+  assert.equal(readResponse.statusCode, 200);
+  assertNoUnsafeXmlValidationResponseContent(readResponse.body, {
+    rawXmlSentinel,
+    windowsPathSentinel,
+    unixPathSentinel,
+    fileUrlSentinel
+  });
+
+  const readBody = readResponse.json() as Record<string, unknown>;
+  const readJob = readObject(readBody.job, "readResponse.job");
+
+  assertWorkerSchematronOrchestrationJobShape(readJob);
 });
 
 test("XML validation job completion builds inline queue lifecycle metadata", async () => {

@@ -157,7 +157,14 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const findingSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobFinding")
   );
-  const jobSchema = JSON.stringify(readRecord(schemas, "XmlValidationJob"));
+  const xmlValidationJobSchema = readRecord(schemas, "XmlValidationJob");
+  const jobResultSummaryExample = JSON.stringify(
+    readRecord(
+      readRecord(xmlValidationJobSchema, "properties"),
+      "resultSummary"
+    ).example
+  ) ?? "";
+  const jobSchema = JSON.stringify(xmlValidationJobSchema);
   const serializedPost = JSON.stringify(post);
 
   assert.ok(responses["200"], "Expected XML validation job success response");
@@ -210,6 +217,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     serializedPost,
     /xml_worker_schematron_orchestrator_v1 inside the XML worker as a default-safe bridge/
   );
+  assert.match(serializedPost, /Step 59 exposes worker orchestration fields/);
+  assert.match(serializedPost, /not official validation/);
+  assert.match(serializedPost, /orchestrationMode/);
+  assert.match(serializedPost, /selectedLayers/);
+  assert.match(serializedPost, /layerSummaries/);
   assert.match(
     serializedPost,
     /future mapping layer for sanitized SVRL-style failed assertions and successful reports/
@@ -512,6 +524,12 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(xmlWorkerSchematronOrchestrationSchema, /fatalCount/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /warningCount/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /infoCount/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /selectedLayers/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /layerSummaries/);
+  assert.match(
+    xmlWorkerSchematronOrchestrationSchema,
+    /not official validation/
+  );
   assert.match(xmlWorkerSchematronOrchestrationSchema, /raw XML/);
   assert.match(
     xmlWorkerSchematronOrchestrationSchema,
@@ -577,8 +595,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(jobSchema, /engineExecutionSupported/);
   assert.match(jobSchema, /schematronOrchestration/);
   assert.match(jobSchema, /workerSchematronOrchestratorVersion/);
+  assert.match(jobSchema, /orchestrationMode/);
   assert.match(jobSchema, /orchestrationStatus/);
   assert.match(jobSchema, /orchestrationReason/);
+  assert.match(jobSchema, /selectedLayers/);
+  assert.match(jobSchema, /layerSummaries/);
   assert.match(jobSchema, /executionPermitted/);
   assert.match(jobSchema, /findingContractVersion/);
   assert.match(jobSchema, /schematron_contract_v1/);
@@ -591,6 +612,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.doesNotMatch(
     serializedPost,
     /\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bauthority accepted\b|\baccepted by authority\b|\bproves compliance\b|\bproves Peppol\b|\bproves EN 16931\b/i
+  );
+  assert.doesNotMatch(
+    jobResultSummaryExample,
+    /\bSchematron passed\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bauthority accepted\b|\baccepted by authority\b|\bproves compliance\b|\bproves Peppol\b|\bproves EN 16931\b|\bPeppol passed\b|\bEN 16931 passed\b/i
   );
 });
 
