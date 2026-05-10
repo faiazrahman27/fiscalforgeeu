@@ -22,6 +22,7 @@ export * from "./schematron-engine-candidate.js";
 export * from "./schematron-artifact-source-register.js";
 export * from "./schematron-artifact-manifest.js";
 export * from "./schematron-artifact-review-intake.js";
+export * from "./schematron-artifact-manifest-update-plan.js";
 export * from "./schematron-local-execution-prototype.js";
 export * from "./schematron-result-mapper.js";
 export * from "./schematron-xpath-engine.js";
