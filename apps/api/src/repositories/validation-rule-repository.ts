@@ -1,4 +1,6 @@
 import {
+  CORE_VALIDATION_RULE_SET_CODE,
+  CORE_VALIDATION_RULE_VERSION,
   listCoreValidationRuleCatalog,
   type LegalConfidence,
   type ValidationFindingSeverity,
@@ -116,17 +118,34 @@ function toCatalogRuleSets(
     }));
 }
 
-function appendRuleCatalog(
+export function mergeRuleCatalogWithBundledFallback(
   catalog: ValidationRuleCatalog,
   ruleSets: ValidationRuleSetMetadata[]
 ): ValidationRuleCatalog {
-  const existingCodes = new Set(catalog.ruleSets.map((ruleSet) => ruleSet.code));
-  const staticRuleSets = toCatalogRuleSets(ruleSets).filter(
+  const staticRuleSets = toCatalogRuleSets(ruleSets);
+  const staticRuleSetsByCode = new Map(
+    staticRuleSets.map((ruleSet) => [ruleSet.code, ruleSet])
+  );
+  const mergedRuleSets = catalog.ruleSets.map((ruleSet) => {
+    const staticRuleSet = staticRuleSetsByCode.get(ruleSet.code);
+
+    if (
+      ruleSet.code === CORE_VALIDATION_RULE_SET_CODE &&
+      staticRuleSet &&
+      ruleSet.version !== CORE_VALIDATION_RULE_VERSION
+    ) {
+      return staticRuleSet;
+    }
+
+    return ruleSet;
+  });
+  const existingCodes = new Set(mergedRuleSets.map((ruleSet) => ruleSet.code));
+  const missingRuleSets = staticRuleSets.filter(
     (ruleSet) => !existingCodes.has(ruleSet.code)
   );
 
   return {
-    ruleSets: [...catalog.ruleSets, ...staticRuleSets]
+    ruleSets: [...mergedRuleSets, ...missingRuleSets]
   };
 }
 
@@ -292,9 +311,9 @@ export async function listPublishedValidationRules() {
   }
 
   try {
-    return appendRuleCatalog(
+    return mergeRuleCatalogWithBundledFallback(
       await listDatabasePublishedValidationRules(),
-      listVatFormatValidationRuleCatalog()
+      [...listCoreValidationRuleCatalog(), ...listVatFormatValidationRuleCatalog()]
     );
   } catch (error) {
     console.warn(

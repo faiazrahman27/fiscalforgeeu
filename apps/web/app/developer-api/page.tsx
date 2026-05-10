@@ -155,7 +155,7 @@ curl -X POST http://localhost:4000/api/v1/invoices/validate \\
       "fixSuggestion": "<technical-fix-suggestion>",
       "legalConfidence": "technical_or_simulation_or_review_required",
       "ruleSetCode": "INVOICE_LANTERN_CORE",
-      "ruleVersion": "2026.04.1"
+      "ruleVersion": "2026.05.1"
     }
   ],
   "disclaimer": "This result is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation."

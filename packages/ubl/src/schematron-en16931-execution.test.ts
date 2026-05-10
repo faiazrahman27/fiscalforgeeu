@@ -127,6 +127,7 @@ function engineCandidate(input: {
       : ["metadata_only", "no_remote_fetch"],
     packageName: null,
     packageVersion: null,
+    detectedPackages: [],
     reason: input.executionSupported
       ? "schematron_internal_test_candidate_available"
       : "schematron_xslt2_engine_not_installed"

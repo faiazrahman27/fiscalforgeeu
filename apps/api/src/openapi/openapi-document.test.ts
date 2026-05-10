@@ -133,6 +133,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const schematronEngineCandidateSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronEngineCandidate")
   );
+  const schematronXPathEngineSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchematronXPathEngineFoundation")
+  );
   const schematronResultMapperSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronResultMappingContract")
   );
@@ -191,6 +194,8 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /engineCandidate/);
   assert.match(serializedPost, /schematron_policy_v1/);
   assert.match(serializedPost, /schematron_engine_candidate_v1/);
+  assert.match(serializedPost, /schematron_xpath_engine_v1/);
+  assert.match(serializedPost, /xpath_engine/);
   assert.match(serializedPost, /schematron_local_execution_prototype_v1/);
   assert.match(serializedPost, /internal test-only/);
   assert.match(
@@ -304,6 +309,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronPolicySchema, /placeholder/);
   assert.match(schematronPolicySchema, /future_xslt2/);
   assert.match(schematronPolicySchema, /future_schxslt/);
+  assert.match(schematronPolicySchema, /xpath_engine/);
   assert.match(schematronPolicySchema, /internal_test_candidate/);
   assert.match(schematronPolicySchema, /unknown/);
   assert.match(schematronPolicySchema, /executionPermitted/);
@@ -349,6 +355,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronEngineCandidateSchema, /placeholder/);
   assert.match(schematronEngineCandidateSchema, /future_xslt2/);
   assert.match(schematronEngineCandidateSchema, /future_schxslt/);
+  assert.match(schematronEngineCandidateSchema, /xpath_engine/);
   assert.match(schematronEngineCandidateSchema, /internal_test_candidate/);
   assert.match(schematronEngineCandidateSchema, /not_selected/);
   assert.match(schematronEngineCandidateSchema, /placeholder_only/);
@@ -364,15 +371,73 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     schematronEngineCandidateSchema,
     /schematron_internal_test_candidate_available/
   );
+  assert.match(schematronEngineCandidateSchema, /fontoxpath/);
+  assert.match(schematronEngineCandidateSchema, /slimdom/);
+  assert.match(
+    schematronEngineCandidateSchema,
+    /schematron_xpath_fontoxpath_not_installed/
+  );
+  assert.match(
+    schematronEngineCandidateSchema,
+    /schematron_xpath_slimdom_not_installed/
+  );
+  assert.match(
+    schematronEngineCandidateSchema,
+    /schematron_xpath_engine_candidate_available_execution_disabled_by_default/
+  );
+  assert.match(schematronEngineCandidateSchema, /xml_dom_execution/);
+  assert.match(schematronEngineCandidateSchema, /xpath_assertion_execution/);
   assert.match(
     schematronEngineCandidateSchema,
     /schematron_local_execution_prototype_v1/
+  );
+  assert.match(
+    schematronEngineCandidateSchema,
+    /schematron_xpath_engine_v1/
   );
   assert.match(schematronEngineCandidateSchema, /internal test-only execution/);
   assert.match(
     schematronEngineCandidateSchema,
     /does not enable normal API or worker XML validation jobs/
   );
+  assert.match(schematronXPathEngineSchema, /schematron_xpath_engine_v1/);
+  assert.match(schematronXPathEngineSchema, /xpath_engine/);
+  assert.match(schematronXPathEngineSchema, /internal\/test-only foundation/);
+  assert.match(
+    schematronXPathEngineSchema,
+    /explicitly provided, sanitized XPath assertion definitions/
+  );
+  assert.match(
+    schematronXPathEngineSchema,
+    /guarded package-level calls only/
+  );
+  assert.match(
+    schematronXPathEngineSchema,
+    /normal public API or XML worker validation jobs/
+  );
+  assert.match(schematronXPathEngineSchema, /not official validation/);
+  assert.match(schematronXPathEngineSchema, /no Peppol certification/);
+  assert.match(
+    schematronXPathEngineSchema,
+    /no EN 16931 compliance guarantee/
+  );
+  assert.match(
+    schematronXPathEngineSchema,
+    /no legal\/tax\/accounting compliance guarantee/
+  );
+  assert.match(schematronXPathEngineSchema, /no authority acceptance/);
+  assert.match(schematronXPathEngineSchema, /rawXmlReturned/);
+  assert.match(
+    schematronXPathEngineSchema,
+    /schematronFileContentsReturned/
+  );
+  assert.match(
+    schematronXPathEngineSchema,
+    /fullAbsoluteLocalPathsReturned/
+  );
+  assert.match(schematronXPathEngineSchema, /remoteFetching/);
+  assert.match(schematronXPathEngineSchema, /extensionFunctions/);
+  assert.match(schematronXPathEngineSchema, /normalWorkerExecutionEnabled/);
   assert.match(schematronResultMapperSchema, /schematron_result_mapper_v1/);
   assert.match(schematronResultMapperSchema, /schematron_result_mapping/);
   assert.match(schematronResultMapperSchema, /normalJobExecutionEnabled/);

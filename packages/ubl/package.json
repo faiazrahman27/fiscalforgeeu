@@ -22,6 +22,8 @@
   "dependencies": {
     "@invoice-lantern/invoice-core": "file:../invoice-core",
     "fast-xml-parser": "^5.7.2",
+    "fontoxpath": "^3.34.0",
+    "slimdom": "^4.3.5",
     "xmlbuilder2": "^3.1.1",
     "xmllint-wasm": "^5.2.0"
   },

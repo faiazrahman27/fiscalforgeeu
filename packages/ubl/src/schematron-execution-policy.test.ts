@@ -169,6 +169,9 @@ test("engine normalization maps known aliases and unknown strings", () => {
     ["future_xslt2", "future_xslt2"],
     ["schxslt", "future_schxslt"],
     ["future_schxslt", "future_schxslt"],
+    ["xpath", "xpath_engine"],
+    ["xpath_engine", "xpath_engine"],
+    ["fontoxpath", "xpath_engine"],
     ["custom-engine", "unknown"]
   ];
 

@@ -43,7 +43,7 @@ function buildValidationRun(): ValidationRunRecord {
           "Add the invoice document number before validation or export.",
         legalConfidence: "technical",
         ruleSetCode: "INVOICE_LANTERN_CORE",
-        ruleVersion: "2026.04.1",
+        ruleVersion: "2026.05.1",
         sourceLabels: ["Invoice Lantern internal technical validation policy"]
       }
     ],

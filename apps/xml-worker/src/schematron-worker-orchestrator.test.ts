@@ -156,6 +156,32 @@ test("worker Schematron orchestration preflight calls package orchestrator safel
   });
 });
 
+test("worker Schematron preflight recognizes xpath_engine metadata without executing normal jobs", async () => {
+  await withCleanSchematronEnv(async () => {
+    process.env.SCHEMATRON_ENGINE = "xpath_engine";
+
+    const result = await runXmlWorkerSchematronOrchestration({
+      xml: rawXmlSentinel,
+      requestedChecks: ["schematron_peppol_placeholder"],
+      mode: "preflight_only"
+    });
+    const orchestrator = result.safeSummary.orchestrator as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(result.mode, "preflight_only");
+    assert.equal(result.status, "not_configured");
+    assert.equal(result.validationExecutionEnabled, false);
+    assert.equal(result.validationExecuted, false);
+    assert.equal(result.markedValid, false);
+    assert.equal(orchestrator.validationExecutionEnabled, false);
+    assert.equal(orchestrator.validationExecuted, false);
+    assertNoRawXml(result);
+    assertNoForbiddenClaims(result);
+  });
+});
+
 test("worker Schematron internal test-only mode is blocked unless explicitly allowed", async () => {
   const result = await runXmlWorkerSchematronOrchestration({
     xml: rawXmlSentinel,

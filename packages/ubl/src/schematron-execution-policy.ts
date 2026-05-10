@@ -12,6 +12,7 @@ export type SchematronEngineId =
   | "placeholder"
   | "future_xslt2"
   | "future_schxslt"
+  | "xpath_engine"
   | "internal_test_candidate"
   | "unknown";
 
@@ -76,6 +77,9 @@ const SAFE_ENGINE_ECHO_VALUES = new Set([
   "future_xslt2",
   "schxslt",
   "future_schxslt",
+  "xpath",
+  "xpath_engine",
+  "fontoxpath",
   "internal_test_candidate"
 ]);
 
@@ -142,6 +146,10 @@ export function normalizeSchematronEngineId(
 
   if (token === "schxslt" || token === "future_schxslt") {
     return "future_schxslt";
+  }
+
+  if (token === "xpath" || token === "xpath_engine" || token === "fontoxpath") {
+    return "xpath_engine";
   }
 
   if (token === "internal_test_candidate") {

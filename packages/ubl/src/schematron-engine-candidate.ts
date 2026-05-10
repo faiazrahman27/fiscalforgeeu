@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+
 export const SCHEMATRON_ENGINE_CANDIDATE_VERSION =
   "schematron_engine_candidate_v1";
 
@@ -6,6 +8,7 @@ export type SchematronEngineCandidateId =
   | "placeholder"
   | "future_xslt2"
   | "future_schxslt"
+  | "xpath_engine"
   | "internal_test_candidate";
 
 export type SchematronEngineAvailabilityStatus =
@@ -22,7 +25,16 @@ export type SchematronEngineCapability =
   | "no_remote_fetch"
   | "windows_compatible"
   | "esm_compatible"
-  | "test_only";
+  | "test_only"
+  | "xml_dom_execution"
+  | "xpath_assertion_execution";
+
+export type SchematronEngineCandidatePackage = {
+  packageName: string;
+  packageVersion: string | null;
+  available: boolean;
+  reason: string;
+};
 
 export type SchematronEngineCandidateSummary = {
   diagnosticKind: "schematron_engine_candidate";
@@ -34,6 +46,7 @@ export type SchematronEngineCandidateSummary = {
   capabilities: SchematronEngineCapability[];
   packageName: string | null;
   packageVersion: string | null;
+  detectedPackages: SchematronEngineCandidatePackage[];
   reason: string;
 };
 
@@ -46,6 +59,7 @@ export type SchematronEngineCandidateInfo = {
   capabilities: SchematronEngineCapability[];
   packageName: string | null;
   packageVersion: string | null;
+  detectedPackages: SchematronEngineCandidatePackage[];
   reason: string;
   safeSummary: SchematronEngineCandidateSummary;
 };
@@ -67,6 +81,22 @@ const FUTURE_SCHXSLT_PACKAGE = {
   installedReason: "schematron_schxslt_engine_installed_but_execution_disabled",
   notInstalledReason: "schematron_schxslt_engine_not_installed"
 } satisfies CandidatePackageDescriptor;
+
+const XPATH_FONTOXPATH_PACKAGE = {
+  packageName: "fontoxpath",
+  installedReason:
+    "schematron_xpath_engine_candidate_available_execution_disabled_by_default",
+  notInstalledReason: "schematron_xpath_fontoxpath_not_installed"
+} satisfies CandidatePackageDescriptor;
+
+const XPATH_SLIMDOM_PACKAGE = {
+  packageName: "slimdom",
+  installedReason:
+    "schematron_xpath_engine_candidate_available_execution_disabled_by_default",
+  notInstalledReason: "schematron_xpath_slimdom_not_installed"
+} satisfies CandidatePackageDescriptor;
+
+const requirePackageMetadata = createRequire(import.meta.url);
 
 function normalizedToken(value: unknown) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -97,6 +127,10 @@ export function normalizeSchematronEngineCandidateId(
     return "future_schxslt";
   }
 
+  if (token === "xpath" || token === "xpath_engine" || token === "fontoxpath") {
+    return "xpath_engine";
+  }
+
   if (token === "internal_test_candidate") {
     return "internal_test_candidate";
   }
@@ -111,6 +145,7 @@ function buildCandidateInfo(input: {
   capabilities: SchematronEngineCapability[];
   packageName: string | null;
   packageVersion: string | null;
+  detectedPackages?: SchematronEngineCandidatePackage[];
   reason: string;
 }): SchematronEngineCandidateInfo {
   const base = {
@@ -122,6 +157,7 @@ function buildCandidateInfo(input: {
     capabilities: input.capabilities,
     packageName: input.packageName,
     packageVersion: input.packageVersion,
+    detectedPackages: input.detectedPackages ?? [],
     reason: input.reason
   } satisfies Omit<SchematronEngineCandidateInfo, "safeSummary">;
 
@@ -168,15 +204,34 @@ function getDetectedPackageVersion(moduleNamespace: unknown) {
   return getStringProperty(defaultExport as Record<string, unknown>, "version");
 }
 
+function getDetectedPackageJsonVersion(packageName: string) {
+  try {
+    const packageJson = requirePackageMetadata(
+      `${packageName}/package.json`
+    ) as unknown;
+
+    if (typeof packageJson !== "object" || packageJson === null) {
+      return null;
+    }
+
+    return getStringProperty(packageJson as Record<string, unknown>, "version");
+  } catch {
+    return null;
+  }
+}
+
 async function inspectOptionalPackage(
   descriptor: CandidatePackageDescriptor
 ) {
   try {
     const moduleNamespace = await import(descriptor.packageName);
+    const packageVersion =
+      getDetectedPackageVersion(moduleNamespace) ??
+      getDetectedPackageJsonVersion(descriptor.packageName);
 
     return {
       available: true,
-      packageVersion: getDetectedPackageVersion(moduleNamespace)
+      packageVersion
     };
   } catch {
     return {
@@ -200,6 +255,14 @@ async function inspectFuturePackageCandidate(input: {
       capabilities: ["metadata_only", "no_remote_fetch"],
       packageName: null,
       packageVersion: null,
+      detectedPackages: [
+        {
+          packageName: input.descriptor.packageName,
+          packageVersion: null,
+          available: false,
+          reason: input.descriptor.notInstalledReason
+        }
+      ],
       reason: input.descriptor.notInstalledReason
     });
   }
@@ -217,7 +280,101 @@ async function inspectFuturePackageCandidate(input: {
     ],
     packageName: input.descriptor.packageName,
     packageVersion: inspectedPackage.packageVersion,
+    detectedPackages: [
+      {
+        packageName: input.descriptor.packageName,
+        packageVersion: inspectedPackage.packageVersion,
+        available: true,
+        reason: input.descriptor.installedReason
+      }
+    ],
     reason: input.descriptor.installedReason
+  });
+}
+
+function combinePackageVersions(
+  packages: readonly SchematronEngineCandidatePackage[]
+) {
+  const versions = packages
+    .filter((candidatePackage) => candidatePackage.available)
+    .map((candidatePackage) =>
+      candidatePackage.packageVersion
+        ? `${candidatePackage.packageName}@${candidatePackage.packageVersion}`
+        : candidatePackage.packageName
+    );
+
+  return versions.length > 0 ? versions.join("; ") : null;
+}
+
+async function inspectXPathEngineCandidate() {
+  const [fontoxpathPackage, slimdomPackage] = await Promise.all([
+    inspectOptionalPackage(XPATH_FONTOXPATH_PACKAGE),
+    inspectOptionalPackage(XPATH_SLIMDOM_PACKAGE)
+  ]);
+  const detectedPackages: SchematronEngineCandidatePackage[] = [
+    {
+      packageName: XPATH_FONTOXPATH_PACKAGE.packageName,
+      packageVersion: fontoxpathPackage.packageVersion,
+      available: fontoxpathPackage.available,
+      reason: fontoxpathPackage.available
+        ? XPATH_FONTOXPATH_PACKAGE.installedReason
+        : XPATH_FONTOXPATH_PACKAGE.notInstalledReason
+    },
+    {
+      packageName: XPATH_SLIMDOM_PACKAGE.packageName,
+      packageVersion: slimdomPackage.packageVersion,
+      available: slimdomPackage.available,
+      reason: slimdomPackage.available
+        ? XPATH_SLIMDOM_PACKAGE.installedReason
+        : XPATH_SLIMDOM_PACKAGE.notInstalledReason
+    }
+  ];
+
+  if (!fontoxpathPackage.available) {
+    return buildCandidateInfo({
+      engineId: "xpath_engine",
+      availabilityStatus: "unavailable",
+      executionSupported: false,
+      capabilities: ["metadata_only", "no_remote_fetch", "test_only"],
+      packageName: null,
+      packageVersion: null,
+      detectedPackages,
+      reason: XPATH_FONTOXPATH_PACKAGE.notInstalledReason
+    });
+  }
+
+  if (!slimdomPackage.available) {
+    return buildCandidateInfo({
+      engineId: "xpath_engine",
+      availabilityStatus: "unavailable",
+      executionSupported: false,
+      capabilities: ["metadata_only", "no_remote_fetch", "test_only"],
+      packageName: null,
+      packageVersion: null,
+      detectedPackages,
+      reason: XPATH_SLIMDOM_PACKAGE.notInstalledReason
+    });
+  }
+
+  return buildCandidateInfo({
+    engineId: "xpath_engine",
+    availabilityStatus: "available",
+    executionSupported: true,
+    capabilities: [
+      "metadata_only",
+      "local_execution_candidate",
+      "no_remote_fetch",
+      "windows_compatible",
+      "esm_compatible",
+      "test_only",
+      "xml_dom_execution",
+      "xpath_assertion_execution"
+    ],
+    packageName: "fontoxpath+slimdom",
+    packageVersion: combinePackageVersions(detectedPackages),
+    detectedPackages,
+    reason:
+      "schematron_xpath_engine_candidate_available_execution_disabled_by_default"
   });
 }
 
@@ -262,6 +419,10 @@ export async function inspectSchematronEngineCandidate(
       engineId,
       descriptor: FUTURE_SCHXSLT_PACKAGE
     });
+  }
+
+  if (engineId === "xpath_engine") {
+    return inspectXPathEngineCandidate();
   }
 
   return buildCandidateInfo({

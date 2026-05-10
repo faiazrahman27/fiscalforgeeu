@@ -21,6 +21,7 @@ export * from "./schematron-execution-policy.js";
 export * from "./schematron-engine-candidate.js";
 export * from "./schematron-local-execution-prototype.js";
 export * from "./schematron-result-mapper.js";
+export * from "./schematron-xpath-engine.js";
 export * from "./schematron-peppol-bis-execution.js";
 export * from "./schematron-en16931-execution.js";
 export * from "./schematron-execution-orchestrator.js";

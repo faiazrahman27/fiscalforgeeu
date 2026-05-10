@@ -58,7 +58,7 @@ test("validation report summary counts finding severities", () => {
           message: "Warning finding.",
           legalConfidence: "professional_review_required",
           ruleSetCode: "INVOICE_LANTERN_CORE",
-          ruleVersion: "2026.04.1",
+          ruleVersion: "2026.05.1",
           sourceLabels: ["Invoice Lantern internal technical validation policy"]
         },
         {

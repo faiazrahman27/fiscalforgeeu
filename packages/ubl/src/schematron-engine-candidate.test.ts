@@ -43,6 +43,7 @@ function assertCandidateShape(
   assert.deepEqual(info.safeSummary.capabilities, info.capabilities);
   assert.equal(info.safeSummary.packageName, info.packageName);
   assert.equal(info.safeSummary.packageVersion, info.packageVersion);
+  assert.deepEqual(info.safeSummary.detectedPackages, info.detectedPackages);
   assert.equal(info.safeSummary.reason, info.reason);
 }
 
@@ -75,6 +76,9 @@ test("normalizes Schematron engine candidate ids and aliases safely", () => {
     ["future_xslt2", "future_xslt2"],
     ["schxslt", "future_schxslt"],
     ["future_schxslt", "future_schxslt"],
+    ["xpath", "xpath_engine"],
+    ["xpath_engine", "xpath_engine"],
+    ["fontoxpath", "xpath_engine"],
     ["internal_test_candidate", "internal_test_candidate"],
     ["custom-engine", "none"]
   ];
@@ -159,6 +163,45 @@ test("internal_test_candidate reports isolated package-level candidate metadata"
   assert.equal(info.capabilities.includes("local_execution_candidate"), true);
   assert.equal(info.capabilities.includes("no_remote_fetch"), true);
   assert.equal(info.capabilities.includes("test_only"), true);
+  assertSafeOutput(info);
+});
+
+test("xpath_engine reports guarded dependency-backed engine metadata without enabling default execution", async () => {
+  const info = await inspectSchematronEngineCandidate({
+    engineId: "xpath_engine"
+  });
+
+  assertCandidateShape(info, "xpath_engine");
+  assert.equal(info.availabilityStatus, "available");
+  assert.equal(info.executionSupported, true);
+  assert.equal(info.executionEnabledByDefault, false);
+  assert.equal(info.packageName, "fontoxpath+slimdom");
+  assert.match(String(info.packageVersion), /fontoxpath@/);
+  assert.match(String(info.packageVersion), /slimdom/);
+  assert.equal(
+    info.reason,
+    "schematron_xpath_engine_candidate_available_execution_disabled_by_default"
+  );
+  assert.equal(info.capabilities.includes("metadata_only"), true);
+  assert.equal(info.capabilities.includes("local_execution_candidate"), true);
+  assert.equal(info.capabilities.includes("no_remote_fetch"), true);
+  assert.equal(info.capabilities.includes("windows_compatible"), true);
+  assert.equal(info.capabilities.includes("esm_compatible"), true);
+  assert.equal(info.capabilities.includes("test_only"), true);
+  assert.equal(info.capabilities.includes("xml_dom_execution"), true);
+  assert.equal(info.capabilities.includes("xpath_assertion_execution"), true);
+  assert.equal(
+    info.detectedPackages.some(
+      (item) => item.packageName === "fontoxpath" && item.available
+    ),
+    true
+  );
+  assert.equal(
+    info.detectedPackages.some(
+      (item) => item.packageName === "slimdom" && item.available
+    ),
+    true
+  );
   assertSafeOutput(info);
 });
 
