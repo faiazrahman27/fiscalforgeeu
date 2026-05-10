@@ -11,6 +11,7 @@ import {
 } from "./schematron-en16931-execution.js";
 import type { SchematronEngineCandidateInfo } from "./schematron-engine-candidate.js";
 import type { SchematronExecutionPolicy } from "./schematron-execution-policy.js";
+import type { SchematronInternalAssertionFixtureSummary } from "./schematron-internal-assertion-fixtures.js";
 import type { SchematronLocalPrototypeRule } from "./schematron-local-execution-prototype.js";
 import {
   runPeppolBisBillingExecutionPath,
@@ -56,6 +57,9 @@ export type SchematronExecutionOrchestratorInput = {
   en16931PrototypeRules?: SchematronLocalPrototypeRule[];
   peppolSvrlResults?: SchematronSvrlInputResult[];
   en16931SvrlResults?: SchematronSvrlInputResult[];
+  allowInternalXPathExecution?: boolean;
+  internalAssertionFixtureIds?: readonly string[];
+  maxInternalAssertionFixtures?: number;
   maxXmlBytes?: number;
   maxRules?: number;
 };
@@ -71,6 +75,7 @@ export type SchematronLayerExecutionSummary = {
   warningCount: number;
   infoCount: number;
   reason: string;
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
 };
 
 export type SchematronExecutionOrchestratorSummary = {
@@ -88,6 +93,7 @@ export type SchematronExecutionOrchestratorSummary = {
   infoCount: number;
   layerSummaries: SchematronLayerExecutionSummary[];
   reason: string;
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
 };
 
 export type SchematronExecutionOrchestratorResult = {
@@ -101,6 +107,7 @@ export type SchematronExecutionOrchestratorResult = {
   reason: string;
   findings: SchematronContractFinding[];
   layerSummaries: SchematronLayerExecutionSummary[];
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
   safeSummary: SchematronExecutionOrchestratorSummary;
 };
 
@@ -297,6 +304,7 @@ function layerSummary(input: {
   validationExecuted: boolean;
   reason: string;
   findings: readonly SchematronContractFinding[];
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
 }): SchematronLayerExecutionSummary {
   const counts = countFindings(input.findings);
 
@@ -307,7 +315,10 @@ function layerSummary(input: {
     validationExecuted: input.validationExecuted,
     markedValid: false,
     ...counts,
-    reason: sanitizeOrchestratorText(input.reason, 160) || "schematron_failed"
+    reason: sanitizeOrchestratorText(input.reason, 160) || "schematron_failed",
+    ...(input.internalAssertionFixtureSummary
+      ? { internalAssertionFixtureSummary: input.internalAssertionFixtureSummary }
+      : {})
   };
 }
 
@@ -320,6 +331,7 @@ function buildResult(input: {
   reason: string;
   findings: SchematronContractFinding[];
   layerSummaries: SchematronLayerExecutionSummary[];
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
 }): SchematronExecutionOrchestratorResult {
   const counts = countFindings(input.findings);
   const reason =
@@ -336,7 +348,12 @@ function buildResult(input: {
     reason,
     ...counts,
     layerSummaries: input.layerSummaries
-  } satisfies Omit<SchematronExecutionOrchestratorSummary, "diagnosticKind">;
+  } satisfies Omit<
+    SchematronExecutionOrchestratorSummary,
+    "diagnosticKind" | "internalAssertionFixtureSummary"
+  >;
+  const internalAssertionFixtureSummary =
+    input.internalAssertionFixtureSummary;
 
   return {
     orchestratorVersion: base.orchestratorVersion,
@@ -349,9 +366,15 @@ function buildResult(input: {
     reason: base.reason,
     findings: input.findings,
     layerSummaries: base.layerSummaries,
+    ...(internalAssertionFixtureSummary
+      ? { internalAssertionFixtureSummary }
+      : {}),
     safeSummary: {
       diagnosticKind: "schematron_execution_orchestrator",
-      ...base
+      ...base,
+      ...(internalAssertionFixtureSummary
+        ? { internalAssertionFixtureSummary }
+        : {})
     }
   };
 }
@@ -378,6 +401,24 @@ function runLayer(input: {
       : {}),
     ...(input.orchestratorInput.maxRules !== undefined
       ? { maxRules: input.orchestratorInput.maxRules }
+      : {}),
+    ...(input.orchestratorInput.allowInternalXPathExecution !== undefined
+      ? {
+          allowInternalXPathExecution:
+            input.orchestratorInput.allowInternalXPathExecution
+        }
+      : {}),
+    ...(input.orchestratorInput.internalAssertionFixtureIds
+      ? {
+          internalAssertionFixtureIds:
+            input.orchestratorInput.internalAssertionFixtureIds
+        }
+      : {}),
+    ...(input.orchestratorInput.maxInternalAssertionFixtures !== undefined
+      ? {
+          maxInternalAssertionFixtures:
+            input.orchestratorInput.maxInternalAssertionFixtures
+        }
       : {})
   };
 
@@ -434,7 +475,13 @@ async function collectLayerResults(input: {
             validationExecutionEnabled: result.validationExecutionEnabled,
             validationExecuted: result.validationExecuted,
             reason: result.reason,
-            findings
+            findings,
+            ...(result.internalAssertionFixtureSummary
+              ? {
+                  internalAssertionFixtureSummary:
+                    result.internalAssertionFixtureSummary
+                }
+              : {})
           })
         };
       } catch {
@@ -521,6 +568,14 @@ function aggregateInternalStatus(input: {
   }
 
   if (
+    statuses.includes("failed") &&
+    statuses.includes("executed") &&
+    input.summaries.some((summary) => summary.internalAssertionFixtureSummary)
+  ) {
+    return "partial";
+  }
+
+  if (
     input.fatalCount > 0 ||
     statuses.some((status) => status === "failed")
   ) {
@@ -532,6 +587,50 @@ function aggregateInternalStatus(input: {
   }
 
   return "partial";
+}
+
+function aggregateInternalAssertionFixtureSummary(
+  layerSummaries: readonly SchematronLayerExecutionSummary[]
+): SchematronInternalAssertionFixtureSummary | undefined {
+  const fixtureSummaries = layerSummaries
+    .map((summary) => summary.internalAssertionFixtureSummary)
+    .filter(
+      (
+        summary
+      ): summary is SchematronInternalAssertionFixtureSummary =>
+        Boolean(summary)
+    );
+
+  if (fixtureSummaries.length === 0) {
+    return undefined;
+  }
+
+  const [firstSummary] = fixtureSummaries;
+
+  if (!firstSummary) {
+    return undefined;
+  }
+
+  const selectedFixtureIds = [
+    ...new Set(
+      fixtureSummaries.flatMap((summary) => summary.selectedFixtureIds)
+    )
+  ];
+
+  return {
+    ...firstSummary,
+    selectedLayers: [
+      ...new Set(
+        fixtureSummaries.flatMap((summary) => summary.selectedLayers)
+      )
+    ],
+    selectedFixtureIds,
+    selectedFixtureCount: selectedFixtureIds.length,
+    maxFixtureCount: Math.max(
+      ...fixtureSummaries.map((summary) => summary.maxFixtureCount)
+    ),
+    reason: "schematron_internal_assertion_fixtures_orchestrated"
+  };
 }
 
 function reasonForStatus(input: {
@@ -632,6 +731,8 @@ export async function runSchematronExecutionOrchestrator(
     mode === "internal_test_only" &&
     layerSummaries.length > 0 &&
     layerSummaries.every((summary) => summary.validationExecuted);
+  const internalAssertionFixtureSummary =
+    aggregateInternalAssertionFixtureSummary(layerSummaries);
 
   return buildResult({
     mode,
@@ -641,6 +742,9 @@ export async function runSchematronExecutionOrchestrator(
     validationExecuted,
     reason: reasonForStatus({ mode, status }),
     findings,
-    layerSummaries
+    layerSummaries,
+    ...(internalAssertionFixtureSummary
+      ? { internalAssertionFixtureSummary }
+      : {})
   });
 }

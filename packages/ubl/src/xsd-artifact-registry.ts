@@ -2,6 +2,15 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { access, readFile, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import {
+  SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION,
+  buildSchematronArtifactProvenance,
+  buildSchematronArtifactSourceRegisterSummary,
+  type SchematronArtifactLegalConfidence,
+  type SchematronArtifactProvenance,
+  type SchematronArtifactReviewStatus,
+  type SchematronArtifactSourceRegisterSummary
+} from "./schematron-artifact-source-register.js";
 
 export const UBL_XSD_VALIDATOR_NAME = "xmllint-wasm";
 export const SCHEMATRON_VALIDATOR_NAME = "schematron-placeholder";
@@ -182,6 +191,15 @@ export type SchematronSafeFileArtifactDiagnostics = {
   basename: string | null;
   relativePathUnderRoot?: string;
   reason?: string;
+  sourceRegisterVersion?: typeof SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION;
+  artifactSlotId?: string;
+  reviewStatus?: SchematronArtifactReviewStatus;
+  sourceLabels?: readonly string[];
+  sourceUrls?: readonly string[];
+  documentationUrls?: readonly string[];
+  legalConfidence?: SchematronArtifactLegalConfidence;
+  provenanceDisclaimer?: string;
+  artifactProvenance?: SchematronArtifactProvenance;
 };
 
 export type UblXsdSafeDependencyGraphDiagnostics = {
@@ -225,6 +243,8 @@ export type SchematronSafeArtifactDiagnostics = {
   checkedAt: string;
   peppolBisArtifact: SchematronSafeFileArtifactDiagnostics;
   en16931Artifact: SchematronSafeFileArtifactDiagnostics;
+  sourceRegisterVersion?: typeof SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION;
+  sourceRegisterSummary?: SchematronArtifactSourceRegisterSummary;
   disclaimer: string;
 };
 
@@ -952,10 +972,24 @@ function buildSafeSchemaDiagnostics(input: {
 function buildSafeSchematronFileDiagnostics(input: {
   artifact: SchematronArtifactFileInfo;
   rootPath: string | null;
+  artifactVersion: string | null;
 }): SchematronSafeFileArtifactDiagnostics {
   const labels = getSafeSchemaPathLabels({
     schemaPath: input.artifact.path,
     rootPath: input.rootPath
+  });
+  const artifactProvenance = buildSchematronArtifactProvenance({
+    layer: input.artifact.artifactKind,
+    artifactVersion: input.artifactVersion,
+    configured: input.artifact.configured,
+    readable: input.artifact.readable,
+    usable: input.artifact.usable,
+    sha256: input.artifact.sha256,
+    safeLabel: labels.label,
+    basename: labels.basename,
+    ...(labels.relativePathUnderRoot
+      ? { relativePathUnderRoot: labels.relativePathUnderRoot }
+      : {})
   });
 
   return {
@@ -970,7 +1004,16 @@ function buildSafeSchematronFileDiagnostics(input: {
     ...(labels.relativePathUnderRoot
       ? { relativePathUnderRoot: labels.relativePathUnderRoot }
       : {}),
-    ...(input.artifact.reason ? { reason: input.artifact.reason } : {})
+    ...(input.artifact.reason ? { reason: input.artifact.reason } : {}),
+    sourceRegisterVersion: artifactProvenance.registerVersion,
+    artifactSlotId: artifactProvenance.artifactSlotId,
+    reviewStatus: artifactProvenance.reviewStatus,
+    sourceLabels: [...artifactProvenance.sourceLabels],
+    sourceUrls: [...artifactProvenance.sourceUrls],
+    documentationUrls: [...artifactProvenance.documentationUrls],
+    legalConfidence: artifactProvenance.legalConfidence,
+    provenanceDisclaimer: artifactProvenance.disclaimer,
+    artifactProvenance
   };
 }
 
@@ -1165,12 +1208,16 @@ export async function buildSafeSchematronArtifactDiagnostics(
     checkedAt: inspection.artifactInfo.checkedAt,
     peppolBisArtifact: buildSafeSchematronFileDiagnostics({
       artifact: inspection.peppolBisArtifact,
-      rootPath: inspection.artifactInfo.rootPath
+      rootPath: inspection.artifactInfo.rootPath,
+      artifactVersion: inspection.artifactInfo.artifactVersion
     }),
     en16931Artifact: buildSafeSchematronFileDiagnostics({
       artifact: inspection.en16931Artifact,
-      rootPath: inspection.artifactInfo.rootPath
+      rootPath: inspection.artifactInfo.rootPath,
+      artifactVersion: inspection.artifactInfo.artifactVersion
     }),
+    sourceRegisterVersion: SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION,
+    sourceRegisterSummary: buildSchematronArtifactSourceRegisterSummary(),
     disclaimer: SCHEMATRON_ARTIFACT_DIAGNOSTICS_DISCLAIMER
   };
 }

@@ -38,6 +38,7 @@ export type SchematronXPathAssertionInput = {
   assertionText: string;
   severity?: SchematronFindingSeverity;
   diagnosticReference?: string;
+  sourceLabels?: readonly string[];
 };
 
 export type SchematronXPathEngineInput = {
@@ -114,6 +115,7 @@ type NormalizedAssertion = {
   assertionText: string;
   severity: SchematronFindingSeverity;
   diagnosticReference?: string;
+  sourceLabels?: string[];
 };
 
 type AssertionNormalizationResult =
@@ -159,7 +161,7 @@ const FORBIDDEN_ASSURANCE_CLAIM_PATTERN =
 const SCHEMATRON_FILE_CONTENT_SENTINEL_PATTERN =
   /\bSCHEMATRON[-_\s]?FILE[-_\s]?CONTENT[-_\s]?[A-Za-z0-9_.-]*/gi;
 const URL_OR_LOCAL_PATH_PATTERN =
-  /\b(?:https?|file):\/\/|(?<![\w:])[A-Za-z]:[\\/]/i;
+  /\b(?:https?|file):\/\/|(?<![\w:])[A-Za-z]:[\\/]|(?<![\w:])\/(?:home|tmp|Users|etc|var|private)\/[^\s"'<>]*/i;
 const XML_LITERAL_PATTERN =
   /<([A-Za-z_][\w:.-]*)(?:\s[^<>]*)?>[\s\S]*?<\/\1>|<\/?[A-Za-z_][\w:.-]*(?:\s[^<>]*)?\/?>/;
 const EXTERNAL_DOCUMENT_FUNCTION_PATTERN =
@@ -418,6 +420,15 @@ function normalizeAssertion(
     assertion.diagnosticReference,
     240
   );
+  const sourceLabels = Array.isArray(assertion.sourceLabels)
+    ? [
+        ...new Set(
+          assertion.sourceLabels
+            .map((label) => optionalSanitizedText(label, 120))
+            .filter((label): label is string => Boolean(label))
+        )
+      ]
+    : [];
 
   return {
     ok: true,
@@ -430,7 +441,8 @@ function normalizeAssertion(
         assertionText,
         severity: assertion.severity ?? "fatal",
         ...(businessRuleId ? { businessRuleId } : {}),
-        ...(diagnosticReference ? { diagnosticReference } : {})
+        ...(diagnosticReference ? { diagnosticReference } : {}),
+        ...(sourceLabels.length > 0 ? { sourceLabels } : {})
       }
     ]
   };
@@ -593,7 +605,8 @@ function buildAssertionFailedFinding(
       "Schematron XPath engine",
       SCHEMATRON_XPATH_ENGINE_VERSION,
       assertion.ruleId,
-      ...(assertion.businessRuleId ? [assertion.businessRuleId] : [])
+      ...(assertion.businessRuleId ? [assertion.businessRuleId] : []),
+      ...(assertion.sourceLabels ?? [])
     ],
     technicalCode: findingCodeForLayer(assertion.schematronLayer),
     technicalMessage: "schematron_xpath_assertion_failed"

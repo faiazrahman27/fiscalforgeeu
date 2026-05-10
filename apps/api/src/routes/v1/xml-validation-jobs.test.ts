@@ -161,7 +161,7 @@ function assertNoUnsafeXmlValidationResponseContent(
   }
 
   assert.equal(serialized.includes("<Invoice"), false);
-  assert.doesNotMatch(serialized, /[A-Za-z]:[\\/][^"\\s]+/);
+  assert.doesNotMatch(serialized, /(?:^|["\s])[A-Za-z]:[\\/][^"\\s]+/);
   assert.doesNotMatch(serialized, /\/tmp\/schematron\/[A-Za-z0-9_.-]+/);
   assert.doesNotMatch(serialized, /file:\/\/\//i);
   assert.doesNotMatch(serialized, forbiddenResponseClaimsPattern);
@@ -257,7 +257,7 @@ function assertSchematronEngineCandidate(input: {
   assert.equal(serialized.includes(simpleUblInvoiceXml), false);
   assert.equal(serialized.includes("<Invoice"), false);
   assert.equal(serialized.includes("<schema>"), false);
-  assert.doesNotMatch(serialized, /[A-Za-z]:[\\/][^"\\s]+/);
+  assert.doesNotMatch(serialized, /(?:^|["\s])[A-Za-z]:[\\/][^"\\s]+/);
   assert.doesNotMatch(serialized, /\/tmp\/schematron\/[A-Za-z0-9_.-]+/);
   assert.doesNotMatch(serialized, /file:\/\/\//i);
   assert.doesNotMatch(

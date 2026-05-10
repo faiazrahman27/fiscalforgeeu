@@ -124,6 +124,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   const schematronDiagnosticsSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronArtifactDiagnostics")
   );
+  const schematronArtifactProvenanceSchema = JSON.stringify(
+    readRecord(schemas, "XmlValidationJobSchematronArtifactProvenance")
+  );
   const schematronPreflightSchema = JSON.stringify(
     readRecord(schemas, "XmlValidationJobSchematronExecutionPreflight")
   );
@@ -207,6 +210,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /en16931_execution_path_v1/);
   assert.match(serializedPost, /schematron_execution_orchestrator_v1/);
   assert.match(serializedPost, /xml_worker_schematron_orchestrator_v1/);
+  assert.match(serializedPost, /schematron_artifact_source_register_v1/);
+  assert.match(serializedPost, /artifactProvenance/);
+  assert.match(serializedPost, /sourceRegisterVersion/);
+  assert.match(serializedPost, /reviewStatus/);
   assert.match(serializedPost, /workerSchematronOrchestratorVersion/);
   assert.match(serializedPost, /schematronOrchestration/);
   assert.match(serializedPost, /package-level\/internal test-only/i);
@@ -289,6 +296,24 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronDiagnosticsSchema, /readyArtifactCount/);
   assert.match(schematronDiagnosticsSchema, /peppolBisArtifact/);
   assert.match(schematronDiagnosticsSchema, /en16931Artifact/);
+  assert.match(schematronDiagnosticsSchema, /sourceRegisterVersion/);
+  assert.match(schematronDiagnosticsSchema, /sourceRegisterSummary/);
+  assert.match(schematronDiagnosticsSchema, /schematron_artifact_source_register_v1/);
+  assert.match(schematronArtifactProvenanceSchema, /artifactSlotId/);
+  assert.match(schematronArtifactProvenanceSchema, /reviewStatus/);
+  assert.match(schematronArtifactProvenanceSchema, /configuredEnvVars/);
+  assert.match(schematronArtifactProvenanceSchema, /expectedSha256/);
+  assert.match(schematronArtifactProvenanceSchema, /safeLabel/);
+  assert.match(schematronArtifactProvenanceSchema, /rawXmlReturned/);
+  assert.match(
+    schematronArtifactProvenanceSchema,
+    /schematronFileContentsReturned/
+  );
+  assert.match(
+    schematronArtifactProvenanceSchema,
+    /fullAbsoluteLocalPathsReturned/
+  );
+  assert.match(schematronArtifactProvenanceSchema, /remoteFetching/);
   assert.match(schematronPreflightSchema, /schematron_execution_preflight/);
   assert.match(schematronPreflightSchema, /schematron_adapter_preflight_v1/);
   assert.match(schematronPreflightSchema, /preflight_only/);
@@ -612,6 +637,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
   assert.match(schematronArtifactSchema, /basename/);
   assert.match(schematronArtifactSchema, /sha256/);
+  assert.match(schematronArtifactSchema, /artifactProvenance/);
+  assert.match(schematronArtifactSchema, /sourceLabels/);
+  assert.match(schematronArtifactSchema, /documentationUrls/);
+  assert.match(schematronArtifactSchema, /provenanceDisclaimer/);
   assert.match(schematronArtifactSchema, /full absolute local filesystem paths/);
   assert.match(findingSchema, /not_configured/);
   assert.match(findingSchema, /passed/);
@@ -644,6 +673,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(jobSchema, /xsd_ubl/);
   assert.match(jobSchema, /artifactInfo/);
   assert.match(jobSchema, /schematron_artifacts/);
+  assert.match(jobSchema, /schematron_artifact_source_register_v1/);
   assert.match(jobSchema, /validationExecutionEnabled/);
   assert.match(jobSchema, /adapterVersion/);
   assert.match(jobSchema, /executionPreflight/);

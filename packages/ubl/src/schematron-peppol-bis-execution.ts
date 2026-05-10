@@ -23,6 +23,16 @@ import {
   inspectSchematronEngineCandidate,
   type SchematronEngineCandidateInfo
 } from "./schematron-engine-candidate.js";
+import {
+  buildInternalAssertionFixtureSummary,
+  convertInternalFixtureToXPathAssertion,
+  selectInternalSchematronAssertionFixtures,
+  type SchematronInternalAssertionFixtureSummary
+} from "./schematron-internal-assertion-fixtures.js";
+import {
+  SCHEMATRON_XPATH_ENGINE_ID,
+  runSchematronXPathEngine
+} from "./schematron-xpath-engine.js";
 import type { SchematronSafeArtifactDiagnostics } from "./xsd-artifact-registry.js";
 
 export const PEPPOL_BIS_EXECUTION_PATH_VERSION =
@@ -53,6 +63,9 @@ export type PeppolBisExecutionInput = {
   artifactDiagnostics?: SchematronSafeArtifactDiagnostics;
   prototypeRules?: SchematronLocalPrototypeRule[];
   svrlResults?: SchematronSvrlInputResult[];
+  allowInternalXPathExecution?: boolean;
+  internalAssertionFixtureIds?: readonly string[];
+  maxInternalAssertionFixtures?: number;
   maxXmlBytes?: number;
   maxRules?: number;
 };
@@ -71,6 +84,7 @@ export type PeppolBisExecutionSummary = {
   warningCount: number;
   infoCount: number;
   reason: string;
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
 };
 
 export type PeppolBisExecutionResult = {
@@ -83,6 +97,7 @@ export type PeppolBisExecutionResult = {
   markedValid: false;
   reason: string;
   findings: SchematronContractFinding[];
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
   safeSummary: PeppolBisExecutionSummary;
 };
 
@@ -133,6 +148,7 @@ function buildResult(input: {
   validationExecuted: boolean;
   reason: string;
   findings: SchematronContractFinding[];
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
 }): PeppolBisExecutionResult {
   const counts = countFindings(input.findings);
   const base = {
@@ -145,7 +161,12 @@ function buildResult(input: {
     markedValid: false,
     reason: sanitizeReason(input.reason),
     ...counts
-  } satisfies Omit<PeppolBisExecutionSummary, "diagnosticKind">;
+  } satisfies Omit<
+    PeppolBisExecutionSummary,
+    "diagnosticKind" | "internalAssertionFixtureSummary"
+  >;
+  const internalAssertionFixtureSummary =
+    input.internalAssertionFixtureSummary;
 
   return {
     executionPathVersion: PEPPOL_BIS_EXECUTION_PATH_VERSION,
@@ -157,9 +178,15 @@ function buildResult(input: {
     markedValid: false,
     reason: base.reason,
     findings: input.findings,
+    ...(internalAssertionFixtureSummary
+      ? { internalAssertionFixtureSummary }
+      : {}),
     safeSummary: {
       diagnosticKind: "peppol_bis_execution_path",
-      ...base
+      ...base,
+      ...(internalAssertionFixtureSummary
+        ? { internalAssertionFixtureSummary }
+        : {})
     }
   };
 }
@@ -286,6 +313,18 @@ function isEngineAvailableForInternalExecution(
   );
 }
 
+function isXPathEngineAvailableForInternalFixtureExecution(
+  engineCandidate: SchematronEngineCandidateInfo
+) {
+  return (
+    engineCandidate.engineId === SCHEMATRON_XPATH_ENGINE_ID &&
+    engineCandidate.availabilityStatus === "available" &&
+    engineCandidate.executionSupported === true &&
+    engineCandidate.capabilities.includes("test_only") &&
+    engineCandidate.capabilities.includes("xpath_assertion_execution")
+  );
+}
+
 function getFailedStatus(findings: readonly SchematronContractFinding[]) {
   return findings.some(
     (finding) => finding.status === "failed" || finding.severity === "fatal"
@@ -312,6 +351,32 @@ function mapPrototypeStatus(
   }
 
   return "disabled";
+}
+
+function mapXPathStatusToPeppolStatus(
+  status: Awaited<ReturnType<typeof runSchematronXPathEngine>>["status"]
+): PeppolBisExecutionStatus {
+  if (status === "executed") {
+    return "executed";
+  }
+
+  if (status === "failed") {
+    return "failed";
+  }
+
+  if (status === "unsafe_input") {
+    return "unsafe_input";
+  }
+
+  if (status === "unsupported") {
+    return "unsupported";
+  }
+
+  if (status === "disabled") {
+    return "disabled";
+  }
+
+  return "failed";
 }
 
 export function normalizePeppolBisExecutionMode(
@@ -439,6 +504,123 @@ async function runPreflightOnly(input: {
   });
 }
 
+function wantsInternalAssertionFixtureExecution(input: PeppolBisExecutionInput) {
+  return (
+    input.allowInternalXPathExecution === true ||
+    input.internalAssertionFixtureIds !== undefined ||
+    input.maxInternalAssertionFixtures !== undefined
+  );
+}
+
+async function runInternalAssertionFixtures(input: PeppolBisExecutionInput) {
+  const mode: PeppolBisExecutionMode = "internal_test_only";
+  const internalAssertionFixtureSummary = buildInternalAssertionFixtureSummary({
+    layer: "peppol_bis_billing",
+    ...(input.internalAssertionFixtureIds
+      ? { fixtureIds: input.internalAssertionFixtureIds }
+      : {}),
+    ...(input.maxInternalAssertionFixtures !== undefined
+      ? { maxFixtures: input.maxInternalAssertionFixtures }
+      : {})
+  });
+
+  if (input.allowInternalXPathExecution !== true) {
+    const reason = "peppol_bis_internal_xpath_execution_not_allowed";
+
+    return buildResult({
+      mode,
+      status: "unsupported",
+      validationExecutionEnabled: false,
+      validationExecuted: false,
+      reason,
+      findings: [
+        buildExecutionErrorFinding({
+          reason,
+          message:
+            "The Peppol-style internal assertion fixture path requires an explicit package-level XPath execution guard."
+        })
+      ],
+      internalAssertionFixtureSummary
+    });
+  }
+
+  const { policy, engineCandidate } = await resolvePolicyAndEngine({
+    ...(input.policy ? { policy: input.policy } : {}),
+    ...(input.engineCandidate ? { engineCandidate: input.engineCandidate } : {})
+  });
+
+  if (policy.mode === "blocked_requested_execution") {
+    const reason = "peppol_bis_internal_xpath_blocked_by_policy";
+
+    return buildResult({
+      mode,
+      status: "blocked_by_policy",
+      validationExecutionEnabled: false,
+      validationExecuted: false,
+      reason,
+      findings: [
+        buildExecutionErrorFinding({
+          reason,
+          message:
+            "The Peppol-style internal assertion fixture path was blocked by execution policy."
+        })
+      ],
+      internalAssertionFixtureSummary
+    });
+  }
+
+  if (
+    policy.engineId !== SCHEMATRON_XPATH_ENGINE_ID ||
+    !isXPathEngineAvailableForInternalFixtureExecution(engineCandidate)
+  ) {
+    const reason = "peppol_bis_internal_xpath_engine_unavailable";
+
+    return buildResult({
+      mode,
+      status: "engine_unavailable",
+      validationExecutionEnabled: false,
+      validationExecuted: false,
+      reason,
+      findings: [
+        buildExecutionErrorFinding({
+          reason,
+          message:
+            "The Peppol-style internal assertion fixture path requires the guarded xpath_engine candidate."
+        })
+      ],
+      internalAssertionFixtureSummary
+    });
+  }
+
+  const assertions = selectInternalSchematronAssertionFixtures({
+    layer: "peppol_bis_billing",
+    ...(input.internalAssertionFixtureIds
+      ? { fixtureIds: input.internalAssertionFixtureIds }
+      : {}),
+    ...(input.maxInternalAssertionFixtures !== undefined
+      ? { maxFixtures: input.maxInternalAssertionFixtures }
+      : {})
+  }).map((fixture) => convertInternalFixtureToXPathAssertion(fixture));
+  const xpathResult = await runSchematronXPathEngine({
+    xml: input.xml,
+    assertions,
+    mode: "internal_test_only",
+    allowInternalXPathExecution: true,
+    maxAssertions: internalAssertionFixtureSummary.maxFixtureCount,
+    ...(input.maxXmlBytes !== undefined ? { maxXmlBytes: input.maxXmlBytes } : {})
+  });
+
+  return buildResult({
+    mode,
+    status: mapXPathStatusToPeppolStatus(xpathResult.status),
+    validationExecutionEnabled: xpathResult.validationExecutionEnabled,
+    validationExecuted: xpathResult.validationExecuted,
+    reason: xpathResult.reason,
+    findings: xpathResult.findings,
+    internalAssertionFixtureSummary
+  });
+}
+
 function buildUnsafeInputResult(input: {
   mode: PeppolBisExecutionMode;
   reason: string;
@@ -478,6 +660,10 @@ async function runInternalTestOnly(input: PeppolBisExecutionInput) {
   }
 
   try {
+    if (wantsInternalAssertionFixtureExecution(input)) {
+      return runInternalAssertionFixtures(input);
+    }
+
     if (Array.isArray(input.svrlResults)) {
       const mapped = mapSchematronSvrlResultsToFindings({
         layer: "peppol_bis_billing",

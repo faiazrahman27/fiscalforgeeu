@@ -23,6 +23,16 @@ import {
   inspectSchematronEngineCandidate,
   type SchematronEngineCandidateInfo
 } from "./schematron-engine-candidate.js";
+import {
+  buildInternalAssertionFixtureSummary,
+  convertInternalFixtureToXPathAssertion,
+  selectInternalSchematronAssertionFixtures,
+  type SchematronInternalAssertionFixtureSummary
+} from "./schematron-internal-assertion-fixtures.js";
+import {
+  SCHEMATRON_XPATH_ENGINE_ID,
+  runSchematronXPathEngine
+} from "./schematron-xpath-engine.js";
 import type { SchematronSafeArtifactDiagnostics } from "./xsd-artifact-registry.js";
 
 export const EN16931_EXECUTION_PATH_VERSION = "en16931_execution_path_v1";
@@ -52,6 +62,9 @@ export type En16931ExecutionInput = {
   artifactDiagnostics?: SchematronSafeArtifactDiagnostics;
   prototypeRules?: SchematronLocalPrototypeRule[];
   svrlResults?: SchematronSvrlInputResult[];
+  allowInternalXPathExecution?: boolean;
+  internalAssertionFixtureIds?: readonly string[];
+  maxInternalAssertionFixtures?: number;
   maxXmlBytes?: number;
   maxRules?: number;
 };
@@ -70,6 +83,7 @@ export type En16931ExecutionSummary = {
   warningCount: number;
   infoCount: number;
   reason: string;
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
 };
 
 export type En16931ExecutionResult = {
@@ -82,6 +96,7 @@ export type En16931ExecutionResult = {
   markedValid: false;
   reason: string;
   findings: SchematronContractFinding[];
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
   safeSummary: En16931ExecutionSummary;
 };
 
@@ -132,6 +147,7 @@ function buildResult(input: {
   validationExecuted: boolean;
   reason: string;
   findings: SchematronContractFinding[];
+  internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
 }): En16931ExecutionResult {
   const counts = countFindings(input.findings);
   const base = {
@@ -144,7 +160,12 @@ function buildResult(input: {
     markedValid: false,
     reason: sanitizeReason(input.reason),
     ...counts
-  } satisfies Omit<En16931ExecutionSummary, "diagnosticKind">;
+  } satisfies Omit<
+    En16931ExecutionSummary,
+    "diagnosticKind" | "internalAssertionFixtureSummary"
+  >;
+  const internalAssertionFixtureSummary =
+    input.internalAssertionFixtureSummary;
 
   return {
     executionPathVersion: EN16931_EXECUTION_PATH_VERSION,
@@ -156,9 +177,15 @@ function buildResult(input: {
     markedValid: false,
     reason: base.reason,
     findings: input.findings,
+    ...(internalAssertionFixtureSummary
+      ? { internalAssertionFixtureSummary }
+      : {}),
     safeSummary: {
       diagnosticKind: "en16931_execution_path",
-      ...base
+      ...base,
+      ...(internalAssertionFixtureSummary
+        ? { internalAssertionFixtureSummary }
+        : {})
     }
   };
 }
@@ -304,6 +331,18 @@ function isEngineAvailableForInternalExecution(
   );
 }
 
+function isXPathEngineAvailableForInternalFixtureExecution(
+  engineCandidate: SchematronEngineCandidateInfo
+) {
+  return (
+    engineCandidate.engineId === SCHEMATRON_XPATH_ENGINE_ID &&
+    engineCandidate.availabilityStatus === "available" &&
+    engineCandidate.executionSupported === true &&
+    engineCandidate.capabilities.includes("test_only") &&
+    engineCandidate.capabilities.includes("xpath_assertion_execution")
+  );
+}
+
 function getFailedStatus(findings: readonly SchematronContractFinding[]) {
   return findings.some(
     (finding) => finding.status === "failed" || finding.severity === "fatal"
@@ -330,6 +369,32 @@ function mapPrototypeStatus(
   }
 
   return "disabled";
+}
+
+function mapXPathStatusToEn16931Status(
+  status: Awaited<ReturnType<typeof runSchematronXPathEngine>>["status"]
+): En16931ExecutionStatus {
+  if (status === "executed") {
+    return "executed";
+  }
+
+  if (status === "failed") {
+    return "failed";
+  }
+
+  if (status === "unsafe_input") {
+    return "unsafe_input";
+  }
+
+  if (status === "unsupported") {
+    return "unsupported";
+  }
+
+  if (status === "disabled") {
+    return "disabled";
+  }
+
+  return "failed";
 }
 
 export function normalizeEn16931ExecutionMode(
@@ -457,6 +522,123 @@ async function runPreflightOnly(input: {
   });
 }
 
+function wantsInternalAssertionFixtureExecution(input: En16931ExecutionInput) {
+  return (
+    input.allowInternalXPathExecution === true ||
+    input.internalAssertionFixtureIds !== undefined ||
+    input.maxInternalAssertionFixtures !== undefined
+  );
+}
+
+async function runInternalAssertionFixtures(input: En16931ExecutionInput) {
+  const mode: En16931ExecutionMode = "internal_test_only";
+  const internalAssertionFixtureSummary = buildInternalAssertionFixtureSummary({
+    layer: "en16931_tc434",
+    ...(input.internalAssertionFixtureIds
+      ? { fixtureIds: input.internalAssertionFixtureIds }
+      : {}),
+    ...(input.maxInternalAssertionFixtures !== undefined
+      ? { maxFixtures: input.maxInternalAssertionFixtures }
+      : {})
+  });
+
+  if (input.allowInternalXPathExecution !== true) {
+    const reason = "en16931_internal_xpath_execution_not_allowed";
+
+    return buildResult({
+      mode,
+      status: "unsupported",
+      validationExecutionEnabled: false,
+      validationExecuted: false,
+      reason,
+      findings: [
+        buildExecutionErrorFinding({
+          reason,
+          message:
+            "The EN 16931-style internal assertion fixture path requires an explicit package-level XPath execution guard."
+        })
+      ],
+      internalAssertionFixtureSummary
+    });
+  }
+
+  const { policy, engineCandidate } = await resolvePolicyAndEngine({
+    ...(input.policy ? { policy: input.policy } : {}),
+    ...(input.engineCandidate ? { engineCandidate: input.engineCandidate } : {})
+  });
+
+  if (policy.mode === "blocked_requested_execution") {
+    const reason = "en16931_internal_xpath_blocked_by_policy";
+
+    return buildResult({
+      mode,
+      status: "blocked_by_policy",
+      validationExecutionEnabled: false,
+      validationExecuted: false,
+      reason,
+      findings: [
+        buildExecutionErrorFinding({
+          reason,
+          message:
+            "The EN 16931-style internal assertion fixture path was blocked by execution policy."
+        })
+      ],
+      internalAssertionFixtureSummary
+    });
+  }
+
+  if (
+    policy.engineId !== SCHEMATRON_XPATH_ENGINE_ID ||
+    !isXPathEngineAvailableForInternalFixtureExecution(engineCandidate)
+  ) {
+    const reason = "en16931_internal_xpath_engine_unavailable";
+
+    return buildResult({
+      mode,
+      status: "engine_unavailable",
+      validationExecutionEnabled: false,
+      validationExecuted: false,
+      reason,
+      findings: [
+        buildExecutionErrorFinding({
+          reason,
+          message:
+            "The EN 16931-style internal assertion fixture path requires the guarded xpath_engine candidate."
+        })
+      ],
+      internalAssertionFixtureSummary
+    });
+  }
+
+  const assertions = selectInternalSchematronAssertionFixtures({
+    layer: "en16931_tc434",
+    ...(input.internalAssertionFixtureIds
+      ? { fixtureIds: input.internalAssertionFixtureIds }
+      : {}),
+    ...(input.maxInternalAssertionFixtures !== undefined
+      ? { maxFixtures: input.maxInternalAssertionFixtures }
+      : {})
+  }).map((fixture) => convertInternalFixtureToXPathAssertion(fixture));
+  const xpathResult = await runSchematronXPathEngine({
+    xml: input.xml,
+    assertions,
+    mode: "internal_test_only",
+    allowInternalXPathExecution: true,
+    maxAssertions: internalAssertionFixtureSummary.maxFixtureCount,
+    ...(input.maxXmlBytes !== undefined ? { maxXmlBytes: input.maxXmlBytes } : {})
+  });
+
+  return buildResult({
+    mode,
+    status: mapXPathStatusToEn16931Status(xpathResult.status),
+    validationExecutionEnabled: xpathResult.validationExecutionEnabled,
+    validationExecuted: xpathResult.validationExecuted,
+    reason: xpathResult.reason,
+    findings: xpathResult.findings,
+    internalAssertionFixtureSummary
+  });
+}
+
 function buildUnsafeInputResult(input: {
   mode: En16931ExecutionMode;
   reason: string;
@@ -496,6 +678,10 @@ async function runInternalTestOnly(input: En16931ExecutionInput) {
   }
 
   try {
+    if (wantsInternalAssertionFixtureExecution(input)) {
+      return runInternalAssertionFixtures(input);
+    }
+
     if (Array.isArray(input.svrlResults)) {
       const mapped = mapSchematronSvrlResultsToFindings({
         layer: "en16931_tc434",

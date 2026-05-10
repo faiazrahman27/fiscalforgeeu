@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION } from "./schematron-artifact-source-register.js";
 import {
   buildSafeSchematronArtifactDiagnostics,
   buildSafeUblXsdArtifactDiagnostics
@@ -344,6 +345,11 @@ test("safe Schematron diagnostics report no configured artefacts", async () => {
   assert.equal(diagnostics.validatorAvailable, false);
   assert.equal(diagnostics.validationExecutionEnabled, false);
   assert.equal(diagnostics.artifactVersion, null);
+  assert.equal(
+    diagnostics.sourceRegisterVersion,
+    SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION
+  );
+  assert.equal(diagnostics.sourceRegisterSummary?.recordCount, 2);
   assert.match(diagnostics.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(diagnostics.peppolBisArtifact.artifactKind, "peppol_bis_billing");
   assert.equal(diagnostics.peppolBisArtifact.configured, false);
@@ -351,8 +357,24 @@ test("safe Schematron diagnostics report no configured artefacts", async () => {
   assert.equal(diagnostics.peppolBisArtifact.readable, false);
   assert.equal(diagnostics.peppolBisArtifact.sha256, null);
   assert.equal(diagnostics.peppolBisArtifact.label, null);
+  assert.equal(
+    diagnostics.peppolBisArtifact.sourceRegisterVersion,
+    SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION
+  );
+  assert.equal(
+    diagnostics.peppolBisArtifact.artifactProvenance?.configured,
+    false
+  );
+  assert.equal(
+    diagnostics.peppolBisArtifact.artifactProvenance?.safety.remoteFetching,
+    false
+  );
   assert.equal(diagnostics.en16931Artifact.artifactKind, "en16931_tc434");
   assert.equal(diagnostics.en16931Artifact.status, "not_configured");
+  assert.equal(
+    diagnostics.en16931Artifact.artifactProvenance?.configured,
+    false
+  );
   assert.match(diagnostics.disclaimer, /do not execute Schematron validation/i);
   assert.match(diagnostics.disclaimer, /not official validation/i);
   assert.match(diagnostics.disclaimer, /not.*compliance guarantee/i);
@@ -383,11 +405,36 @@ test("safe Schematron diagnostics report readable Peppol and EN 16931 metadata o
     assert.equal(diagnostics.validatorAvailable, false);
     assert.equal(diagnostics.validationExecutionEnabled, false);
     assert.equal(diagnostics.artifactVersion, "test-only");
+    assert.equal(
+      diagnostics.sourceRegisterVersion,
+      SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION
+    );
     assert.equal(diagnostics.peppolBisArtifact.configured, true);
     assert.equal(diagnostics.peppolBisArtifact.status, "available");
     assert.equal(diagnostics.peppolBisArtifact.readable, true);
     assert.equal(diagnostics.peppolBisArtifact.usable, true);
     assert.match(diagnostics.peppolBisArtifact.sha256 ?? "", /^[a-f0-9]{64}$/);
+    assert.equal(
+      diagnostics.peppolBisArtifact.artifactSlotId,
+      "schematron_slot_peppol_bis_billing_v1"
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.reviewStatus,
+      "hash_recorded"
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.artifactProvenance?.artifactVersion,
+      "test-only"
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.artifactProvenance?.sha256,
+      diagnostics.peppolBisArtifact.sha256
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.artifactProvenance?.safety
+        .schematronFileContentsReturned,
+      false
+    );
     assert.equal(
       diagnostics.peppolBisArtifact.label,
       "schematron/peppol/PEPPOL-BIS-Billing-Test-Only.sch"
@@ -404,6 +451,19 @@ test("safe Schematron diagnostics report readable Peppol and EN 16931 metadata o
     assert.equal(diagnostics.en16931Artifact.status, "available");
     assert.equal(diagnostics.en16931Artifact.readable, true);
     assert.match(diagnostics.en16931Artifact.sha256 ?? "", /^[a-f0-9]{64}$/);
+    assert.equal(
+      diagnostics.en16931Artifact.artifactSlotId,
+      "schematron_slot_en16931_tc434_v1"
+    );
+    assert.equal(
+      diagnostics.en16931Artifact.artifactProvenance?.sha256,
+      diagnostics.en16931Artifact.sha256
+    );
+    assert.equal(
+      diagnostics.en16931Artifact.artifactProvenance?.safety
+        .fullAbsoluteLocalPathsReturned,
+      false
+    );
     assert.equal(
       diagnostics.en16931Artifact.label,
       "schematron/tc434/EN16931-TC434-Test-Only.sch"
