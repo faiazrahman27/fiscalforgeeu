@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { SCHEMATRON_ARTIFACT_MANIFEST_VERSION } from "./schematron-artifact-manifest.js";
 import { SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION } from "./schematron-artifact-source-register.js";
 import {
   buildSafeSchematronArtifactDiagnostics,
@@ -350,6 +351,11 @@ test("safe Schematron diagnostics report no configured artefacts", async () => {
     SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION
   );
   assert.equal(diagnostics.sourceRegisterSummary?.recordCount, 2);
+  assert.equal(
+    diagnostics.artifactManifestVersion,
+    SCHEMATRON_ARTIFACT_MANIFEST_VERSION
+  );
+  assert.equal(diagnostics.artifactManifestSummary?.recordCount, 2);
   assert.match(diagnostics.checkedAt, /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(diagnostics.peppolBisArtifact.artifactKind, "peppol_bis_billing");
   assert.equal(diagnostics.peppolBisArtifact.configured, false);
@@ -365,6 +371,20 @@ test("safe Schematron diagnostics report no configured artefacts", async () => {
     diagnostics.peppolBisArtifact.artifactProvenance?.configured,
     false
   );
+  assert.equal(
+    diagnostics.peppolBisArtifact.artifactManifestVersion,
+    SCHEMATRON_ARTIFACT_MANIFEST_VERSION
+  );
+  assert.equal(
+    diagnostics.peppolBisArtifact.manifestVerification?.hashStatus,
+    "not_applicable"
+  );
+  assert.equal(
+    diagnostics.peppolBisArtifact.manifestVerification?.safety.artifactExecuted,
+    false
+  );
+  assert.equal(diagnostics.peppolBisArtifact.expectedSha256Recorded, false);
+  assert.equal(diagnostics.peppolBisArtifact.actualSha256Recorded, false);
   assert.equal(
     diagnostics.peppolBisArtifact.artifactProvenance?.safety.remoteFetching,
     false
@@ -431,6 +451,21 @@ test("safe Schematron diagnostics report readable Peppol and EN 16931 metadata o
       diagnostics.peppolBisArtifact.sha256
     );
     assert.equal(
+      diagnostics.peppolBisArtifact.manifestVerification?.hashStatus,
+      "expected_hash_missing"
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.manifestVerification?.reviewStatus,
+      "expected_hash_missing"
+    );
+    assert.equal(
+      diagnostics.peppolBisArtifact.manifestVerification?.safety
+        .artifactExecuted,
+      false
+    );
+    assert.equal(diagnostics.peppolBisArtifact.expectedSha256Recorded, false);
+    assert.equal(diagnostics.peppolBisArtifact.actualSha256Recorded, true);
+    assert.equal(
       diagnostics.peppolBisArtifact.artifactProvenance?.safety
         .schematronFileContentsReturned,
       false
@@ -458,6 +493,10 @@ test("safe Schematron diagnostics report readable Peppol and EN 16931 metadata o
     assert.equal(
       diagnostics.en16931Artifact.artifactProvenance?.sha256,
       diagnostics.en16931Artifact.sha256
+    );
+    assert.equal(
+      diagnostics.en16931Artifact.manifestVerification?.hashStatus,
+      "expected_hash_missing"
     );
     assert.equal(
       diagnostics.en16931Artifact.artifactProvenance?.safety

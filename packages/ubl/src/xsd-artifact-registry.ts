@@ -11,6 +11,15 @@ import {
   type SchematronArtifactReviewStatus,
   type SchematronArtifactSourceRegisterSummary
 } from "./schematron-artifact-source-register.js";
+import {
+  SCHEMATRON_ARTIFACT_MANIFEST_VERSION,
+  buildSchematronArtifactManifestSummary,
+  verifySchematronArtifactAgainstManifest,
+  type SchematronArtifactManifestHashStatus,
+  type SchematronArtifactManifestReviewStatus,
+  type SchematronArtifactManifestSummary,
+  type SchematronArtifactManifestVerification
+} from "./schematron-artifact-manifest.js";
 
 export const UBL_XSD_VALIDATOR_NAME = "xmllint-wasm";
 export const SCHEMATRON_VALIDATOR_NAME = "schematron-placeholder";
@@ -200,6 +209,13 @@ export type SchematronSafeFileArtifactDiagnostics = {
   legalConfidence?: SchematronArtifactLegalConfidence;
   provenanceDisclaimer?: string;
   artifactProvenance?: SchematronArtifactProvenance;
+  artifactManifestVersion?: typeof SCHEMATRON_ARTIFACT_MANIFEST_VERSION;
+  manifestVerification?: SchematronArtifactManifestVerification;
+  manifestHashStatus?: SchematronArtifactManifestHashStatus;
+  expectedSha256Recorded?: boolean;
+  actualSha256Recorded?: boolean;
+  manifestReviewStatus?: SchematronArtifactManifestReviewStatus;
+  manifestDisclaimer?: string;
 };
 
 export type UblXsdSafeDependencyGraphDiagnostics = {
@@ -245,6 +261,8 @@ export type SchematronSafeArtifactDiagnostics = {
   en16931Artifact: SchematronSafeFileArtifactDiagnostics;
   sourceRegisterVersion?: typeof SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION;
   sourceRegisterSummary?: SchematronArtifactSourceRegisterSummary;
+  artifactManifestVersion?: typeof SCHEMATRON_ARTIFACT_MANIFEST_VERSION;
+  artifactManifestSummary?: SchematronArtifactManifestSummary;
   disclaimer: string;
 };
 
@@ -991,6 +1009,24 @@ function buildSafeSchematronFileDiagnostics(input: {
       ? { relativePathUnderRoot: labels.relativePathUnderRoot }
       : {})
   });
+  const manifestVerification = verifySchematronArtifactAgainstManifest({
+    layer: input.artifact.artifactKind,
+    diagnostic: {
+      artifactKind: input.artifact.artifactKind,
+      artifactVersion: input.artifactVersion,
+      configured: input.artifact.configured,
+      readable: input.artifact.readable,
+      usable: input.artifact.usable,
+      sha256: input.artifact.sha256,
+      safeLabel: labels.label,
+      basename: labels.basename,
+      status: input.artifact.status,
+      artifactProvenance,
+      ...(labels.relativePathUnderRoot
+        ? { relativePathUnderRoot: labels.relativePathUnderRoot }
+        : {})
+    }
+  });
 
   return {
     artifactKind: input.artifact.artifactKind,
@@ -1013,7 +1049,14 @@ function buildSafeSchematronFileDiagnostics(input: {
     documentationUrls: [...artifactProvenance.documentationUrls],
     legalConfidence: artifactProvenance.legalConfidence,
     provenanceDisclaimer: artifactProvenance.disclaimer,
-    artifactProvenance
+    artifactProvenance,
+    artifactManifestVersion: manifestVerification.manifestVersion,
+    manifestVerification,
+    manifestHashStatus: manifestVerification.hashStatus,
+    expectedSha256Recorded: manifestVerification.expectedSha256 !== null,
+    actualSha256Recorded: manifestVerification.actualSha256 !== null,
+    manifestReviewStatus: manifestVerification.reviewStatus,
+    manifestDisclaimer: manifestVerification.disclaimer
   };
 }
 
@@ -1218,6 +1261,8 @@ export async function buildSafeSchematronArtifactDiagnostics(
     }),
     sourceRegisterVersion: SCHEMATRON_ARTIFACT_SOURCE_REGISTER_VERSION,
     sourceRegisterSummary: buildSchematronArtifactSourceRegisterSummary(),
+    artifactManifestVersion: SCHEMATRON_ARTIFACT_MANIFEST_VERSION,
+    artifactManifestSummary: buildSchematronArtifactManifestSummary(),
     disclaimer: SCHEMATRON_ARTIFACT_DIAGNOSTICS_DISCLAIMER
   };
 }

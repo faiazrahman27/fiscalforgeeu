@@ -1636,17 +1636,40 @@ test("configured readable Schematron artefacts return safe metadata-only placeho
     assert.equal(diagnostics.validatorName, "schematron-placeholder");
     assert.equal(diagnostics.validatorAvailable, false);
     assert.equal(diagnostics.validationExecutionEnabled, false);
+    assert.equal(
+      diagnostics.artifactManifestVersion,
+      "schematron_artifact_manifest_v1"
+    );
     assert.match(String(diagnostics.checkedAt), /^\d{4}-\d{2}-\d{2}T/);
     assert.equal(peppolBisArtifact.artifactKind, "peppol_bis_billing");
     assert.equal(peppolBisArtifact.status, "available");
     assert.equal(peppolBisArtifact.readable, true);
     assert.match(String(peppolBisArtifact.sha256), /^[a-f0-9]{64}$/);
+    assert.equal(
+      peppolBisArtifact.artifactManifestVersion,
+      "schematron_artifact_manifest_v1"
+    );
+    assert.equal(peppolBisArtifact.manifestHashStatus, "expected_hash_missing");
+    assert.equal(peppolBisArtifact.expectedSha256Recorded, false);
+    assert.equal(peppolBisArtifact.actualSha256Recorded, true);
+    const peppolManifest = readObject(
+      peppolBisArtifact.manifestVerification,
+      "peppolBisArtifact.manifestVerification"
+    );
+    assert.equal(peppolManifest.hashStatus, "expected_hash_missing");
+    assert.equal(peppolManifest.reviewStatus, "expected_hash_missing");
+    assert.equal(peppolManifest.safety && typeof peppolManifest.safety, "object");
     assert.equal(peppolBisArtifact.label, "peppol/PEPPOL-BIS-Billing.sch");
     assert.equal(peppolBisArtifact.basename, "PEPPOL-BIS-Billing.sch");
     assert.equal(en16931Artifact.artifactKind, "en16931_tc434");
     assert.equal(en16931Artifact.status, "available");
     assert.equal(en16931Artifact.readable, true);
     assert.match(String(en16931Artifact.sha256), /^[a-f0-9]{64}$/);
+    assert.equal(
+      en16931Artifact.artifactManifestVersion,
+      "schematron_artifact_manifest_v1"
+    );
+    assert.equal(en16931Artifact.manifestHashStatus, "expected_hash_missing");
     assert.equal(en16931Artifact.label, "tc434/EN16931-TC434.sch");
     assert.equal(en16931Artifact.basename, "EN16931-TC434.sch");
     assert.equal(
