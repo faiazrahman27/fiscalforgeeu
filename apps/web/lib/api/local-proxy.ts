@@ -3,27 +3,55 @@ import { createSupabaseServerClient } from "../supabase/server";
 
 export type LocalApiHeaders = Record<string, string>;
 
-export function getLocalApiProxyConfig() {
+type LocalApiProxyConfig = {
+  apiBaseUrl: string;
+  devApiKey: string;
+  isProduction: boolean;
+};
+
+function isProductionWebRuntime() {
+  return (
+    process.env.NODE_ENV === "production" ||
+    process.env.NEXT_PUBLIC_APP_ENV === "production" ||
+    process.env.APP_ENV === "production"
+  );
+}
+
+export function getLocalApiProxyConfig(): LocalApiProxyConfig {
   return {
     apiBaseUrl: process.env.INVOICE_LANTERN_API_BASE_URL?.trim() ?? "",
-    devApiKey: process.env.INVOICE_LANTERN_DEV_API_KEY?.trim() ?? ""
+    devApiKey: process.env.INVOICE_LANTERN_DEV_API_KEY?.trim() ?? "",
+    isProduction: isProductionWebRuntime()
   };
 }
 
 export function hasLocalApiProxyConfig() {
-  const { apiBaseUrl, devApiKey } = getLocalApiProxyConfig();
+  const { apiBaseUrl, devApiKey, isProduction } = getLocalApiProxyConfig();
 
-  return Boolean(apiBaseUrl && devApiKey);
+  if (!apiBaseUrl) {
+    return false;
+  }
+
+  if (isProduction) {
+    return true;
+  }
+
+  return Boolean(devApiKey);
 }
 
 export function buildLocalApiProxyNotConfiguredError() {
+  const { isProduction } = getLocalApiProxyConfig();
+
   return NextResponse.json(
     {
       error: {
         code: "WEB_API_PROXY_NOT_CONFIGURED",
-        message:
-          "Missing INVOICE_LANTERN_API_BASE_URL or INVOICE_LANTERN_DEV_API_KEY in apps/web/.env.local.",
-        details: null
+        message: isProduction
+          ? "Missing INVOICE_LANTERN_API_BASE_URL in apps/web production environment."
+          : "Missing INVOICE_LANTERN_API_BASE_URL or INVOICE_LANTERN_DEV_API_KEY in apps/web/.env.local.",
+        details: {
+          productionRequiresDevApiKey: false
+        }
       }
     },
     {
@@ -61,8 +89,8 @@ export async function readSupabaseAccessToken() {
     return session?.access_token ?? "";
   } catch {
     /*
-     * Keep local proxy routes usable when Supabase is not configured.
-     * The dedicated API can still accept the development API key.
+     * Keep local development proxy routes usable when Supabase is not configured.
+     * Production requests should normally carry a Supabase user session.
      */
     return "";
   }
@@ -72,12 +100,14 @@ export async function buildLocalApiHeaders(options?: {
   contentType?: string;
   extraHeaders?: Record<string, string>;
 }) {
-  const { devApiKey } = getLocalApiProxyConfig();
+  const { devApiKey, isProduction } = getLocalApiProxyConfig();
   const accessToken = await readSupabaseAccessToken();
 
-  const headers: LocalApiHeaders = {
-    "x-api-key": devApiKey
-  };
+  const headers: LocalApiHeaders = {};
+
+  if (!isProduction && devApiKey) {
+    headers["x-api-key"] = devApiKey;
+  }
 
   if (options?.contentType) {
     headers["content-type"] = options.contentType;
