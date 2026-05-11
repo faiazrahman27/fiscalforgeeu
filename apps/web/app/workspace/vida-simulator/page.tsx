@@ -1,13 +1,16 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
   BookOpenCheck,
+  Clock3,
+  Eye,
   Globe2,
   Layers3,
   Play,
+  RefreshCw,
   ShieldAlert
 } from "lucide-react";
 
@@ -58,6 +61,30 @@ type VidaSimulationResult = {
   findings: VidaFinding[];
   recommendedNextActions: string[];
   disclaimer: string;
+  persisted?: boolean;
+  simulationRunId?: string | null;
+};
+
+type VidaSimulationRunSummary = {
+  id: string;
+  source: string;
+  status: string;
+  simulationVersion: string;
+  sellerCountryCode: string | null;
+  buyerCountryCode: string | null;
+  buyerType: string;
+  transactionType: string;
+  transactionClass: string;
+  vidaRelevance: string;
+  legalConfidence: string;
+  findingCount: number;
+  infoCount: number;
+  warningCount: number;
+  reviewRequiredCount: number;
+  reason: string;
+  disclaimer: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type VidaSimulationForm = {
@@ -127,6 +154,18 @@ function readNullableStringField(record: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : null;
+}
+
+function readNumberField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback = 0
+) {
+  const value = record[key];
+
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : fallback;
 }
 
 function readBooleanField(
@@ -260,7 +299,81 @@ function normalizeVidaResult(value: unknown): VidaSimulationResult | null {
       value,
       "recommendedNextActions"
     ),
-    disclaimer: readStringField(value, "disclaimer")
+    disclaimer: readStringField(value, "disclaimer"),
+    persisted: value.persisted === true,
+    simulationRunId: readNullableStringField(value, "simulationRunId")
+  };
+}
+
+function normalizeVidaSimulationRunSummary(
+  value: unknown
+): VidaSimulationRunSummary | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id");
+  const createdAt = readStringField(value, "createdAt");
+
+  if (!id || !createdAt) {
+    return null;
+  }
+
+  return {
+    id,
+    source: readStringField(value, "source", "workspace"),
+    status: readStringField(value, "status", "completed"),
+    simulationVersion: readStringField(value, "simulationVersion", "unknown"),
+    sellerCountryCode: readNullableStringField(value, "sellerCountryCode"),
+    buyerCountryCode: readNullableStringField(value, "buyerCountryCode"),
+    buyerType: readStringField(value, "buyerType", "unknown"),
+    transactionType: readStringField(value, "transactionType", "unknown"),
+    transactionClass: readStringField(
+      value,
+      "transactionClass",
+      "insufficient_data"
+    ),
+    vidaRelevance: readStringField(value, "vidaRelevance", "review_required"),
+    legalConfidence: readStringField(
+      value,
+      "legalConfidence",
+      "educational_simulation"
+    ),
+    findingCount: readNumberField(value, "findingCount"),
+    infoCount: readNumberField(value, "infoCount"),
+    warningCount: readNumberField(value, "warningCount"),
+    reviewRequiredCount: readNumberField(value, "reviewRequiredCount"),
+    reason: readStringField(value, "reason"),
+    disclaimer: readStringField(value, "disclaimer"),
+    createdAt,
+    updatedAt: readStringField(value, "updatedAt", createdAt)
+  };
+}
+
+function extractVidaResultFromRunDetail(value: unknown) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const record = isPlainObject(value.record) ? value.record : value;
+  const resultPayload = isPlainObject(record.resultPayload)
+    ? record.resultPayload
+    : null;
+
+  if (!resultPayload) {
+    return null;
+  }
+
+  const normalizedResult = normalizeVidaResult(resultPayload);
+
+  if (!normalizedResult) {
+    return null;
+  }
+
+  return {
+    ...normalizedResult,
+    persisted: true,
+    simulationRunId: readNullableStringField(record, "id")
   };
 }
 
@@ -277,12 +390,26 @@ function formatLegalConfidence(value: string) {
   return labels[value] ?? formatStatus(value || "not labelled");
 }
 
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+}
+
 function buildRequestBody(form: VidaSimulationForm) {
   const body: Record<string, unknown> = {
     sellerCountry: form.sellerCountry,
     buyerCountry: form.buyerCountry,
     buyerType: form.buyerType,
-    transactionType: form.transactionType
+    transactionType: form.transactionType,
+    persist: true
   };
 
   if (form.sellerVatId.trim()) {
@@ -322,8 +449,15 @@ export default function WorkspaceVidaSimulatorPage() {
   });
   const [simulationResult, setSimulationResult] =
     useState<VidaSimulationResult | null>(null);
+  const [simulationRunId, setSimulationRunId] = useState("");
+  const [simulationHistory, setSimulationHistory] = useState<
+    VidaSimulationRunSummary[]
+  >([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [openingRunId, setOpeningRunId] = useState("");
   const [simulationMessage, setSimulationMessage] = useState("");
+  const [historyMessage, setHistoryMessage] = useState("");
 
   const findingCounts = useMemo(() => {
     const counts = {
@@ -345,6 +479,101 @@ export default function WorkspaceVidaSimulatorPage() {
     return counts;
   }, [simulationResult]);
 
+  async function loadSimulationHistory() {
+    setIsHistoryLoading(true);
+    setHistoryMessage("");
+
+    try {
+      const response = await fetch(
+        "/api/local/transactions/vida-simulations?limit=25",
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setSimulationHistory([]);
+        setHistoryMessage(
+          getApiErrorMessage(
+            responseData,
+            "Could not load saved ViDA simulation history."
+          )
+        );
+        return;
+      }
+
+      const records =
+        isPlainObject(responseData) && Array.isArray(responseData.records)
+          ? responseData.records
+          : [];
+
+      setSimulationHistory(
+        records
+          .map((record) => normalizeVidaSimulationRunSummary(record))
+          .filter(
+            (record): record is VidaSimulationRunSummary => record !== null
+          )
+      );
+    } catch {
+      setSimulationHistory([]);
+      setHistoryMessage(
+        "ViDA simulation history is unavailable. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadSimulationHistory();
+  }, []);
+
+  async function openSimulationRun(runId: string) {
+    setOpeningRunId(runId);
+    setSimulationMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/transactions/vida-simulations/${encodeURIComponent(runId)}`,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setSimulationMessage(
+          getApiErrorMessage(
+            responseData,
+            "Could not open the saved ViDA simulation run."
+          )
+        );
+        return;
+      }
+
+      const normalizedResult = extractVidaResultFromRunDetail(responseData);
+
+      if (!normalizedResult) {
+        setSimulationMessage(
+          "The saved ViDA simulation run returned an unreadable response shape."
+        );
+        return;
+      }
+
+      setSimulationResult(normalizedResult);
+      setSimulationRunId(runId);
+    } catch {
+      setSimulationMessage(
+        "The saved ViDA simulation run could not be opened. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setOpeningRunId("");
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -364,6 +593,7 @@ export default function WorkspaceVidaSimulatorPage() {
 
       if (!response.ok) {
         setSimulationResult(null);
+        setSimulationRunId("");
         setSimulationMessage(
           getApiErrorMessage(
             responseData,
@@ -377,15 +607,29 @@ export default function WorkspaceVidaSimulatorPage() {
 
       if (!normalizedResult) {
         setSimulationResult(null);
+        setSimulationRunId("");
         setSimulationMessage(
           "The ViDA simulator returned an unreadable response shape."
         );
         return;
       }
 
+      const persistedRunId =
+        normalizedResult.simulationRunId ??
+        (isPlainObject(responseData)
+          ? readNullableStringField(responseData, "simulationRunId")
+          : null);
+
       setSimulationResult(normalizedResult);
+      setSimulationRunId(persistedRunId ?? "");
+
+      if (normalizedResult.persisted || persistedRunId) {
+        setSimulationMessage("Simulation saved to workspace history.");
+        void loadSimulationHistory();
+      }
     } catch {
       setSimulationResult(null);
+      setSimulationRunId("");
       setSimulationMessage(
         "The local ViDA simulator API is unavailable. Make sure apps/api and apps/web are both running."
       );
@@ -401,10 +645,11 @@ export default function WorkspaceVidaSimulatorPage() {
         <h2>Simulate EU cross-border readiness context.</h2>
         <p>
           This workspace tool runs Invoice Lantern&apos;s educational
-          ViDA-readiness simulation. It checks whether a transaction appears
-          relevant for readiness planning. It is not official software, not
-          authority submission, not legal, tax, or accounting advice, and not a
-          compliance guarantee.
+          ViDA-readiness simulation and saves workspace-owned audit records for
+          later review. It checks whether a transaction appears relevant for
+          readiness planning. It is not official software, not authority
+          submission, not legal, tax, or accounting advice, and not a compliance
+          guarantee.
         </p>
       </section>
 
@@ -435,9 +680,11 @@ export default function WorkspaceVidaSimulatorPage() {
         </div>
 
         <div className="workspace-stat">
-          <p>Boundary</p>
-          <strong>SBX</strong>
-          <span>Educational simulation with professional-review limits.</span>
+          <p>Saved runs</p>
+          <strong>
+            {isHistoryLoading ? "Loading" : simulationHistory.length}
+          </strong>
+          <span>Workspace-owned simulation audit records.</span>
         </div>
       </section>
 
@@ -630,9 +877,13 @@ export default function WorkspaceVidaSimulatorPage() {
             />
           </label>
 
-          <button className="workspace-auth-action" disabled={isSubmitting} type="submit">
+          <button
+            className="workspace-auth-action"
+            disabled={isSubmitting}
+            type="submit"
+          >
             <Play size={16} />
-            {isSubmitting ? "Running simulation" : "Run simulation"}
+            {isSubmitting ? "Running simulation" : "Run and save simulation"}
           </button>
         </form>
       </section>
@@ -659,6 +910,22 @@ export default function WorkspaceVidaSimulatorPage() {
         <div className="finding-console-list">
           {simulationResult ? (
             <>
+              {simulationRunId ? (
+                <div className="finding-console-row">
+                  <Clock3 size={18} />
+
+                  <div>
+                    <strong>VIDA_SIMULATION_RUN_SAVED</strong>
+                    <p>
+                      This result is linked to workspace simulation run{" "}
+                      {simulationRunId}.
+                    </p>
+                  </div>
+
+                  <span>saved</span>
+                </div>
+              ) : null}
+
               <div className="finding-console-row">
                 <BadgeCheck size={18} />
 
@@ -707,7 +974,8 @@ export default function WorkspaceVidaSimulatorPage() {
                       Sources:{" "}
                       {finding.sourceLabels.length > 0
                         ? finding.sourceLabels.join(", ")
-                        : "No source label"}.
+                        : "No source label"}
+                      .
                     </p>
                     <p>Fix suggestion: {finding.fixSuggestion}</p>
                   </div>
@@ -736,13 +1004,87 @@ export default function WorkspaceVidaSimulatorPage() {
               <div>
                 <strong>VIDA_SIMULATION_NOT_RUN</strong>
                 <p>
-                  Submit transaction context to generate an educational
+                  Submit transaction context to generate and save an educational
                   ViDA-readiness simulation result.
                 </p>
               </div>
 
               <span>pending</span>
             </div>
+          )}
+        </div>
+      </section>
+
+      <section className="workspace-table-shell">
+        <div className="workspace-table-head">
+          <div>
+            <p>History</p>
+            <h3>Saved ViDA simulation runs</h3>
+          </div>
+
+          <button
+            type="button"
+            disabled={isHistoryLoading}
+            onClick={() => void loadSimulationHistory()}
+          >
+            <RefreshCw size={16} />
+            Refresh
+          </button>
+        </div>
+
+        {historyMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{historyMessage}</p>
+          </div>
+        ) : null}
+
+        <div className="workspace-line-grid">
+          {isHistoryLoading ? (
+            <div className="workspace-line-row">
+              <strong>Loading saved simulations</strong>
+              <span>Reading workspace-owned ViDA simulation records.</span>
+            </div>
+          ) : simulationHistory.length === 0 ? (
+            <div className="workspace-line-row">
+              <strong>No saved simulations yet</strong>
+              <span>
+                Run and save a simulation to create a workspace audit record.
+              </span>
+            </div>
+          ) : (
+            simulationHistory.map((run) => (
+              <div className="workspace-line-row" key={run.id}>
+                <strong>
+                  {formatStatus(run.transactionClass)} ·{" "}
+                  {formatStatus(run.vidaRelevance)}
+                </strong>
+
+                <span>
+                  {run.sellerCountryCode ?? "??"} →{" "}
+                  {run.buyerCountryCode ?? "??"} ·{" "}
+                  {formatStatus(run.buyerType)} ·{" "}
+                  {formatStatus(run.transactionType)}
+                </span>
+
+                <span>
+                  {run.findingCount} findings · {run.reviewRequiredCount}{" "}
+                  review · {run.warningCount} warning · {run.infoCount} info
+                </span>
+
+                <span>{formatDateTime(run.createdAt)}</span>
+
+                <button
+                  type="button"
+                  className="text-link-button"
+                  disabled={openingRunId === run.id}
+                  onClick={() => void openSimulationRun(run.id)}
+                >
+                  <Eye size={16} />
+                  {openingRunId === run.id ? "Opening" : "Open"}
+                </button>
+              </div>
+            ))
           )}
         </div>
       </section>

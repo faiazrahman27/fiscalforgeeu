@@ -18,6 +18,22 @@ function isProtectedWorkspacePath(pathname: string) {
   return pathname === "/workspace" || pathname.startsWith("/workspace/");
 }
 
+function isLocalApiPath(pathname: string) {
+  return pathname === "/api/local" || pathname.startsWith("/api/local/");
+}
+
+function isPublicLocalApiPath(pathname: string) {
+  return (
+    pathname === "/api/local/openapi" ||
+    pathname === "/api/local/country-packs" ||
+    pathname.startsWith("/api/local/country-packs/")
+  );
+}
+
+function isProtectedLocalApiPath(pathname: string) {
+  return isLocalApiPath(pathname) && !isPublicLocalApiPath(pathname);
+}
+
 function buildSignInRedirect(request: NextRequest) {
   const redirectUrl = request.nextUrl.clone();
   const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
@@ -27,6 +43,21 @@ function buildSignInRedirect(request: NextRequest) {
   redirectUrl.searchParams.set("next", nextPath);
 
   return NextResponse.redirect(redirectUrl);
+}
+
+function buildLocalApiUnauthorizedResponse() {
+  return NextResponse.json(
+    {
+      error: {
+        code: "WORKSPACE_AUTH_REQUIRED",
+        message: "Sign in before using this workspace API route.",
+        details: null
+      }
+    },
+    {
+      status: 401
+    }
+  );
 }
 
 function copyResponseCookies(source: NextResponse, target: NextResponse) {
@@ -41,7 +72,8 @@ export async function proxy(request: NextRequest) {
   /*
    * Keep the existing local platform usable before a Supabase project is connected.
    * Once NEXT_PUBLIC_SUPABASE_URL and a public key are configured, this proxy
-   * synchronizes Supabase auth cookies and protects workspace pages.
+   * synchronizes Supabase auth cookies and protects workspace pages plus
+   * workspace-owned local API proxy routes.
    */
   if (!supabaseUrl || !supabasePublicKey) {
     return NextResponse.next({
@@ -82,7 +114,7 @@ export async function proxy(request: NextRequest) {
     data: { user }
   } = await supabase.auth.getUser();
 
-  if (isProtectedWorkspacePath(request.nextUrl.pathname) && !user) {
+  if (!user && isProtectedWorkspacePath(request.nextUrl.pathname)) {
     const redirectResponse = buildSignInRedirect(request);
 
     /*
@@ -92,6 +124,18 @@ export async function proxy(request: NextRequest) {
     copyResponseCookies(response, redirectResponse);
 
     return redirectResponse;
+  }
+
+  if (!user && isProtectedLocalApiPath(request.nextUrl.pathname)) {
+    const unauthorizedResponse = buildLocalApiUnauthorizedResponse();
+
+    /*
+     * Preserve any Supabase cookie updates generated during getUser(),
+     * including stale-session cleanup.
+     */
+    copyResponseCookies(response, unauthorizedResponse);
+
+    return unauthorizedResponse;
   }
 
   return response;

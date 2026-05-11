@@ -213,6 +213,96 @@ test("ViDA simulation endpoint does not claim official validity or compliance", 
   assert.doesNotMatch(response.body, /legal determination/i);
 });
 
+test("ViDA simulation endpoint can persist, list, and read a workspace simulation run", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const createResponse = await app.inject({
+    method: "POST",
+    url: "/api/v1/transactions/simulate-vida",
+    headers: apiHeaders(),
+    payload: JSON.stringify({
+      sellerCountry: "DE",
+      buyerCountry: "HU",
+      sellerVatId: "DE123456789",
+      buyerVatId: "HU12345678",
+      buyerType: "business",
+      transactionType: "services",
+      invoiceDate: "2026-05-01",
+      currency: "EUR",
+      amount: "100.00",
+      persist: true
+    })
+  });
+
+  assert.equal(createResponse.statusCode, 200);
+
+  const createBody = createResponse.json() as Record<string, unknown>;
+  const simulationRunId = String(createBody.simulationRunId ?? "");
+
+  assert.equal(createBody.persisted, true);
+  assert.match(simulationRunId, /^vida_sim_/);
+  assert.equal(createBody.transactionClass, "intra_eu_b2b_service");
+  assert.equal(createBody.vidaRelevance, "high");
+
+  const simulationRun = createBody.simulationRun as Record<string, unknown>;
+
+  assert.equal(simulationRun.id, simulationRunId);
+  assert.equal(simulationRun.source, "workspace");
+  assert.equal(simulationRun.status, "completed");
+  assert.equal(simulationRun.simulationVersion, "2026.05.1");
+  assert.equal(simulationRun.sellerCountryCode, "DE");
+  assert.equal(simulationRun.buyerCountryCode, "HU");
+  assert.equal(simulationRun.transactionClass, "intra_eu_b2b_service");
+  assert.equal(simulationRun.vidaRelevance, "high");
+  assert.match(String(simulationRun.disclaimer), /not official/i);
+  assert.match(String(simulationRun.disclaimer), /not a compliance guarantee/i);
+
+  const listResponse = await app.inject({
+    method: "GET",
+    url: "/api/v1/transactions/vida-simulations?limit=25",
+    headers: apiHeaders()
+  });
+
+  assert.equal(listResponse.statusCode, 200);
+
+  const listBody = listResponse.json() as Record<string, unknown>;
+  const records = listBody.records as Record<string, unknown>[];
+
+  assert.equal(Array.isArray(records), true);
+  assert.ok(
+    records.some((record) => record.id === simulationRunId),
+    "Expected saved ViDA simulation run in history list"
+  );
+
+  const detailResponse = await app.inject({
+    method: "GET",
+    url: `/api/v1/transactions/vida-simulations/${encodeURIComponent(
+      simulationRunId
+    )}`,
+    headers: apiHeaders()
+  });
+
+  assert.equal(detailResponse.statusCode, 200);
+
+  const detailBody = detailResponse.json() as Record<string, unknown>;
+  const detailRecord = detailBody.record as Record<string, unknown>;
+
+  assert.equal(detailRecord.id, simulationRunId);
+  assert.equal(detailRecord.transactionClass, "intra_eu_b2b_service");
+  assert.equal(detailRecord.vidaRelevance, "high");
+  assert.ok(detailRecord.inputPayload, "Expected input payload snapshot");
+  assert.ok(detailRecord.resultPayload, "Expected result payload snapshot");
+
+  const resultPayload = detailRecord.resultPayload as Record<string, unknown>;
+
+  assert.equal(resultPayload.transactionClass, "intra_eu_b2b_service");
+  assert.match(String(resultPayload.disclaimer), /not official/i);
+});
+
 test("ViDA simulation API key scope is registered", () => {
   assert.ok(
     (API_KEY_SCOPES as readonly string[]).includes(

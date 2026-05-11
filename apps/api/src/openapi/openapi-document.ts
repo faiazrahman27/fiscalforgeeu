@@ -1,5 +1,5 @@
 const SANDBOX_DISCLAIMER =
-  "Invoice Lantern is an independent, non-official EU e-invoice validation and ViDA-readiness sandbox. The Developer API provides technical validation and readiness tooling only. It is not official filing, not authority submission, not tax, legal, or accounting advice, and not a compliance guarantee.";
+  "Invoice Lantern is an independent, non-official EU e-invoice validation and ViDA-readiness sandbox. The Developer API provides technical validation and readiness tooling only. It is not official filing, not authority submission, not tax advice, not legal advice, not accounting advice, and not a compliance guarantee.";
 
 const CORE_VALIDATION_RULE_VERSION = "2026.05.1";
 
@@ -327,7 +327,7 @@ const openApiDocument = {
     {
       name: "Transactions",
       description:
-        "ViDA-readiness transaction simulation endpoints for educational and technical readiness planning. These simulations are not official ViDA determinations, not legal, tax, or accounting advice, not authority submission, not filing software, and not compliance guarantees."
+        "ViDA-readiness transaction simulation endpoints for educational and technical readiness planning. These simulations are not official ViDA determinations, not legal advice, not tax advice, not accounting advice, not authority submission, not filing software, and not compliance guarantees."
     },
     {
       name: "Usage and Rate Limits",
@@ -906,13 +906,19 @@ const openApiDocument = {
         tags: ["Transactions"],
         summary: "Run a ViDA-readiness transaction simulation",
         description:
-          "Runs an educational and technical ViDA-readiness simulation for a transaction scenario. The result classifies the scenario for readiness planning only, such as cross-border EU B2B relevance, missing VAT ID context, domestic review needs, or insufficient data. It is not official software, not an official ViDA determination, not authority submission, not filing software, not legal, tax, or accounting advice, and not a compliance guarantee.",
+          "Runs an educational and technical ViDA-readiness simulation for a transaction scenario. The result classifies the scenario for readiness planning only, such as cross-border EU B2B relevance, missing VAT ID context, domestic review needs, or insufficient data. It is not official software, not an official ViDA determination, not authority submission, not filing software, not legal advice, not tax advice, not accounting advice, and not a compliance guarantee. Optional workspace persistence is available only for signed-in workspace flows; organization API-key requests can run the simulation but do not create workspace audit records.",
         scope: "transactions:simulate_vida",
         requestBody: {
           required: true,
           content: jsonContent(ref("VidaSimulationRequest"), {
             crossBorderEuB2B: {
               value: exampleVidaSimulationRequest
+            },
+            workspacePersistedRun: {
+              value: {
+                ...exampleVidaSimulationRequest,
+                persist: true
+              }
             }
           })
         },
@@ -922,6 +928,110 @@ const openApiDocument = {
             headers: rateLimitHeaders,
             content: jsonContent(ref("VidaSimulationResponse"))
           }
+        }
+      })
+    },
+    "/transactions/vida-simulations": {
+      get: bearerOperation({
+        tags: ["Transactions"],
+        summary: "List saved ViDA simulation runs",
+        description:
+          "Lists workspace-owned ViDA-readiness simulation run summaries for the signed-in workspace. These are audit/history records for educational technical readiness simulation only. They are not official ViDA determinations, not authority submissions, not filing records, not legal advice, not tax advice, not accounting advice, and not compliance guarantees.",
+        parameters: [
+          {
+            name: "invoiceDraftId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          },
+          {
+            name: "validationRunId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          },
+          {
+            name: "vidaRelevance",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["high", "medium", "low", "not_relevant", "review_required"]
+            }
+          },
+          {
+            name: "transactionClass",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: [
+                "intra_eu_b2b_goods",
+                "intra_eu_b2b_service",
+                "intra_eu_b2b_digital_service",
+                "intra_eu_b2b_mixed",
+                "intra_eu_b2b_unknown",
+                "intra_eu_b2c",
+                "intra_eu_public_authority",
+                "domestic_eu_business",
+                "domestic_eu_consumer",
+                "domestic_eu_unknown",
+                "non_eu_or_unsupported",
+                "insufficient_data"
+              ]
+            }
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 25
+            }
+          }
+        ],
+        responses: {
+          "200": response(
+            "Saved ViDA simulation run summaries.",
+            ref("VidaSimulationHistoryResponse")
+          )
+        }
+      })
+    },
+    "/transactions/vida-simulations/{id}": {
+      get: bearerOperation({
+        tags: ["Transactions"],
+        summary: "Get saved ViDA simulation run detail",
+        description:
+          "Returns one workspace-owned ViDA-readiness simulation run with the saved sanitized input snapshot, normalized input, result payload, findings, source labels, recommendation text, request metadata, and legal-safe disclaimer. This is an audit/history record for educational technical readiness simulation only. It is not official ViDA software, not authority submission, not filing software, not legal advice, not tax advice, not accounting advice, and not a compliance guarantee.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 160
+            }
+          }
+        ],
+        responses: {
+          "200": response(
+            "Saved ViDA simulation run detail.",
+            ref("VidaSimulationDetailResponse")
+          )
         }
       })
     },
@@ -1219,7 +1329,7 @@ const openApiDocument = {
           }
         }
       },
-            ApiKeyScope: {
+      ApiKeyScope: {
         type: "string",
         enum: [
           "invoices:validate",
@@ -4559,6 +4669,24 @@ const openApiDocument = {
             },
             description:
               "Optional country-pack version context retained in normalized simulation input."
+          },
+          persist: {
+            type: "boolean",
+            default: false,
+            description:
+              "When true in a signed-in workspace flow, stores a workspace-owned ViDA simulation audit record. Organization API-key requests can run the simulation but cannot persist workspace records."
+          },
+          invoiceDraftId: {
+            type: "string",
+            maxLength: 120,
+            description:
+              "Optional workspace invoice draft association. The API verifies workspace ownership before storing the association."
+          },
+          validationRunId: {
+            type: "string",
+            maxLength: 120,
+            description:
+              "Optional workspace validation run association. The API verifies workspace ownership before storing the association."
           }
         }
       },
@@ -4743,7 +4871,259 @@ const openApiDocument = {
             type: "string",
             example:
               "Invoice Lantern ViDA-readiness simulation is an educational and technical sandbox result only. It is not official software, not an official ViDA determination, not legal advice, not tax advice, not accounting advice, not authority submission, not filing software, and not a compliance guarantee."
+          },
+          persisted: {
+            type: "boolean",
+            description:
+              "True when the simulation result was saved as a workspace-owned simulation run."
+          },
+          simulationRunId: {
+            type: ["string", "null"],
+            description:
+              "Saved ViDA simulation run identifier when persistence succeeded."
+          },
+          simulationRun: {
+            oneOf: [ref("VidaSimulationRunSummary"), { type: "null" }],
+            description:
+              "Saved simulation run summary when persistence succeeded."
           }
+        }
+      },
+      VidaSimulationRunSummary: {
+        type: "object",
+        required: [
+          "id",
+          "organizationId",
+          "createdBy",
+          "apiKeyId",
+          "invoiceDraftId",
+          "validationRunId",
+          "source",
+          "status",
+          "simulationVersion",
+          "sellerCountryCode",
+          "buyerCountryCode",
+          "buyerType",
+          "transactionType",
+          "transactionClass",
+          "vidaRelevance",
+          "legalConfidence",
+          "invoiceDate",
+          "currencyCode",
+          "amountText",
+          "countryPackVersions",
+          "countryContext",
+          "normalizedInput",
+          "findingCount",
+          "infoCount",
+          "warningCount",
+          "reviewRequiredCount",
+          "reason",
+          "effectiveDateContext",
+          "disclaimer",
+          "createdAt",
+          "updatedAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            example: "vida_sim_00000000-0000-4000-8000-000000000000"
+          },
+          organizationId: {
+            type: "string"
+          },
+          createdBy: {
+            type: ["string", "null"]
+          },
+          apiKeyId: {
+            type: ["string", "null"]
+          },
+          invoiceDraftId: {
+            type: ["string", "null"]
+          },
+          validationRunId: {
+            type: ["string", "null"]
+          },
+          source: {
+            type: "string",
+            enum: ["workspace", "developer_api", "system"]
+          },
+          status: {
+            type: "string",
+            enum: ["completed", "failed"]
+          },
+          simulationVersion: {
+            type: "string",
+            example: "2026.05.1"
+          },
+          sellerCountryCode: {
+            type: ["string", "null"],
+            example: "DE"
+          },
+          buyerCountryCode: {
+            type: ["string", "null"],
+            example: "HU"
+          },
+          buyerType: {
+            type: "string",
+            enum: ["business", "consumer", "public_authority", "unknown"]
+          },
+          transactionType: {
+            type: "string",
+            enum: ["goods", "services", "digital_service", "mixed", "unknown"]
+          },
+          transactionClass: {
+            type: "string",
+            enum: [
+              "intra_eu_b2b_goods",
+              "intra_eu_b2b_service",
+              "intra_eu_b2b_digital_service",
+              "intra_eu_b2b_mixed",
+              "intra_eu_b2b_unknown",
+              "intra_eu_b2c",
+              "intra_eu_public_authority",
+              "domestic_eu_business",
+              "domestic_eu_consumer",
+              "domestic_eu_unknown",
+              "non_eu_or_unsupported",
+              "insufficient_data"
+            ]
+          },
+          vidaRelevance: {
+            type: "string",
+            enum: ["high", "medium", "low", "not_relevant", "review_required"]
+          },
+          legalConfidence: {
+            type: "string",
+            enum: ["educational_simulation", "professional_review_required"]
+          },
+          invoiceDate: {
+            type: ["string", "null"],
+            example: "2026-05-01"
+          },
+          currencyCode: {
+            type: ["string", "null"],
+            example: "EUR"
+          },
+          amountText: {
+            type: ["string", "null"],
+            example: "100.00"
+          },
+          countryPackVersions: {
+            type: "object",
+            additionalProperties: {
+              type: "string"
+            }
+          },
+          countryContext: ref("VidaCountryContext"),
+          normalizedInput: ref("VidaNormalizedInput"),
+          findingCount: {
+            type: "integer",
+            minimum: 0
+          },
+          infoCount: {
+            type: "integer",
+            minimum: 0
+          },
+          warningCount: {
+            type: "integer",
+            minimum: 0
+          },
+          reviewRequiredCount: {
+            type: "integer",
+            minimum: 0
+          },
+          reason: {
+            type: "string"
+          },
+          effectiveDateContext: {
+            type: "string"
+          },
+          disclaimer: {
+            type: "string",
+            description:
+              "Legal-safe disclaimer snapshot preserved with the simulation run."
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      VidaSimulationRunDetail: {
+        allOf: [
+          ref("VidaSimulationRunSummary"),
+          {
+            type: "object",
+            required: [
+              "inputPayload",
+              "resultPayload",
+              "findings",
+              "sourceLabels",
+              "recommendedNextActions",
+              "errorCode",
+              "errorMessage",
+              "requestMetadata"
+            ],
+            properties: {
+              inputPayload: {
+                type: "object",
+                additionalProperties: true,
+                description:
+                  "Sanitized simulation request snapshot. Raw XML, full API keys, key hashes, and unnecessary personal data are not stored here."
+              },
+              resultPayload: ref("VidaSimulationResponse"),
+              findings: {
+                type: "array",
+                items: ref("VidaReadinessFinding")
+              },
+              sourceLabels: {
+                type: "array",
+                items: {
+                  type: "string"
+                }
+              },
+              recommendedNextActions: {
+                type: "array",
+                items: {
+                  type: "string"
+                }
+              },
+              errorCode: {
+                type: ["string", "null"]
+              },
+              errorMessage: {
+                type: ["string", "null"]
+              },
+              requestMetadata: {
+                type: "object",
+                additionalProperties: true,
+                description:
+                  "Safe request metadata only. Request bodies, raw XML, full API keys, key hashes, and full VAT evidence payloads are not stored here."
+              }
+            }
+          }
+        ]
+      },
+      VidaSimulationHistoryResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("VidaSimulationRunSummary")
+          }
+        }
+      },
+      VidaSimulationDetailResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("VidaSimulationRunDetail")
         }
       },
       CountryPackCatalogResponse: {

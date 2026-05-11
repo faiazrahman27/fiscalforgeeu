@@ -133,6 +133,7 @@ test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boun
   assert.match(serializedPost, /not tax/i);
   assert.match(serializedPost, /not accounting/i);
   assert.match(serializedPost, /not.*compliance guarantee/i);
+  assert.match(serializedPost, /workspace persistence/i);
 
   assert.match(requestSchema, /sellerCountry/);
   assert.match(requestSchema, /buyerCountry/);
@@ -141,6 +142,13 @@ test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boun
   assert.match(requestSchema, /buyerType/);
   assert.match(requestSchema, /transactionType/);
   assert.match(requestSchema, /countryPackVersions/);
+  assert.match(requestSchema, /persist/);
+  assert.match(requestSchema, /invoiceDraftId/);
+  assert.match(requestSchema, /validationRunId/);
+  assert.match(
+    requestSchema,
+    /Organization API-key requests can run the simulation but cannot persist workspace records/
+  );
   assert.match(requestSchema, /business/);
   assert.match(requestSchema, /consumer/);
   assert.match(requestSchema, /public_authority/);
@@ -158,6 +166,9 @@ test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boun
   assert.match(responseSchema, /findings/);
   assert.match(responseSchema, /recommendedNextActions/);
   assert.match(responseSchema, /disclaimer/);
+  assert.match(responseSchema, /persisted/);
+  assert.match(responseSchema, /simulationRunId/);
+  assert.match(responseSchema, /simulationRun/);
 
   assert.match(countryContextSchema, /sellerInEu/);
   assert.match(countryContextSchema, /buyerInEu/);
@@ -179,6 +190,131 @@ test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boun
   );
 });
 
+test("OpenAPI documents ViDA simulation history endpoints, schemas, and safe boundaries", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+
+  const simulateVidaPath = readRecord(paths, "/transactions/simulate-vida");
+  const simulateVidaPost = readRecord(simulateVidaPath, "post");
+
+  const historyPath = readRecord(paths, "/transactions/vida-simulations");
+  const historyGet = readRecord(historyPath, "get");
+
+  const detailPath = readRecord(paths, "/transactions/vida-simulations/{id}");
+  const detailGet = readRecord(detailPath, "get");
+
+  const vidaSimulationRequest = JSON.stringify(
+    readRecord(schemas, "VidaSimulationRequest")
+  );
+  const vidaSimulationResponse = JSON.stringify(
+    readRecord(schemas, "VidaSimulationResponse")
+  );
+  const vidaSimulationRunSummary = JSON.stringify(
+    readRecord(schemas, "VidaSimulationRunSummary")
+  );
+  const vidaSimulationRunDetail = JSON.stringify(
+    readRecord(schemas, "VidaSimulationRunDetail")
+  );
+  const vidaSimulationHistoryResponse = JSON.stringify(
+    readRecord(schemas, "VidaSimulationHistoryResponse")
+  );
+  const vidaSimulationDetailResponse = JSON.stringify(
+    readRecord(schemas, "VidaSimulationDetailResponse")
+  );
+
+  const serializedSimulation = JSON.stringify(simulateVidaPost);
+  const serializedHistory = JSON.stringify(historyGet);
+  const serializedDetail = JSON.stringify(detailGet);
+  const serializedSchemas = JSON.stringify({
+    vidaSimulationRequest,
+    vidaSimulationResponse,
+    vidaSimulationRunSummary,
+    vidaSimulationRunDetail,
+    vidaSimulationHistoryResponse,
+    vidaSimulationDetailResponse
+  });
+
+  assert.match(serializedSimulation, /transactions:simulate_vida/);
+  assert.match(serializedSimulation, /persist/);
+  assert.match(serializedSimulation, /workspace persistence/i);
+  assert.match(serializedSimulation, /not official/i);
+  assert.match(serializedSimulation, /not legal advice/i);
+  assert.match(serializedSimulation, /not tax advice/i);
+  assert.match(serializedSimulation, /not accounting advice/i);
+  assert.match(serializedSimulation, /not a compliance guarantee/i);
+
+  assert.match(serializedHistory, /List saved ViDA simulation runs/i);
+  assert.match(serializedHistory, /SupabaseBearerAuth/);
+  assert.match(serializedHistory, /invoiceDraftId/);
+  assert.match(serializedHistory, /validationRunId/);
+  assert.match(serializedHistory, /vidaRelevance/);
+  assert.match(serializedHistory, /transactionClass/);
+  assert.match(serializedHistory, /limit/);
+  assert.match(serializedHistory, /VidaSimulationHistoryResponse/);
+  assert.match(serializedHistory, /not official/i);
+  assert.match(serializedHistory, /not legal advice/i);
+  assert.match(serializedHistory, /not tax advice/i);
+  assert.match(serializedHistory, /not accounting advice/i);
+  assert.match(serializedHistory, /not compliance guarantees/i);
+
+  assert.match(serializedDetail, /Get saved ViDA simulation run detail/i);
+  assert.match(serializedDetail, /SupabaseBearerAuth/);
+  assert.match(serializedDetail, /VidaSimulationDetailResponse/);
+  assert.match(serializedDetail, /sanitized input snapshot/i);
+  assert.match(serializedDetail, /request metadata/i);
+  assert.match(serializedDetail, /not official ViDA software/i);
+  assert.match(serializedDetail, /not legal advice/i);
+  assert.match(serializedDetail, /not tax advice/i);
+  assert.match(serializedDetail, /not accounting advice/i);
+  assert.match(serializedDetail, /not a compliance guarantee/i);
+
+  assert.match(vidaSimulationRequest, /persist/);
+  assert.match(vidaSimulationRequest, /invoiceDraftId/);
+  assert.match(vidaSimulationRequest, /validationRunId/);
+  assert.match(
+    vidaSimulationRequest,
+    /Organization API-key requests can run the simulation but cannot persist workspace records/
+  );
+
+  assert.match(vidaSimulationResponse, /persisted/);
+  assert.match(vidaSimulationResponse, /simulationRunId/);
+  assert.match(vidaSimulationResponse, /simulationRun/);
+
+  assert.match(vidaSimulationRunSummary, /organizationId/);
+  assert.match(vidaSimulationRunSummary, /createdBy/);
+  assert.match(vidaSimulationRunSummary, /apiKeyId/);
+  assert.match(vidaSimulationRunSummary, /invoiceDraftId/);
+  assert.match(vidaSimulationRunSummary, /validationRunId/);
+  assert.match(vidaSimulationRunSummary, /simulationVersion/);
+  assert.match(vidaSimulationRunSummary, /transactionClass/);
+  assert.match(vidaSimulationRunSummary, /vidaRelevance/);
+  assert.match(vidaSimulationRunSummary, /legalConfidence/);
+  assert.match(vidaSimulationRunSummary, /findingCount/);
+  assert.match(vidaSimulationRunSummary, /reviewRequiredCount/);
+  assert.match(vidaSimulationRunSummary, /disclaimer/);
+
+  assert.match(vidaSimulationRunDetail, /inputPayload/);
+  assert.match(vidaSimulationRunDetail, /resultPayload/);
+  assert.match(vidaSimulationRunDetail, /findings/);
+  assert.match(vidaSimulationRunDetail, /sourceLabels/);
+  assert.match(vidaSimulationRunDetail, /recommendedNextActions/);
+  assert.match(vidaSimulationRunDetail, /requestMetadata/);
+  assert.match(vidaSimulationRunDetail, /Raw XML, full API keys, key hashes/);
+  assert.match(
+    vidaSimulationRunDetail,
+    /Request bodies, raw XML, full API keys, key hashes/
+  );
+
+  assert.match(vidaSimulationHistoryResponse, /records/);
+  assert.match(vidaSimulationDetailResponse, /record/);
+
+  assert.doesNotMatch(
+    serializedSchemas,
+    /\bViDA compliant\b|\bofficially valid\b|\bauthority accepted\b|\baccepted by authority\b|\bcompliance certified\b|\blegal determination\b/i
+  );
+});
 
 test("OpenAPI documents active endpoints and leaves planned endpoints inactive", () => {
   const document = getOpenApiDocument(openApiDocument);
@@ -200,6 +336,8 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/country-packs",
     "/country-packs/{countryCode}",
     "/transactions/simulate-vida",
+    "/transactions/vida-simulations",
+    "/transactions/vida-simulations/{id}",
     "/validation/rules",
     "/validation-runs/{id}",
     "/validation-runs/{id}/report.pdf"
@@ -283,19 +421,23 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     readRecord(schemas, "XmlValidationJobFinding")
   );
   const xmlValidationJobSchema = readRecord(schemas, "XmlValidationJob");
-  const jobResultSummaryExample = JSON.stringify(
-    readRecord(
-      readRecord(xmlValidationJobSchema, "properties"),
-      "resultSummary"
-    ).example
-  ) ?? "";
+  const jobResultSummaryExample =
+    JSON.stringify(
+      readRecord(
+        readRecord(xmlValidationJobSchema, "properties"),
+        "resultSummary"
+      ).example
+    ) ?? "";
   const jobSchema = JSON.stringify(xmlValidationJobSchema);
   const serializedPost = JSON.stringify(post);
 
   assert.ok(responses["200"], "Expected XML validation job success response");
   assert.match(serializedPost, /xsd_ubl/);
   assert.match(serializedPost, /not_configured/i);
-  assert.match(serializedPost, /passed or failed only after a real local XSD validation operation executes/i);
+  assert.match(
+    serializedPost,
+    /passed or failed only after a real local XSD validation operation executes/i
+  );
   assert.match(
     serializedPost,
     /error for controlled validator\/runtime or schema dependency failures/i
@@ -384,7 +526,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /not_selected/);
   assert.match(serializedPost, /unavailable/);
   assert.match(serializedPost, /policy metadata/);
-  assert.match(serializedPost, /Engine candidate metadata does not enable validation/);
+  assert.match(
+    serializedPost,
+    /Engine candidate metadata does not enable validation/
+  );
   assert.match(serializedPost, /ready_for_future_execution/);
   assert.match(serializedPost, /schematron_execution_disabled/);
   assert.match(serializedPost, /schematron_execution_engine_not_implemented/);
@@ -396,7 +541,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /Schematron execution is not implemented/i);
   assert.match(serializedPost, /no certification/i);
   assert.match(serializedPost, /no authority acceptance/i);
-  assert.match(serializedPost, /no legal\/tax\/accounting compliance validation/i);
+  assert.match(
+    serializedPost,
+    /no legal\/tax\/accounting compliance validation/i
+  );
   assert.match(createRequest, /"xsd_ubl"/);
   assert.doesNotMatch(createRequest, /xsd_ubl_placeholder/);
   assert.match(artifactInfoSchema, /validatorName/);
@@ -423,10 +571,16 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronDiagnosticsSchema, /en16931Artifact/);
   assert.match(schematronDiagnosticsSchema, /sourceRegisterVersion/);
   assert.match(schematronDiagnosticsSchema, /sourceRegisterSummary/);
-  assert.match(schematronDiagnosticsSchema, /schematron_artifact_source_register_v1/);
+  assert.match(
+    schematronDiagnosticsSchema,
+    /schematron_artifact_source_register_v1/
+  );
   assert.match(schematronDiagnosticsSchema, /artifactManifestVersion/);
   assert.match(schematronDiagnosticsSchema, /artifactManifestSummary/);
-  assert.match(schematronDiagnosticsSchema, /schematron_artifact_manifest_v1/);
+  assert.match(
+    schematronDiagnosticsSchema,
+    /schematron_artifact_manifest_v1/
+  );
   assert.match(schematronArtifactProvenanceSchema, /artifactSlotId/);
   assert.match(schematronArtifactProvenanceSchema, /reviewStatus/);
   assert.match(schematronArtifactProvenanceSchema, /configuredEnvVars/);
@@ -465,10 +619,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     schematronArtifactManifestVerificationSchema,
     /local_hash_mismatched/
   );
-  assert.match(
-    schematronArtifactManifestVerificationSchema,
-    /artifactExecuted/
-  );
+  assert.match(schematronArtifactManifestVerificationSchema, /artifactExecuted/);
   assert.match(
     schematronArtifactManifestVerificationSchema,
     /artifactDownloaded/
@@ -523,16 +674,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   );
   assert.match(schematronPolicySchema, /does not enable validation/);
   assert.match(schematronPolicySchema, /Execution-like values are blocked/i);
-  assert.match(
-    schematronPolicySchema,
-    /schematron_local_execution_prototype_v1/
-  );
+  assert.match(schematronPolicySchema, /schematron_local_execution_prototype_v1/);
   assert.match(schematronPolicySchema, /not a public policy mode/);
   assert.match(schematronEngineCandidateSchema, /schematron_engine_candidate/);
-  assert.match(
-    schematronEngineCandidateSchema,
-    /schematron_engine_candidate_v1/
-  );
+  assert.match(schematronEngineCandidateSchema, /schematron_engine_candidate_v1/);
   assert.match(schematronEngineCandidateSchema, /engineCandidateVersion/);
   assert.match(schematronEngineCandidateSchema, /availabilityStatus/);
   assert.match(schematronEngineCandidateSchema, /executionSupported/);
@@ -550,7 +695,10 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronEngineCandidateSchema, /available/);
   assert.match(schematronEngineCandidateSchema, /unavailable/);
   assert.match(schematronEngineCandidateSchema, /unsupported/);
-  assert.match(schematronEngineCandidateSchema, /schematron_xslt2_engine_not_installed/);
+  assert.match(
+    schematronEngineCandidateSchema,
+    /schematron_xslt2_engine_not_installed/
+  );
   assert.match(
     schematronEngineCandidateSchema,
     /schematron_schxslt_engine_not_installed/
@@ -579,10 +727,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     schematronEngineCandidateSchema,
     /schematron_local_execution_prototype_v1/
   );
-  assert.match(
-    schematronEngineCandidateSchema,
-    /schematron_xpath_engine_v1/
-  );
+  assert.match(schematronEngineCandidateSchema, /schematron_xpath_engine_v1/);
   assert.match(schematronEngineCandidateSchema, /internal test-only execution/);
   assert.match(
     schematronEngineCandidateSchema,
@@ -595,34 +740,22 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     schematronXPathEngineSchema,
     /explicitly provided, sanitized XPath assertion definitions/
   );
-  assert.match(
-    schematronXPathEngineSchema,
-    /guarded package-level calls only/
-  );
+  assert.match(schematronXPathEngineSchema, /guarded package-level calls only/);
   assert.match(
     schematronXPathEngineSchema,
     /normal public API or XML worker validation jobs/
   );
   assert.match(schematronXPathEngineSchema, /not official validation/);
   assert.match(schematronXPathEngineSchema, /no Peppol certification/);
-  assert.match(
-    schematronXPathEngineSchema,
-    /no EN 16931 compliance guarantee/
-  );
+  assert.match(schematronXPathEngineSchema, /no EN 16931 compliance guarantee/);
   assert.match(
     schematronXPathEngineSchema,
     /no legal\/tax\/accounting compliance guarantee/
   );
   assert.match(schematronXPathEngineSchema, /no authority acceptance/);
   assert.match(schematronXPathEngineSchema, /rawXmlReturned/);
-  assert.match(
-    schematronXPathEngineSchema,
-    /schematronFileContentsReturned/
-  );
-  assert.match(
-    schematronXPathEngineSchema,
-    /fullAbsoluteLocalPathsReturned/
-  );
+  assert.match(schematronXPathEngineSchema, /schematronFileContentsReturned/);
+  assert.match(schematronXPathEngineSchema, /fullAbsoluteLocalPathsReturned/);
   assert.match(schematronXPathEngineSchema, /remoteFetching/);
   assert.match(schematronXPathEngineSchema, /extensionFunctions/);
   assert.match(schematronXPathEngineSchema, /normalWorkerExecutionEnabled/);
@@ -661,20 +794,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(peppolBisExecutionPathSchema, /PEPPOL_SCHEMATRON_RULE_FAILED/);
   assert.match(peppolBisExecutionPathSchema, /SCHEMATRON_REPORT_WARNING/);
   assert.match(peppolBisExecutionPathSchema, /rawXmlReturned/);
-  assert.match(
-    peppolBisExecutionPathSchema,
-    /schematronFileContentsReturned/
-  );
-  assert.match(
-    peppolBisExecutionPathSchema,
-    /fullAbsoluteLocalPathsReturned/
-  );
+  assert.match(peppolBisExecutionPathSchema, /schematronFileContentsReturned/);
+  assert.match(peppolBisExecutionPathSchema, /fullAbsoluteLocalPathsReturned/);
   assert.match(peppolBisExecutionPathSchema, /remoteFetching/);
   assert.match(peppolBisExecutionPathSchema, /javaOrSystemDependencyRequired/);
-  assert.match(
-    peppolBisExecutionPathSchema,
-    /normalApiWorkerExecutionEnabled/
-  );
+  assert.match(peppolBisExecutionPathSchema, /normalApiWorkerExecutionEnabled/);
   assert.match(en16931ExecutionPathSchema, /en16931_execution_path_v1/);
   assert.match(en16931ExecutionPathSchema, /en16931_tc434/);
   assert.match(en16931ExecutionPathSchema, /normalJobExecutionEnabled/);
@@ -687,20 +811,11 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(en16931ExecutionPathSchema, /EN16931_SCHEMATRON_RULE_FAILED/);
   assert.match(en16931ExecutionPathSchema, /SCHEMATRON_REPORT_WARNING/);
   assert.match(en16931ExecutionPathSchema, /rawXmlReturned/);
-  assert.match(
-    en16931ExecutionPathSchema,
-    /schematronFileContentsReturned/
-  );
-  assert.match(
-    en16931ExecutionPathSchema,
-    /fullAbsoluteLocalPathsReturned/
-  );
+  assert.match(en16931ExecutionPathSchema, /schematronFileContentsReturned/);
+  assert.match(en16931ExecutionPathSchema, /fullAbsoluteLocalPathsReturned/);
   assert.match(en16931ExecutionPathSchema, /remoteFetching/);
   assert.match(en16931ExecutionPathSchema, /javaOrSystemDependencyRequired/);
-  assert.match(
-    en16931ExecutionPathSchema,
-    /normalApiWorkerExecutionEnabled/
-  );
+  assert.match(en16931ExecutionPathSchema, /normalApiWorkerExecutionEnabled/);
   assert.match(
     schematronExecutionOrchestratorSchema,
     /schematron_execution_orchestrator_v1/
@@ -779,24 +894,15 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(xmlWorkerSchematronOrchestrationSchema, /infoCount/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /selectedLayers/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /layerSummaries/);
-  assert.match(
-    xmlWorkerSchematronOrchestrationSchema,
-    /not official validation/
-  );
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /not official validation/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /raw XML/);
-  assert.match(
-    xmlWorkerSchematronOrchestrationSchema,
-    /Schematron file contents/
-  );
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /Schematron file contents/);
   assert.match(
     xmlWorkerSchematronOrchestrationSchema,
     /full absolute local filesystem paths/
   );
   assert.match(xmlWorkerSchematronOrchestrationSchema, /remote fetch/);
-  assert.match(
-    xmlWorkerSchematronOrchestrationSchema,
-    /Java\/system dependency/
-  );
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /Java\/system dependency/);
   assert.match(schematronArtifactSchema, /relativePathUnderRoot/);
   assert.match(schematronArtifactSchema, /basename/);
   assert.match(schematronArtifactSchema, /sha256/);
