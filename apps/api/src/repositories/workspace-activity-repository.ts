@@ -50,10 +50,23 @@ type SupabaseWorkspaceActivityEventRow = {
   created_at: string;
 };
 
+export class WorkspaceActivityRepositoryError extends Error {
+  readonly code: string;
+  readonly statusCode: number;
+
+  constructor(code: string, message: string, statusCode = 400) {
+    super(message);
+    this.name = "WorkspaceActivityRepositoryError";
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
 const WORKSPACE_ACTIVITY_SELECT_FIELDS =
   "id, organization_id, actor_user_id, event_type, entity_type, entity_id, entity_label, severity, source, metadata, created_at";
 
 const MAX_ACTIVITY_EVENTS = 100;
+const WORKSPACE_ACTIVITY_VIEWER_ROLES = new Set(["owner", "admin", "developer"]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -81,7 +94,7 @@ function normalizeWorkspaceBootstrapRecord(
   const organizationId = readStringField(value, "organization_id");
   const organizationName = readStringField(value, "organization_name");
   const organizationSlug = readStringField(value, "organization_slug");
-  const membershipRole = readStringField(value, "membership_role", "member");
+  const membershipRole = readStringField(value, "membership_role", "viewer");
   const userEmail = readStringField(value, "user_email");
 
   if (!organizationId || !organizationName || !organizationSlug) {
@@ -131,14 +144,22 @@ async function getWorkspaceForAuthenticatedUser(supabase: SupabaseClient) {
   const { data, error } = await supabase.rpc("bootstrap_personal_workspace");
 
   if (error) {
-    throw new Error(`Workspace bootstrap failed: ${error.message}`);
+    throw new WorkspaceActivityRepositoryError(
+      "WORKSPACE_CONTEXT_UNAVAILABLE",
+      `Workspace bootstrap failed: ${error.message}`,
+      503
+    );
   }
 
   const firstRecord = Array.isArray(data) ? data[0] : data;
   const workspace = normalizeWorkspaceBootstrapRecord(firstRecord);
 
   if (!workspace) {
-    throw new Error("Workspace bootstrap returned an unreadable record.");
+    throw new WorkspaceActivityRepositoryError(
+      "WORKSPACE_CONTEXT_REQUIRED",
+      "Workspace bootstrap returned an unreadable record.",
+      409
+    );
   }
 
   return workspace;
@@ -148,6 +169,20 @@ function createAuthenticatedSupabaseClient(
   context: AuthenticatedWorkspaceActivityContext
 ) {
   return getSupabaseUserClient(context.accessToken);
+}
+
+function assertCanViewWorkspaceActivity(
+  workspace: SupabaseWorkspaceBootstrapRecord
+) {
+  if (WORKSPACE_ACTIVITY_VIEWER_ROLES.has(workspace.membershipRole)) {
+    return;
+  }
+
+  throw new WorkspaceActivityRepositoryError(
+    "WORKSPACE_ACTIVITY_ROLE_REQUIRED",
+    "Workspace activity requires an organization owner, admin, or developer role.",
+    403
+  );
 }
 
 export function hasAuthenticatedWorkspaceActivityContext(
@@ -162,6 +197,8 @@ export async function listAuthenticatedWorkspaceActivityEvents(
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
 
+  assertCanViewWorkspaceActivity(workspace);
+
   const { data, error } = await supabase
     .from("workspace_activity_events")
     .select(WORKSPACE_ACTIVITY_SELECT_FIELDS)
@@ -172,7 +209,11 @@ export async function listAuthenticatedWorkspaceActivityEvents(
     .limit(MAX_ACTIVITY_EVENTS);
 
   if (error) {
-    throw new Error(`Could not list workspace activity events: ${error.message}`);
+    throw new WorkspaceActivityRepositoryError(
+      "WORKSPACE_ACTIVITY_LIST_FAILED",
+      `Could not list workspace activity events: ${error.message}`,
+      500
+    );
   }
 
   return ((data ?? []) as SupabaseWorkspaceActivityEventRow[]).map((row) =>
@@ -200,6 +241,10 @@ export async function createAuthenticatedWorkspaceActivityEvent(
   });
 
   if (error) {
-    throw new Error(`Could not record workspace activity event: ${error.message}`);
+    throw new WorkspaceActivityRepositoryError(
+      "WORKSPACE_ACTIVITY_CREATE_FAILED",
+      `Could not record workspace activity event: ${error.message}`,
+      500
+    );
   }
 }

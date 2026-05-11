@@ -44,6 +44,8 @@ type ApiRequestViewerContext = {
   membershipRole: string;
 };
 
+const API_REQUEST_VIEWER_ROLES = new Set(["owner", "admin", "developer"]);
+
 function getAuthenticatedContext(request: FastifyRequest) {
   const userId = request.authenticatedUser?.id ?? "";
   const accessToken = request.authenticatedAccessToken ?? "";
@@ -59,7 +61,7 @@ function getAuthenticatedContext(request: FastifyRequest) {
 }
 
 function isApiRequestViewerRole(role: string) {
-  return role === "owner" || role === "admin";
+  return API_REQUEST_VIEWER_ROLES.has(role);
 }
 
 async function getApiRequestViewerContext(
@@ -85,8 +87,11 @@ async function getApiRequestViewerContext(
     reply.status(403).send({
       error: {
         code: "API_REQUEST_LOG_ROLE_REQUIRED",
-        message: "API request logs require an organization owner or admin.",
-        details: null
+        message:
+          "API request logs require an organization owner, admin, or developer role.",
+        details: {
+          allowedRoles: Array.from(API_REQUEST_VIEWER_ROLES)
+        }
       }
     });
     return null;

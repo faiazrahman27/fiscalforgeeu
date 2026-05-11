@@ -65,10 +65,24 @@ type SupabaseWorkspacePrivacyRequestRow = {
   updated_at: string;
 };
 
+export class WorkspacePrivacyRequestRepositoryError extends Error {
+  readonly code: string;
+  readonly statusCode: number;
+
+  constructor(code: string, message: string, statusCode = 400) {
+    super(message);
+    this.name = "WorkspacePrivacyRequestRepositoryError";
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
 const MAX_WORKSPACE_PRIVACY_REQUESTS = 250;
 
 const WORKSPACE_PRIVACY_REQUEST_SELECT_FIELDS =
   "id, organization_id, requester_user_id, request_type, status, subject, details, requester_email, reviewer_user_id, review_note, completed_at, created_at, updated_at";
+
+const PRIVACY_REQUEST_MANAGER_ROLES = new Set(["owner", "admin"]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -96,7 +110,7 @@ function normalizeWorkspaceBootstrapRecord(
   const organizationId = readStringField(value, "organization_id");
   const organizationName = readStringField(value, "organization_name");
   const organizationSlug = readStringField(value, "organization_slug");
-  const membershipRole = readStringField(value, "membership_role", "member");
+  const membershipRole = readStringField(value, "membership_role", "viewer");
   const userEmail = readStringField(value, "user_email");
 
   if (!organizationId || !organizationName || !organizationSlug) {
@@ -190,14 +204,22 @@ async function getWorkspaceForAuthenticatedUser(supabase: SupabaseClient) {
   const { data, error } = await supabase.rpc("bootstrap_personal_workspace");
 
   if (error) {
-    throw new Error(`Workspace bootstrap failed: ${error.message}`);
+    throw new WorkspacePrivacyRequestRepositoryError(
+      "WORKSPACE_CONTEXT_UNAVAILABLE",
+      `Workspace bootstrap failed: ${error.message}`,
+      503
+    );
   }
 
   const firstRecord = Array.isArray(data) ? data[0] : data;
   const workspace = normalizeWorkspaceBootstrapRecord(firstRecord);
 
   if (!workspace) {
-    throw new Error("Workspace bootstrap returned an unreadable record.");
+    throw new WorkspacePrivacyRequestRepositoryError(
+      "WORKSPACE_CONTEXT_REQUIRED",
+      "Workspace bootstrap returned an unreadable record.",
+      409
+    );
   }
 
   return workspace;
@@ -207,6 +229,20 @@ function createAuthenticatedSupabaseClient(
   context: AuthenticatedWorkspacePrivacyRequestContext
 ) {
   return getSupabaseUserClient(context.accessToken);
+}
+
+function assertCanManagePrivacyRequests(
+  workspace: SupabaseWorkspaceBootstrapRecord
+) {
+  if (PRIVACY_REQUEST_MANAGER_ROLES.has(workspace.membershipRole)) {
+    return;
+  }
+
+  throw new WorkspacePrivacyRequestRepositoryError(
+    "PRIVACY_REQUEST_MANAGER_ROLE_REQUIRED",
+    "Workspace privacy request review requires an organization owner or admin role.",
+    403
+  );
 }
 
 async function insertPrivacyRequestActivityEvent({
@@ -257,6 +293,8 @@ export async function listAuthenticatedWorkspacePrivacyRequests(
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
 
+  assertCanManagePrivacyRequests(workspace);
+
   const { data, error } = await supabase
     .from("workspace_privacy_requests")
     .select(WORKSPACE_PRIVACY_REQUEST_SELECT_FIELDS)
@@ -267,7 +305,11 @@ export async function listAuthenticatedWorkspacePrivacyRequests(
     .limit(MAX_WORKSPACE_PRIVACY_REQUESTS);
 
   if (error) {
-    throw new Error(`Could not list privacy requests: ${error.message}`);
+    throw new WorkspacePrivacyRequestRepositoryError(
+      "PRIVACY_REQUEST_LIST_FAILED",
+      `Could not list privacy requests: ${error.message}`,
+      500
+    );
   }
 
   return ((data ?? []) as SupabaseWorkspacePrivacyRequestRow[]).map((row) =>
@@ -299,7 +341,11 @@ export async function createAuthenticatedWorkspacePrivacyRequest(
     .single();
 
   if (error) {
-    throw new Error(`Could not create privacy request: ${error.message}`);
+    throw new WorkspacePrivacyRequestRepositoryError(
+      "PRIVACY_REQUEST_CREATE_FAILED",
+      `Could not create privacy request: ${error.message}`,
+      500
+    );
   }
 
   const record = normalizeWorkspacePrivacyRequestRow(
@@ -332,6 +378,8 @@ export async function updateAuthenticatedWorkspacePrivacyRequestById(
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
 
+  assertCanManagePrivacyRequests(workspace);
+
   const { data, error } = await supabase
     .from("workspace_privacy_requests")
     .update(
@@ -346,7 +394,11 @@ export async function updateAuthenticatedWorkspacePrivacyRequestById(
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Could not update privacy request: ${error.message}`);
+    throw new WorkspacePrivacyRequestRepositoryError(
+      "PRIVACY_REQUEST_UPDATE_FAILED",
+      `Could not update privacy request: ${error.message}`,
+      500
+    );
   }
 
   if (!data) {

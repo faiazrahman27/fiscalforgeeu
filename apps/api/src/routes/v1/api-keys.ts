@@ -41,6 +41,8 @@ type ApiKeyManagerContext = {
   membershipRole: string;
 };
 
+const API_KEY_MANAGER_ROLES = new Set(["owner", "admin", "developer"]);
+
 function getAuthenticatedContext(request: FastifyRequest) {
   const userId = request.authenticatedUser?.id ?? "";
   const accessToken = request.authenticatedAccessToken ?? "";
@@ -56,7 +58,7 @@ function getAuthenticatedContext(request: FastifyRequest) {
 }
 
 function isApiKeyManagerRole(role: string) {
-  return role === "owner" || role === "admin";
+  return API_KEY_MANAGER_ROLES.has(role);
 }
 
 function buildApiKeyResponse(apiKey: ApiKeyMetadata) {
@@ -101,8 +103,11 @@ async function getApiKeyManagerContext(
     reply.status(403).send({
       error: {
         code: "API_KEY_MANAGER_ROLE_REQUIRED",
-        message: "API key management requires an organization owner or admin.",
-        details: null
+        message:
+          "API key management requires an organization owner, admin, or developer role.",
+        details: {
+          allowedRoles: Array.from(API_KEY_MANAGER_ROLES)
+        }
       }
     });
     return null;

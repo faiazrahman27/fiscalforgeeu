@@ -51,8 +51,22 @@ type SupabaseWorkspaceSettingsRow = {
   updated_at: string;
 };
 
+export class WorkspaceSettingsRepositoryError extends Error {
+  readonly code: string;
+  readonly statusCode: number;
+
+  constructor(code: string, message: string, statusCode = 400) {
+    super(message);
+    this.name = "WorkspaceSettingsRepositoryError";
+    this.code = code;
+    this.statusCode = statusCode;
+  }
+}
+
 const WORKSPACE_SETTINGS_SELECT_FIELDS =
   "organization_id, retention_mode, invoice_draft_retention_days, validation_run_retention_days, xml_report_retention_days, activity_log_retention_days, allow_data_export_requests, allow_deletion_requests, updated_by, created_at, updated_at";
+
+const WORKSPACE_SETTINGS_MANAGER_ROLES = new Set(["owner", "admin"]);
 
 const defaultWorkspaceSettingsPayload: WorkspaceSettingsPayload = {
   retentionMode: "manual",
@@ -94,7 +108,7 @@ function normalizeWorkspaceBootstrapRecord(
   const organizationId = readStringField(value, "organization_id");
   const organizationName = readStringField(value, "organization_name");
   const organizationSlug = readStringField(value, "organization_slug");
-  const membershipRole = readStringField(value, "membership_role", "member");
+  const membershipRole = readStringField(value, "membership_role", "viewer");
   const userEmail = readStringField(value, "user_email");
 
   if (!organizationId || !organizationName || !organizationSlug) {
@@ -147,14 +161,22 @@ async function getWorkspaceForAuthenticatedUser(supabase: SupabaseClient) {
   const { data, error } = await supabase.rpc("bootstrap_personal_workspace");
 
   if (error) {
-    throw new Error(`Workspace bootstrap failed: ${error.message}`);
+    throw new WorkspaceSettingsRepositoryError(
+      "WORKSPACE_CONTEXT_UNAVAILABLE",
+      `Workspace bootstrap failed: ${error.message}`,
+      503
+    );
   }
 
   const firstRecord = Array.isArray(data) ? data[0] : data;
   const workspace = normalizeWorkspaceBootstrapRecord(firstRecord);
 
   if (!workspace) {
-    throw new Error("Workspace bootstrap returned an unreadable record.");
+    throw new WorkspaceSettingsRepositoryError(
+      "WORKSPACE_CONTEXT_REQUIRED",
+      "Workspace bootstrap returned an unreadable record.",
+      409
+    );
   }
 
   return workspace;
@@ -164,6 +186,20 @@ function createAuthenticatedSupabaseClient(
   context: AuthenticatedWorkspaceSettingsContext
 ) {
   return getSupabaseUserClient(context.accessToken);
+}
+
+function assertCanManageWorkspaceSettings(
+  workspace: SupabaseWorkspaceBootstrapRecord
+) {
+  if (WORKSPACE_SETTINGS_MANAGER_ROLES.has(workspace.membershipRole)) {
+    return;
+  }
+
+  throw new WorkspaceSettingsRepositoryError(
+    "WORKSPACE_SETTINGS_MANAGER_ROLE_REQUIRED",
+    "Workspace privacy and retention settings require an organization owner or admin role.",
+    403
+  );
 }
 
 async function insertWorkspaceSettingsActivityEvent(
@@ -205,6 +241,8 @@ export async function getAuthenticatedWorkspaceSettings(
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
 
+  assertCanManageWorkspaceSettings(workspace);
+
   const { data, error } = await supabase
     .from("workspace_settings")
     .select(WORKSPACE_SETTINGS_SELECT_FIELDS)
@@ -212,7 +250,11 @@ export async function getAuthenticatedWorkspaceSettings(
     .maybeSingle();
 
   if (error) {
-    throw new Error(`Could not read workspace settings: ${error.message}`);
+    throw new WorkspaceSettingsRepositoryError(
+      "WORKSPACE_SETTINGS_READ_FAILED",
+      `Could not read workspace settings: ${error.message}`,
+      500
+    );
   }
 
   if (data) {
@@ -232,7 +274,11 @@ export async function getAuthenticatedWorkspaceSettings(
     .single();
 
   if (insertError) {
-    throw new Error(`Could not create workspace settings: ${insertError.message}`);
+    throw new WorkspaceSettingsRepositoryError(
+      "WORKSPACE_SETTINGS_CREATE_FAILED",
+      `Could not create workspace settings: ${insertError.message}`,
+      500
+    );
   }
 
   return normalizeWorkspaceSettingsRow(
@@ -246,6 +292,8 @@ export async function updateAuthenticatedWorkspaceSettings(
 ) {
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
+
+  assertCanManageWorkspaceSettings(workspace);
 
   const { data, error } = await supabase
     .from("workspace_settings")
@@ -263,7 +311,11 @@ export async function updateAuthenticatedWorkspaceSettings(
     .single();
 
   if (error) {
-    throw new Error(`Could not save workspace settings: ${error.message}`);
+    throw new WorkspaceSettingsRepositoryError(
+      "WORKSPACE_SETTINGS_SAVE_FAILED",
+      `Could not save workspace settings: ${error.message}`,
+      500
+    );
   }
 
   try {

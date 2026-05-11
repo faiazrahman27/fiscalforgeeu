@@ -1,7 +1,8 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
+  WorkspaceSettingsRepositoryError,
   getAuthenticatedWorkspaceSettings,
   hasAuthenticatedWorkspaceSettingsContext,
   updateAuthenticatedWorkspaceSettings,
@@ -56,6 +57,26 @@ function getAuthenticatedWorkspaceSettingsContext(
   };
 }
 
+function sendWorkspaceSettingsError(reply: FastifyReply, error: unknown) {
+  if (error instanceof WorkspaceSettingsRepositoryError) {
+    return reply.status(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+        details: null
+      }
+    });
+  }
+
+  return reply.status(500).send({
+    error: {
+      code: "WORKSPACE_SETTINGS_OPERATION_FAILED",
+      message: "Could not complete the workspace settings operation.",
+      details: null
+    }
+  });
+}
+
 export async function workspaceSettingsRoutes(app: FastifyInstance) {
   app.get(
     "/settings",
@@ -75,11 +96,15 @@ export async function workspaceSettingsRoutes(app: FastifyInstance) {
         });
       }
 
-      const record = await getAuthenticatedWorkspaceSettings(context);
+      try {
+        const record = await getAuthenticatedWorkspaceSettings(context);
 
-      return {
-        record
-      };
+        return {
+          record
+        };
+      } catch (error) {
+        return sendWorkspaceSettingsError(reply, error);
+      }
     }
   );
 
@@ -113,14 +138,18 @@ export async function workspaceSettingsRoutes(app: FastifyInstance) {
         });
       }
 
-      const record = await updateAuthenticatedWorkspaceSettings(
-        context,
-        parsedBody.data
-      );
+      try {
+        const record = await updateAuthenticatedWorkspaceSettings(
+          context,
+          parsedBody.data
+        );
 
-      return reply.status(200).send({
-        record
-      });
+        return reply.status(200).send({
+          record
+        });
+      } catch (error) {
+        return sendWorkspaceSettingsError(reply, error);
+      }
     }
   );
 }

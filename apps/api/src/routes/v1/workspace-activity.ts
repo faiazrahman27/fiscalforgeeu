@@ -1,6 +1,7 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
+  WorkspaceActivityRepositoryError,
   hasAuthenticatedWorkspaceActivityContext,
   listAuthenticatedWorkspaceActivityEvents,
   type AuthenticatedWorkspaceActivityContext
@@ -41,6 +42,26 @@ function getAuthenticatedWorkspaceActivityContext(
   };
 }
 
+function sendWorkspaceActivityError(reply: FastifyReply, error: unknown) {
+  if (error instanceof WorkspaceActivityRepositoryError) {
+    return reply.status(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+        details: null
+      }
+    });
+  }
+
+  return reply.status(500).send({
+    error: {
+      code: "WORKSPACE_ACTIVITY_OPERATION_FAILED",
+      message: "Could not complete the workspace activity operation.",
+      details: null
+    }
+  });
+}
+
 export async function workspaceActivityRoutes(app: FastifyInstance) {
   app.get(
     "/activity",
@@ -60,11 +81,15 @@ export async function workspaceActivityRoutes(app: FastifyInstance) {
         });
       }
 
-      const records = await listAuthenticatedWorkspaceActivityEvents(context);
+      try {
+        const records = await listAuthenticatedWorkspaceActivityEvents(context);
 
-      return {
-        records
-      };
+        return {
+          records
+        };
+      } catch (error) {
+        return sendWorkspaceActivityError(reply, error);
+      }
     }
   );
 }

@@ -1,7 +1,8 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
+  WorkspacePrivacyRequestRepositoryError,
   createAuthenticatedWorkspacePrivacyRequest,
   hasAuthenticatedWorkspacePrivacyRequestContext,
   listAuthenticatedWorkspacePrivacyRequests,
@@ -66,6 +67,29 @@ function getAuthenticatedWorkspacePrivacyRequestContext(
   };
 }
 
+function sendWorkspacePrivacyRequestError(
+  reply: FastifyReply,
+  error: unknown
+) {
+  if (error instanceof WorkspacePrivacyRequestRepositoryError) {
+    return reply.status(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+        details: null
+      }
+    });
+  }
+
+  return reply.status(500).send({
+    error: {
+      code: "PRIVACY_REQUEST_OPERATION_FAILED",
+      message: "Could not complete the privacy request operation.",
+      details: null
+    }
+  });
+}
+
 export async function workspacePrivacyRequestRoutes(app: FastifyInstance) {
   app.get(
     "/privacy-requests",
@@ -85,11 +109,15 @@ export async function workspacePrivacyRequestRoutes(app: FastifyInstance) {
         });
       }
 
-      const records = await listAuthenticatedWorkspacePrivacyRequests(context);
+      try {
+        const records = await listAuthenticatedWorkspacePrivacyRequests(context);
 
-      return {
-        records
-      };
+        return {
+          records
+        };
+      } catch (error) {
+        return sendWorkspacePrivacyRequestError(reply, error);
+      }
     }
   );
 
@@ -123,14 +151,18 @@ export async function workspacePrivacyRequestRoutes(app: FastifyInstance) {
         });
       }
 
-      const record = await createAuthenticatedWorkspacePrivacyRequest(
-        context,
-        parsedBody.data
-      );
+      try {
+        const record = await createAuthenticatedWorkspacePrivacyRequest(
+          context,
+          parsedBody.data
+        );
 
-      return reply.status(201).send({
-        record
-      });
+        return reply.status(201).send({
+          record
+        });
+      } catch (error) {
+        return sendWorkspacePrivacyRequestError(reply, error);
+      }
     }
   );
 
@@ -180,25 +212,29 @@ export async function workspacePrivacyRequestRoutes(app: FastifyInstance) {
         });
       }
 
-      const record = await updateAuthenticatedWorkspacePrivacyRequestById(
-        context,
-        parsedParams.data.id,
-        parsedBody.data
-      );
+      try {
+        const record = await updateAuthenticatedWorkspacePrivacyRequestById(
+          context,
+          parsedParams.data.id,
+          parsedBody.data
+        );
 
-      if (!record) {
-        return reply.status(404).send({
-          error: {
-            code: "PRIVACY_REQUEST_NOT_FOUND",
-            message: "Privacy request was not found.",
-            details: null
-          }
+        if (!record) {
+          return reply.status(404).send({
+            error: {
+              code: "PRIVACY_REQUEST_NOT_FOUND",
+              message: "Privacy request was not found.",
+              details: null
+            }
+          });
+        }
+
+        return reply.status(200).send({
+          record
         });
+      } catch (error) {
+        return sendWorkspacePrivacyRequestError(reply, error);
       }
-
-      return reply.status(200).send({
-        record
-      });
     }
   );
 }
