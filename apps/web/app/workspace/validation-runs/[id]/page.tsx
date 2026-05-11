@@ -10,9 +10,12 @@ import {
   Calculator,
   ClipboardList,
   Download,
+  Eye,
   FileCheck2,
   FileText,
   Layers3,
+  Play,
+  RefreshCw,
   ShieldAlert
 } from "lucide-react";
 import type {
@@ -31,6 +34,15 @@ type LegalConfidence =
   | "review_required";
 
 type ValidationRunSourceType = "invoice_validation" | "xml_readiness";
+
+type VidaBuyerType = "business" | "consumer" | "public_authority" | "unknown";
+
+type VidaTransactionType =
+  | "goods"
+  | "services"
+  | "digital_service"
+  | "mixed"
+  | "unknown";
 
 type ValidationFinding = {
   code: string;
@@ -59,6 +71,10 @@ type SavedValidationRun = {
   invoiceNumber: string;
   buyer: string;
   seller: string;
+  buyerCountry: string;
+  sellerCountry: string;
+  buyerVatId: string;
+  sellerVatId: string;
   issueDate: string;
   createdAt: string;
   technicalStatus: string;
@@ -88,6 +104,97 @@ type EvidenceItem = {
   value: string;
 };
 
+type VidaFinding = {
+  code: string;
+  severity: string;
+  message: string;
+  legalConfidence: string;
+  sourceLabels: string[];
+  fixSuggestion: string;
+};
+
+type VidaSimulationResult = {
+  simulationVersion: string;
+  transactionClass: string;
+  vidaRelevance: string;
+  reason: string;
+  effectiveDateContext: string;
+  confidence: string;
+  legalConfidence: string;
+  countryContext: {
+    sellerInEu: boolean;
+    buyerInEu: boolean;
+    sameCountry: boolean;
+    crossBorderEu: boolean;
+  };
+  normalizedInput: {
+    sellerCountryCode: string | null;
+    buyerCountryCode: string | null;
+    sellerVatId: string | null;
+    buyerVatId: string | null;
+    buyerType: VidaBuyerType;
+    transactionType: VidaTransactionType;
+    invoiceDate: string | null;
+    currency: string | null;
+    amount: string | null;
+    countryPackVersions: Record<string, string>;
+  };
+  findings: VidaFinding[];
+  recommendedNextActions: string[];
+  disclaimer: string;
+  persisted: boolean;
+  simulationRunId: string | null;
+};
+
+type VidaSimulationRunSummary = {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  source: string;
+  status: string;
+  simulationVersion: string;
+  sellerCountryCode: string | null;
+  buyerCountryCode: string | null;
+  buyerType: VidaBuyerType;
+  transactionType: VidaTransactionType;
+  transactionClass: string;
+  vidaRelevance: string;
+  legalConfidence: string;
+  invoiceDate: string | null;
+  currencyCode: string | null;
+  amountText: string | null;
+  findingCount: number;
+  infoCount: number;
+  warningCount: number;
+  reviewRequiredCount: number;
+  reason: string;
+  effectiveDateContext: string;
+  disclaimer: string;
+};
+
+type VidaSimulationRunDetail = VidaSimulationRunSummary & {
+  inputPayload: Record<string, unknown>;
+  resultPayload: VidaSimulationResult;
+  findings: VidaFinding[];
+  sourceLabels: string[];
+  recommendedNextActions: string[];
+  errorCode: string | null;
+  errorMessage: string | null;
+  requestMetadata: Record<string, unknown>;
+};
+
+type VidaSimulationForm = {
+  sellerCountry: string;
+  buyerCountry: string;
+  sellerVatId: string;
+  buyerVatId: string;
+  buyerType: VidaBuyerType;
+  transactionType: VidaTransactionType;
+  invoiceDate: string;
+  currency: string;
+  amount: string;
+};
+
 const VALIDATION_REPORT_DISCLAIMER =
   "This validation report checks selected technical structure, calculation logic, canonical invoice rules, and sandbox rule metadata. It does not certify legal, tax, accounting, Peppol, EN 16931, or authority compliance. Before issuing real invoices or making VAT decisions, consult a qualified accountant, tax adviser, or competent authority.";
 
@@ -98,6 +205,18 @@ const EMPTY_FINDING_COUNTS: ValidationReportFindingCounts = {
   blocked: 0
 };
 
+const DEFAULT_VIDA_FORM: VidaSimulationForm = {
+  sellerCountry: "",
+  buyerCountry: "",
+  sellerVatId: "",
+  buyerVatId: "",
+  buyerType: "business",
+  transactionType: "services",
+  invoiceDate: "",
+  currency: "EUR",
+  amount: ""
+};
+
 function getStatusTone(status: string) {
   if (
     status === "passed" ||
@@ -105,7 +224,9 @@ function getStatusTone(status: string) {
     status === "not_relevant" ||
     status === "technical_preview" ||
     status === "technical" ||
-    status === "no_selected_technical_issues_detected"
+    status === "no_selected_technical_issues_detected" ||
+    status === "high" ||
+    status === "completed"
   ) {
     return "good";
   }
@@ -137,6 +258,15 @@ function formatLegalConfidence(value: LegalConfidence | undefined) {
   };
 
   return value ? labels[value] : "Not labelled";
+}
+
+function formatVidaLegalConfidence(value: string) {
+  const labels: Record<string, string> = {
+    educational_simulation: "Educational simulation",
+    professional_review_required: "Professional review required"
+  };
+
+  return labels[value] ?? formatStatus(value || "not labelled");
 }
 
 function formatSourceType(sourceType: ValidationRunSourceType) {
@@ -185,6 +315,18 @@ function formatTotalAmount(currency: string, value: number | string) {
   return `${safeCurrency} 0.00`;
 }
 
+function amountToText(value: number | string) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toFixed(2);
+  }
+
+  if (typeof value === "string") {
+    return value.trim().replace(/^[A-Z]{3}\s*/u, "");
+  }
+
+  return "";
+}
+
 function readStringField(
   record: Record<string, unknown>,
   key: string,
@@ -197,6 +339,34 @@ function readStringField(
   }
 
   return fallback;
+}
+
+function readNullableStringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+function readNumberField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback = 0
+) {
+  const value = record[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function readBooleanField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback = false
+) {
+  const value = record[key];
+
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function readAmountField(record: Record<string, unknown>, key: string) {
@@ -263,6 +433,25 @@ function normalizeSourceType(value: unknown): ValidationRunSourceType {
   return value === "xml_readiness" ? "xml_readiness" : "invoice_validation";
 }
 
+function normalizeBuyerType(value: unknown): VidaBuyerType {
+  return value === "business" ||
+    value === "consumer" ||
+    value === "public_authority" ||
+    value === "unknown"
+    ? value
+    : "unknown";
+}
+
+function normalizeTransactionType(value: unknown): VidaTransactionType {
+  return value === "goods" ||
+    value === "services" ||
+    value === "digital_service" ||
+    value === "mixed" ||
+    value === "unknown"
+    ? value
+    : "unknown";
+}
+
 function normalizeFinding(value: unknown): ValidationFinding | null {
   if (!isPlainObject(value)) {
     return null;
@@ -312,6 +501,31 @@ function normalizeFinding(value: unknown): ValidationFinding | null {
     ruleSetCode: readStringField(value, "ruleSetCode", ""),
     ruleVersion: readStringField(value, "ruleVersion", ""),
     sourceLabels: readStringArray(value.sourceLabels)
+  };
+}
+
+function normalizeVidaFinding(value: unknown): VidaFinding | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const code = readStringField(value, "code", "");
+
+  if (!code) {
+    return null;
+  }
+
+  return {
+    code,
+    severity: readStringField(value, "severity", "info"),
+    message: readStringField(value, "message", ""),
+    legalConfidence: readStringField(
+      value,
+      "legalConfidence",
+      "educational_simulation"
+    ),
+    sourceLabels: readStringArray(value.sourceLabels),
+    fixSuggestion: readStringField(value, "fixSuggestion", "")
   };
 }
 
@@ -489,9 +703,7 @@ function normalizeRuleSetsUsed(
         sourceLabels: readStringArray(item.sourceLabels)
       };
     })
-    .filter(
-      (item): item is ValidationReportRuleSetSummary => item !== null
-    );
+    .filter((item): item is ValidationReportRuleSetSummary => item !== null);
 
   return ruleSets.length > 0 ? ruleSets : buildRuleSetsFromFindings(findings);
 }
@@ -605,11 +817,21 @@ function normalizeValidationRun(
         .filter((finding): finding is ValidationFinding => finding !== null)
     : [];
 
+  const totals = normalizeTotals(value.totals);
+
   const runWithoutSummary: Omit<SavedValidationRun, "reportSummary"> = {
     id,
     invoiceNumber: readStringField(value, "invoiceNumber", "Untitled invoice"),
     buyer: readStringField(value, "buyer", "Unknown buyer"),
     seller: readStringField(value, "seller", "Unknown seller"),
+    buyerCountry:
+      readStringField(value, "buyerCountry", "") ||
+      readStringField(value, "buyerCountryCode", ""),
+    sellerCountry:
+      readStringField(value, "sellerCountry", "") ||
+      readStringField(value, "sellerCountryCode", ""),
+    buyerVatId: readStringField(value, "buyerVatId", ""),
+    sellerVatId: readStringField(value, "sellerVatId", ""),
     issueDate: readStringField(value, "issueDate", ""),
     createdAt: readStringField(value, "createdAt", new Date().toISOString()),
     technicalStatus: readStringField(value, "technicalStatus", "failed"),
@@ -627,7 +849,7 @@ function normalizeValidationRun(
     confidence: readStringField(value, "confidence", "technical_preview"),
     profile: readStringField(value, "profile", "API_VALIDATION"),
     currency: readStringField(value, "currency", "EUR"),
-    totals: normalizeTotals(value.totals),
+    totals,
     findings,
     disclaimer: readStringField(
       value,
@@ -644,6 +866,196 @@ function normalizeValidationRun(
     ...runWithoutSummary,
     reportSummary: normalizeReportSummary(reportSummaryValue, runWithoutSummary)
   };
+}
+
+function normalizeVidaResult(value: unknown): VidaSimulationResult | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const countryContext = isPlainObject(value.countryContext)
+    ? value.countryContext
+    : {};
+  const normalizedInput = isPlainObject(value.normalizedInput)
+    ? value.normalizedInput
+    : {};
+  const countryPackVersions = isPlainObject(normalizedInput.countryPackVersions)
+    ? Object.fromEntries(
+        Object.entries(normalizedInput.countryPackVersions)
+          .filter(
+            (entry): entry is [string, string] =>
+              typeof entry[0] === "string" && typeof entry[1] === "string"
+          )
+          .map(([key, version]) => [key, version])
+      )
+    : {};
+
+  return {
+    simulationVersion: readStringField(
+      value,
+      "simulationVersion",
+      "unversioned"
+    ),
+    transactionClass: readStringField(
+      value,
+      "transactionClass",
+      "insufficient_data"
+    ),
+    vidaRelevance: readStringField(value, "vidaRelevance", "review_required"),
+    reason: readStringField(value, "reason", ""),
+    effectiveDateContext: readStringField(value, "effectiveDateContext", ""),
+    confidence: readStringField(value, "confidence", "educational_simulation"),
+    legalConfidence: readStringField(
+      value,
+      "legalConfidence",
+      "educational_simulation"
+    ),
+    countryContext: {
+      sellerInEu: readBooleanField(countryContext, "sellerInEu"),
+      buyerInEu: readBooleanField(countryContext, "buyerInEu"),
+      sameCountry: readBooleanField(countryContext, "sameCountry"),
+      crossBorderEu: readBooleanField(countryContext, "crossBorderEu")
+    },
+    normalizedInput: {
+      sellerCountryCode: readNullableStringField(
+        normalizedInput,
+        "sellerCountryCode"
+      ),
+      buyerCountryCode: readNullableStringField(
+        normalizedInput,
+        "buyerCountryCode"
+      ),
+      sellerVatId: readNullableStringField(normalizedInput, "sellerVatId"),
+      buyerVatId: readNullableStringField(normalizedInput, "buyerVatId"),
+      buyerType: normalizeBuyerType(normalizedInput.buyerType),
+      transactionType: normalizeTransactionType(normalizedInput.transactionType),
+      invoiceDate: readNullableStringField(normalizedInput, "invoiceDate"),
+      currency: readNullableStringField(normalizedInput, "currency"),
+      amount: readNullableStringField(normalizedInput, "amount"),
+      countryPackVersions
+    },
+    findings: Array.isArray(value.findings)
+      ? value.findings
+          .map((finding) => normalizeVidaFinding(finding))
+          .filter((finding): finding is VidaFinding => finding !== null)
+      : [],
+    recommendedNextActions: readStringArray(value.recommendedNextActions),
+    disclaimer: readStringField(value, "disclaimer", ""),
+    persisted: readBooleanField(value, "persisted"),
+    simulationRunId: readNullableStringField(value, "simulationRunId")
+  };
+}
+
+function normalizeVidaSimulationRunSummary(
+  value: unknown
+): VidaSimulationRunSummary | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id", "");
+
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    createdAt: readStringField(value, "createdAt", ""),
+    updatedAt: readStringField(value, "updatedAt", ""),
+    source: readStringField(value, "source", "workspace"),
+    status: readStringField(value, "status", "completed"),
+    simulationVersion: readStringField(
+      value,
+      "simulationVersion",
+      "unversioned"
+    ),
+    sellerCountryCode: readNullableStringField(value, "sellerCountryCode"),
+    buyerCountryCode: readNullableStringField(value, "buyerCountryCode"),
+    buyerType: normalizeBuyerType(value.buyerType),
+    transactionType: normalizeTransactionType(value.transactionType),
+    transactionClass: readStringField(
+      value,
+      "transactionClass",
+      "insufficient_data"
+    ),
+    vidaRelevance: readStringField(value, "vidaRelevance", "review_required"),
+    legalConfidence: readStringField(
+      value,
+      "legalConfidence",
+      "educational_simulation"
+    ),
+    invoiceDate: readNullableStringField(value, "invoiceDate"),
+    currencyCode: readNullableStringField(value, "currencyCode"),
+    amountText: readNullableStringField(value, "amountText"),
+    findingCount: readNumberField(value, "findingCount"),
+    infoCount: readNumberField(value, "infoCount"),
+    warningCount: readNumberField(value, "warningCount"),
+    reviewRequiredCount: readNumberField(value, "reviewRequiredCount"),
+    reason: readStringField(value, "reason", ""),
+    effectiveDateContext: readStringField(value, "effectiveDateContext", ""),
+    disclaimer: readStringField(value, "disclaimer", "")
+  };
+}
+
+function normalizeVidaSimulationRunDetail(
+  value: unknown
+): VidaSimulationRunDetail | null {
+  const record = isPlainObject(value) && isPlainObject(value.record)
+    ? value.record
+    : value;
+
+  const summary = normalizeVidaSimulationRunSummary(record);
+
+  if (!summary || !isPlainObject(record)) {
+    return null;
+  }
+
+  const resultPayload = normalizeVidaResult(record.resultPayload);
+
+  if (!resultPayload) {
+    return null;
+  }
+
+  return {
+    ...summary,
+    inputPayload: isPlainObject(record.inputPayload) ? record.inputPayload : {},
+    resultPayload: {
+      ...resultPayload,
+      persisted: true,
+      simulationRunId: summary.id
+    },
+    findings: Array.isArray(record.findings)
+      ? record.findings
+          .map((finding) => normalizeVidaFinding(finding))
+          .filter((finding): finding is VidaFinding => finding !== null)
+      : resultPayload.findings,
+    sourceLabels: readStringArray(record.sourceLabels),
+    recommendedNextActions: readStringArray(record.recommendedNextActions),
+    errorCode: readNullableStringField(record, "errorCode"),
+    errorMessage: readNullableStringField(record, "errorMessage"),
+    requestMetadata: isPlainObject(record.requestMetadata)
+      ? record.requestMetadata
+      : {}
+  };
+}
+
+function readVidaSimulationRuns(value: unknown) {
+  if (!isPlainObject(value)) {
+    return [];
+  }
+
+  const rawRecords = Array.isArray(value.records)
+    ? value.records
+    : Array.isArray(value.runs)
+      ? value.runs
+      : Array.isArray(value.vidaSimulationRuns)
+        ? value.vidaSimulationRuns
+        : [];
+
+  return rawRecords
+    .map((record) => normalizeVidaSimulationRunSummary(record))
+    .filter((record): record is VidaSimulationRunSummary => record !== null);
 }
 
 function buildSourceContext(run: SavedValidationRun): EvidenceItem[] {
@@ -746,6 +1158,10 @@ function buildExportPayload(run: SavedValidationRun, sourceContext: EvidenceItem
       invoiceNumber: run.invoiceNumber,
       buyer: run.buyer,
       seller: run.seller,
+      buyerCountry: run.buyerCountry,
+      sellerCountry: run.sellerCountry,
+      buyerVatId: run.buyerVatId,
+      sellerVatId: run.sellerVatId,
       issueDate: run.issueDate,
       createdAt: run.createdAt,
       technicalStatus: run.technicalStatus,
@@ -790,6 +1206,56 @@ function downloadValidationReport(
   URL.revokeObjectURL(objectUrl);
 }
 
+function buildVidaFormFromRun(run: SavedValidationRun): VidaSimulationForm {
+  return {
+    sellerCountry: run.sellerCountry,
+    buyerCountry: run.buyerCountry,
+    sellerVatId: run.sellerVatId,
+    buyerVatId: run.buyerVatId,
+    buyerType: "business",
+    transactionType: "services",
+    invoiceDate: run.issueDate,
+    currency: run.currency || "EUR",
+    amount: amountToText(run.totals.payableAmount)
+  };
+}
+
+function buildVidaSimulationRequestBody(
+  run: SavedValidationRun,
+  form: VidaSimulationForm
+) {
+  const body: Record<string, unknown> = {
+    sellerCountry: form.sellerCountry.trim(),
+    buyerCountry: form.buyerCountry.trim(),
+    buyerType: form.buyerType,
+    transactionType: form.transactionType,
+    persist: true,
+    validationRunId: run.id
+  };
+
+  if (form.sellerVatId.trim()) {
+    body.sellerVatId = form.sellerVatId.trim();
+  }
+
+  if (form.buyerVatId.trim()) {
+    body.buyerVatId = form.buyerVatId.trim();
+  }
+
+  if (form.invoiceDate.trim()) {
+    body.invoiceDate = form.invoiceDate.trim();
+  }
+
+  if (form.currency.trim()) {
+    body.currency = form.currency.trim();
+  }
+
+  if (form.amount.trim()) {
+    body.amount = form.amount.trim();
+  }
+
+  return body;
+}
+
 function renderCountCard(
   label: keyof ValidationReportFindingCounts,
   counts: ValidationReportFindingCounts
@@ -812,6 +1278,18 @@ export default function ValidationRunDetailPage() {
   const [runLoadMessage, setRunLoadMessage] = useState("");
   const [pdfDownloadMessage, setPdfDownloadMessage] = useState("");
 
+  const [vidaForm, setVidaForm] =
+    useState<VidaSimulationForm>(DEFAULT_VIDA_FORM);
+  const [vidaRuns, setVidaRuns] = useState<VidaSimulationRunSummary[]>([]);
+  const [latestVidaResult, setLatestVidaResult] =
+    useState<VidaSimulationResult | null>(null);
+  const [selectedVidaRun, setSelectedVidaRun] =
+    useState<VidaSimulationRunDetail | null>(null);
+  const [openingVidaRunId, setOpeningVidaRunId] = useState("");
+  const [isLoadingVidaRuns, setIsLoadingVidaRuns] = useState(false);
+  const [isRunningVidaSimulation, setIsRunningVidaSimulation] = useState(false);
+  const [vidaMessage, setVidaMessage] = useState("");
+
   useEffect(() => {
     let isMounted = true;
 
@@ -819,6 +1297,9 @@ export default function ValidationRunDetailPage() {
       setIsLoadingRun(true);
       setRunLoadMessage("");
       setPdfDownloadMessage("");
+      setVidaMessage("");
+      setLatestVidaResult(null);
+      setSelectedVidaRun(null);
 
       try {
         const response = await fetch(
@@ -864,6 +1345,7 @@ export default function ValidationRunDetailPage() {
         }
 
         setRun(normalizedRun);
+        setVidaForm(buildVidaFormFromRun(normalizedRun));
       } catch {
         if (isMounted) {
           setRun(null);
@@ -885,7 +1367,219 @@ export default function ValidationRunDetailPage() {
     };
   }, [params.id]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadLinkedVidaRuns(validationRunId: string) {
+      setIsLoadingVidaRuns(true);
+      setVidaMessage("");
+
+      try {
+        const searchParams = new URLSearchParams({
+          validationRunId,
+          limit: "10"
+        });
+        const response = await fetch(
+          `/api/local/transactions/vida-simulations?${searchParams.toString()}`,
+          {
+            method: "GET",
+            cache: "no-store"
+          }
+        );
+        const responseData = await readResponseBody(response);
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!response.ok) {
+          setVidaRuns([]);
+          setVidaMessage(
+            getApiErrorMessage(
+              responseData,
+              "Could not load saved ViDA simulations for this report."
+            )
+          );
+          return;
+        }
+
+        setVidaRuns(readVidaSimulationRuns(responseData));
+      } catch {
+        if (isMounted) {
+          setVidaRuns([]);
+          setVidaMessage(
+            "Saved ViDA simulations could not be loaded. Make sure apps/api and apps/web are both running."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingVidaRuns(false);
+        }
+      }
+    }
+
+    if (run) {
+      void loadLinkedVidaRuns(run.id);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [run]);
+
   const sourceContext = useMemo(() => (run ? buildSourceContext(run) : []), [run]);
+
+  const canRunVidaSimulation =
+    Boolean(run) &&
+    vidaForm.sellerCountry.trim().length > 0 &&
+    vidaForm.buyerCountry.trim().length > 0 &&
+    !isRunningVidaSimulation;
+
+  async function reloadLinkedVidaRuns(validationRunId: string) {
+    setIsLoadingVidaRuns(true);
+
+    try {
+      const searchParams = new URLSearchParams({
+        validationRunId,
+        limit: "10"
+      });
+      const response = await fetch(
+        `/api/local/transactions/vida-simulations?${searchParams.toString()}`,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setVidaRuns([]);
+        setVidaMessage(
+          getApiErrorMessage(
+            responseData,
+            "Could not refresh saved ViDA simulations for this report."
+          )
+        );
+        return;
+      }
+
+      setVidaRuns(readVidaSimulationRuns(responseData));
+    } catch {
+      setVidaMessage(
+        "Saved ViDA simulations could not be refreshed. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsLoadingVidaRuns(false);
+    }
+  }
+
+  async function openLinkedVidaRun(vidaRunId: string) {
+    setOpeningVidaRunId(vidaRunId);
+    setVidaMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/transactions/vida-simulations/${encodeURIComponent(
+          vidaRunId
+        )}`,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setVidaMessage(
+          getApiErrorMessage(
+            responseData,
+            "Could not open the saved ViDA simulation run."
+          )
+        );
+        return;
+      }
+
+      const normalizedRun = normalizeVidaSimulationRunDetail(responseData);
+
+      if (!normalizedRun) {
+        setVidaMessage(
+          "The saved ViDA simulation run returned an unreadable response shape."
+        );
+        return;
+      }
+
+      setSelectedVidaRun(normalizedRun);
+      setLatestVidaResult(normalizedRun.resultPayload);
+      setVidaMessage("Saved ViDA simulation record opened.");
+    } catch {
+      setVidaMessage(
+        "The saved ViDA simulation run could not be opened. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setOpeningVidaRunId("");
+    }
+  }
+
+  async function runVidaSimulationFromReport(currentRun: SavedValidationRun) {
+    if (!vidaForm.sellerCountry.trim() || !vidaForm.buyerCountry.trim()) {
+      setVidaMessage(
+        "Seller country and buyer country are required before running a ViDA simulation from this report."
+      );
+      return;
+    }
+
+    setIsRunningVidaSimulation(true);
+    setVidaMessage("");
+    setLatestVidaResult(null);
+    setSelectedVidaRun(null);
+
+    try {
+      const response = await fetch("/api/local/transactions/simulate-vida", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(
+          buildVidaSimulationRequestBody(currentRun, vidaForm)
+        ),
+        cache: "no-store"
+      });
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setVidaMessage(
+          getApiErrorMessage(
+            responseData,
+            "Could not run the ViDA-readiness simulation from this report."
+          )
+        );
+        return;
+      }
+
+      const normalizedResult = normalizeVidaResult(responseData);
+
+      if (!normalizedResult) {
+        setVidaMessage(
+          "The ViDA simulator returned an unreadable response shape."
+        );
+        return;
+      }
+
+      setLatestVidaResult(normalizedResult);
+      setVidaMessage(
+        normalizedResult.persisted
+          ? "ViDA simulation saved against this validation report."
+          : "ViDA simulation completed, but no saved workspace run was returned."
+      );
+      await reloadLinkedVidaRuns(currentRun.id);
+    } catch {
+      setVidaMessage(
+        "The local ViDA simulator API is unavailable. Make sure apps/api and apps/web are both running."
+      );
+    } finally {
+      setIsRunningVidaSimulation(false);
+    }
+  }
 
   async function downloadValidationReportPdf(currentRun: SavedValidationRun) {
     setIsDownloadingPdf(true);
@@ -1129,13 +1823,21 @@ export default function ValidationRunDetailPage() {
               <div className="workspace-data-card">
                 <p>Seller</p>
                 <strong>{formatOptionalValue(run.seller, "Unknown seller")}</strong>
-                <span>Invoice party</span>
+                <span>
+                  {run.sellerCountry
+                    ? `Country ${run.sellerCountry}`
+                    : "Country not detected"}
+                </span>
               </div>
 
               <div className="workspace-data-card">
                 <p>Buyer</p>
                 <strong>{formatOptionalValue(run.buyer, "Unknown buyer")}</strong>
-                <span>Invoice party</span>
+                <span>
+                  {run.buyerCountry
+                    ? `Country ${run.buyerCountry}`
+                    : "Country not detected"}
+                </span>
               </div>
 
               <div className="workspace-data-card">
@@ -1168,6 +1870,474 @@ export default function ValidationRunDetailPage() {
                   <Calculator size={17} />
                 </div>
               ))}
+            </div>
+          </section>
+
+          <section className="workspace-table-shell">
+            <div className="workspace-table-head">
+              <div>
+                <p>ViDA readiness</p>
+                <h3>Run a saved simulation from this report</h3>
+              </div>
+
+              <div className="confidence-label">
+                <ShieldAlert size={17} />
+                linked history
+              </div>
+            </div>
+
+            <p className="workspace-muted-copy">
+              This action uses the current validation run as context and saves
+              the ViDA-readiness simulation with this report ID. It remains an
+              educational technical readiness result, not official software, not
+              authority submission, not legal advice, not tax advice, not
+              accounting advice, and not a compliance guarantee.
+            </p>
+
+            {vidaMessage ? (
+              <div className="alert-item">
+                <span />
+                <p>{vidaMessage}</p>
+              </div>
+            ) : null}
+
+            <form
+              className="workspace-form-grid"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void runVidaSimulationFromReport(run);
+              }}
+            >
+              <label>
+                Seller country
+                <input
+                  maxLength={8}
+                  required
+                  value={vidaForm.sellerCountry}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      sellerCountry: event.target.value
+                    }))
+                  }
+                  placeholder="DE"
+                />
+              </label>
+
+              <label>
+                Buyer country
+                <input
+                  maxLength={8}
+                  required
+                  value={vidaForm.buyerCountry}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      buyerCountry: event.target.value
+                    }))
+                  }
+                  placeholder="HU"
+                />
+              </label>
+
+              <label>
+                Seller VAT ID
+                <input
+                  maxLength={64}
+                  value={vidaForm.sellerVatId}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      sellerVatId: event.target.value
+                    }))
+                  }
+                  placeholder="DE123456789"
+                />
+              </label>
+
+              <label>
+                Buyer VAT ID
+                <input
+                  maxLength={64}
+                  value={vidaForm.buyerVatId}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      buyerVatId: event.target.value
+                    }))
+                  }
+                  placeholder="HU12345678"
+                />
+              </label>
+
+              <label>
+                Buyer type
+                <select
+                  value={vidaForm.buyerType}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      buyerType: event.target.value as VidaBuyerType
+                    }))
+                  }
+                >
+                  <option value="business">Business</option>
+                  <option value="consumer">Consumer</option>
+                  <option value="public_authority">Public authority</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+              </label>
+
+              <label>
+                Transaction type
+                <select
+                  value={vidaForm.transactionType}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      transactionType: event.target.value as VidaTransactionType
+                    }))
+                  }
+                >
+                  <option value="services">Services</option>
+                  <option value="goods">Goods</option>
+                  <option value="digital_service">Digital service</option>
+                  <option value="mixed">Mixed</option>
+                  <option value="unknown">Unknown</option>
+                </select>
+              </label>
+
+              <label>
+                Invoice date
+                <input
+                  maxLength={32}
+                  value={vidaForm.invoiceDate}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      invoiceDate: event.target.value
+                    }))
+                  }
+                  placeholder="2026-05-01"
+                />
+              </label>
+
+              <label>
+                Currency
+                <input
+                  maxLength={8}
+                  value={vidaForm.currency}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      currency: event.target.value
+                    }))
+                  }
+                  placeholder="EUR"
+                />
+              </label>
+
+              <label>
+                Amount
+                <input
+                  maxLength={80}
+                  value={vidaForm.amount}
+                  onChange={(event) =>
+                    setVidaForm((current) => ({
+                      ...current,
+                      amount: event.target.value
+                    }))
+                  }
+                  placeholder="100.00"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="workspace-auth-action"
+                disabled={!canRunVidaSimulation}
+              >
+                <Play size={16} />
+                {isRunningVidaSimulation
+                  ? "Running simulation"
+                  : "Run and save ViDA simulation"}
+              </button>
+            </form>
+
+            {latestVidaResult ? (
+              <div className="workspace-data-grid">
+                <div
+                  className={`workspace-data-card is-${getStatusTone(
+                    latestVidaResult.vidaRelevance
+                  )}`}
+                >
+                  <p>Latest relevance</p>
+                  <strong>{formatStatus(latestVidaResult.vidaRelevance)}</strong>
+                  <span>Saved: {latestVidaResult.persisted ? "yes" : "no"}</span>
+                </div>
+
+                <div className="workspace-data-card">
+                  <p>Transaction class</p>
+                  <strong>
+                    {formatStatus(latestVidaResult.transactionClass)}
+                  </strong>
+                  <span>Simulation version {latestVidaResult.simulationVersion}</span>
+                </div>
+
+                <div className="workspace-data-card">
+                  <p>EU context</p>
+                  <strong>
+                    {latestVidaResult.countryContext.crossBorderEu
+                      ? "Cross-border EU"
+                      : "Review context"}
+                  </strong>
+                  <span>
+                    Seller EU:{" "}
+                    {latestVidaResult.countryContext.sellerInEu ? "yes" : "no"} ·
+                    Buyer EU:{" "}
+                    {latestVidaResult.countryContext.buyerInEu ? "yes" : "no"}
+                  </span>
+                </div>
+
+                <div className="workspace-data-card is-wide">
+                  <p>Reason</p>
+                  <strong>{latestVidaResult.reason || "No reason returned"}</strong>
+                  <span>
+                    {formatVidaLegalConfidence(latestVidaResult.legalConfidence)}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            {selectedVidaRun ? (
+              <section className="findings-console">
+                <div className="findings-console-head">
+                  <div>
+                    <p>Opened ViDA record</p>
+                    <h3>{formatStatus(selectedVidaRun.transactionClass)}</h3>
+                  </div>
+
+                  <div className="confidence-label">
+                    <Eye size={17} />
+                    {formatDateTime(selectedVidaRun.createdAt)}
+                  </div>
+                </div>
+
+                <div className="finding-console-list">
+                  <div className="finding-console-row">
+                    <BadgeCheck size={18} />
+
+                    <div>
+                      <strong>VIDA_SIMULATION_RUN_OPENED</strong>
+                      <p>
+                        Run {selectedVidaRun.id}. Source:{" "}
+                        {formatStatus(selectedVidaRun.source)}. Status:{" "}
+                        {formatStatus(selectedVidaRun.status)}.
+                      </p>
+                      <p>
+                        Relevance: {formatStatus(selectedVidaRun.vidaRelevance)}.
+                        Legal confidence:{" "}
+                        {formatVidaLegalConfidence(selectedVidaRun.legalConfidence)}.
+                      </p>
+                    </div>
+
+                    <span>{selectedVidaRun.vidaRelevance}</span>
+                  </div>
+
+                  <div className="finding-console-row">
+                    <FileCheck2 size={18} />
+
+                    <div>
+                      <strong>VIDA_LINKED_VALIDATION_REPORT</strong>
+                      <p>
+                        This ViDA run is linked to validation report {run.id}.
+                        It is workspace evidence only, not filing evidence or
+                        authority confirmation.
+                      </p>
+                      <p>{selectedVidaRun.effectiveDateContext}</p>
+                    </div>
+
+                    <span>linked</span>
+                  </div>
+
+                  {selectedVidaRun.findings.length === 0 ? (
+                    <div className="finding-console-row">
+                      <BadgeCheck size={18} />
+
+                      <div>
+                        <strong>VIDA_NO_FINDINGS_RETURNED</strong>
+                        <p>
+                          This saved ViDA simulation did not return finding-level
+                          messages.
+                        </p>
+                      </div>
+
+                      <span>info</span>
+                    </div>
+                  ) : (
+                    selectedVidaRun.findings.map((finding, index) => (
+                      <div
+                        className="finding-console-row"
+                        key={`${selectedVidaRun.id}-${finding.code}-${index}`}
+                      >
+                        <AlertTriangle size={18} />
+
+                        <div>
+                          <strong>{finding.code}</strong>
+                          <p>{finding.message}</p>
+                          <p>
+                            Legal confidence:{" "}
+                            {formatVidaLegalConfidence(finding.legalConfidence)}.
+                            Sources:{" "}
+                            {finding.sourceLabels.length > 0
+                              ? finding.sourceLabels.join(", ")
+                              : "No source label"}
+                            .
+                          </p>
+                          {finding.fixSuggestion ? (
+                            <p>Fix suggestion: {finding.fixSuggestion}</p>
+                          ) : null}
+                        </div>
+
+                        <span>{finding.severity}</span>
+                      </div>
+                    ))
+                  )}
+
+                  {selectedVidaRun.recommendedNextActions.map((action, index) => (
+                    <div
+                      className="finding-console-row"
+                      key={`${selectedVidaRun.id}-next-action-${index}`}
+                    >
+                      <ClipboardList size={18} />
+
+                      <div>
+                        <strong>VIDA_RECOMMENDED_NEXT_ACTION</strong>
+                        <p>{action}</p>
+                      </div>
+
+                      <span>next</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            <div className="workspace-table-head api-rate-limit-head">
+              <div>
+                <p>Saved simulations</p>
+                <h3>Linked ViDA history for this report</h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void reloadLinkedVidaRuns(run.id)}
+                disabled={isLoadingVidaRuns}
+              >
+                <RefreshCw size={16} />
+                Refresh
+              </button>
+            </div>
+
+            <div className="api-key-card-list">
+              {isLoadingVidaRuns ? (
+                <article className="api-key-card">
+                  <header>
+                    <div>
+                      <strong>Loading saved simulations</strong>
+                      <span>Reading workspace-owned ViDA run history.</span>
+                    </div>
+                    <span className="status-pill">loading</span>
+                  </header>
+                </article>
+              ) : vidaRuns.length === 0 ? (
+                <article className="api-key-card">
+                  <header>
+                    <div>
+                      <strong>No saved ViDA simulations linked yet</strong>
+                      <span>
+                        Run the simulation above to save a workspace-owned
+                        readiness record against this validation report.
+                      </span>
+                    </div>
+                    <span className="status-pill">empty</span>
+                  </header>
+                </article>
+              ) : (
+                vidaRuns.map((vidaRun) => (
+                  <article className="api-key-card" key={vidaRun.id}>
+                    <header>
+                      <div>
+                        <strong>{formatStatus(vidaRun.transactionClass)}</strong>
+                        <span>
+                          {vidaRun.sellerCountryCode ?? "?"} →{" "}
+                          {vidaRun.buyerCountryCode ?? "?"} ·{" "}
+                          {formatDateTime(vidaRun.createdAt)}
+                        </span>
+                      </div>
+
+                      <span className="status-pill">
+                        {formatStatus(vidaRun.vidaRelevance)}
+                      </span>
+                    </header>
+
+                    <div className="api-key-meta-grid">
+                      <div>
+                        <span>Version</span>
+                        <strong>{vidaRun.simulationVersion}</strong>
+                      </div>
+                      <div>
+                        <span>Buyer type</span>
+                        <strong>{formatStatus(vidaRun.buyerType)}</strong>
+                      </div>
+                      <div>
+                        <span>Transaction</span>
+                        <strong>{formatStatus(vidaRun.transactionType)}</strong>
+                      </div>
+                      <div>
+                        <span>Invoice date</span>
+                        <strong>{vidaRun.invoiceDate ?? "Not recorded"}</strong>
+                      </div>
+                      <div>
+                        <span>Amount</span>
+                        <strong>
+                          {vidaRun.currencyCode ?? "EUR"}{" "}
+                          {vidaRun.amountText ?? "Not recorded"}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Findings</span>
+                        <strong>{vidaRun.findingCount}</strong>
+                      </div>
+                    </div>
+
+                    <p className="workspace-muted-copy">
+                      {vidaRun.reason || "No reason text was stored."}
+                    </p>
+
+                    <div className="api-key-scope-list">
+                      <span>{vidaRun.reviewRequiredCount} review</span>
+                      <span>{vidaRun.warningCount} warning</span>
+                      <span>{vidaRun.infoCount} info</span>
+                      <span>{formatVidaLegalConfidence(vidaRun.legalConfidence)}</span>
+                    </div>
+
+                    <div className="workspace-row-actions">
+                      <button
+                        type="button"
+                        className="text-link-button"
+                        disabled={openingVidaRunId === vidaRun.id}
+                        onClick={() => void openLinkedVidaRun(vidaRun.id)}
+                      >
+                        <Eye size={16} />
+                        {openingVidaRunId === vidaRun.id
+                          ? "Opening"
+                          : "Open record"}
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
             </div>
           </section>
 

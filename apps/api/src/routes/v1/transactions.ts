@@ -4,16 +4,16 @@ import {
 } from "@invoice-lantern/vida-simulator";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireApiKey, requireApiKeyScopes } from "../../middleware/require-api-key.js";
+import {
+  requireApiKeyScopes,
+  requireSupabaseUser
+} from "../../middleware/require-api-key.js";
 import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import {
   getAuthenticatedVidaSimulationRunRecord,
-  getVidaSimulationRunRecord,
   hasAuthenticatedVidaSimulationRunContext,
   listAuthenticatedVidaSimulationRunRecords,
-  listVidaSimulationRunRecords,
   saveAuthenticatedVidaSimulationRunRecord,
-  saveVidaSimulationRunRecord,
   type AuthenticatedVidaSimulationRunContext,
   type VidaSimulationRunRecord
 } from "../../repositories/vida-simulation-run-repository.js";
@@ -73,14 +73,14 @@ const vidaSimulationRequestSchema = z
       .optional(),
 
     /*
-     * Persistence is opt-in so existing API clients still receive the same
-     * top-level simulation result without creating workspace audit records.
+     * Persistence is opt-in. Normal developer API calls can run simulations
+     * without creating workspace-owned evidence records.
      */
     persist: z.boolean().optional(),
 
     /*
-     * Optional links for future invoice/report workflows. The repository
-     * verifies workspace ownership before storing these associations.
+     * Optional workspace-owned associations. The repository verifies ownership
+     * before storing these IDs.
      */
     invoiceDraftId: z.string().trim().min(1).max(120).optional(),
     validationRunId: z.string().trim().min(1).max(120).optional()
@@ -118,6 +118,17 @@ function getAuthenticatedVidaSimulationRunContext(
       : null;
 
   return hasAuthenticatedVidaSimulationRunContext(context) ? context : null;
+}
+
+function sendWorkspaceAuthRequired(reply: FastifyReply) {
+  return reply.status(401).send({
+    error: {
+      code: "WORKSPACE_AUTH_REQUIRED",
+      message:
+        "Sign in before creating or reading workspace ViDA simulation records.",
+      details: null
+    }
+  });
 }
 
 function sendVidaSimulationStorageError(reply: FastifyReply, error: unknown) {
@@ -287,46 +298,39 @@ export async function transactionRoutes(app: FastifyInstance) {
       }
 
       /*
-       * Organization API keys can execute the simulator, but workspace-owned
-       * persistence currently requires a signed-in Supabase user so RLS can
-       * enforce organization membership. This avoids creating audit records
-       * with service-role shortcuts or unverified ownership.
+       * Organization API keys may run the simulator, but they cannot create
+       * workspace-owned audit/history records. Persistence requires a signed-in
+       * Supabase workspace session so database RLS evaluates the real user.
        */
       if (request.authenticationMode === "organization_api_key") {
         return reply.status(403).send({
           error: {
             code: "API_KEY_VIDA_PERSIST_UNSUPPORTED",
             message:
-              "API-key ViDA simulation requests can run technical simulations, but workspace persistence currently requires a signed-in workspace user.",
+              "API-key ViDA simulation requests can run technical simulations, but workspace persistence requires a signed-in workspace user.",
             details: null
           }
         });
       }
 
-      try {
-        const authenticatedContext =
-          getAuthenticatedVidaSimulationRunContext(request);
+      const authenticatedContext = getAuthenticatedVidaSimulationRunContext(request);
 
-        const record = authenticatedContext
-          ? await saveAuthenticatedVidaSimulationRunRecord(
-              authenticatedContext,
-              {
-                inputPayload: simulationInput,
-                result: simulationResult,
-                invoiceDraftId: parsedBody.data.invoiceDraftId ?? null,
-                validationRunId: parsedBody.data.validationRunId ?? null,
-                source: "workspace",
-                requestMetadata: buildSafeRequestMetadata(request)
-              }
-            )
-          : await saveVidaSimulationRunRecord({
-              inputPayload: simulationInput,
-              result: simulationResult,
-              invoiceDraftId: parsedBody.data.invoiceDraftId ?? null,
-              validationRunId: parsedBody.data.validationRunId ?? null,
-              source: "workspace",
-              requestMetadata: buildSafeRequestMetadata(request)
-            });
+      if (!authenticatedContext) {
+        return sendWorkspaceAuthRequired(reply);
+      }
+
+      try {
+        const record = await saveAuthenticatedVidaSimulationRunRecord(
+          authenticatedContext,
+          {
+            inputPayload: simulationInput,
+            result: simulationResult,
+            invoiceDraftId: parsedBody.data.invoiceDraftId ?? null,
+            validationRunId: parsedBody.data.validationRunId ?? null,
+            source: "workspace",
+            requestMetadata: buildSafeRequestMetadata(request)
+          }
+        );
 
         return {
           ...simulationResult,
@@ -343,7 +347,7 @@ export async function transactionRoutes(app: FastifyInstance) {
   app.get(
     "/vida-simulations",
     {
-      preHandler: requireApiKey
+      preHandler: requireSupabaseUser
     },
     async (request, reply) => {
       const parsedQuery = vidaSimulationListQuerySchema.safeParse(request.query);
@@ -358,16 +362,17 @@ export async function transactionRoutes(app: FastifyInstance) {
         });
       }
 
-      try {
-        const authenticatedContext =
-          getAuthenticatedVidaSimulationRunContext(request);
+      const authenticatedContext = getAuthenticatedVidaSimulationRunContext(request);
 
-        const records = authenticatedContext
-          ? await listAuthenticatedVidaSimulationRunRecords(
-              authenticatedContext,
-              parsedQuery.data
-            )
-          : await listVidaSimulationRunRecords(parsedQuery.data);
+      if (!authenticatedContext) {
+        return sendWorkspaceAuthRequired(reply);
+      }
+
+      try {
+        const records = await listAuthenticatedVidaSimulationRunRecords(
+          authenticatedContext,
+          parsedQuery.data
+        );
 
         return {
           records: records.map(buildVidaSimulationRunSummary)
@@ -381,7 +386,7 @@ export async function transactionRoutes(app: FastifyInstance) {
   app.get(
     "/vida-simulations/:id",
     {
-      preHandler: requireApiKey
+      preHandler: requireSupabaseUser
     },
     async (request, reply) => {
       const parsedParams = vidaSimulationDetailParamsSchema.safeParse(
@@ -398,16 +403,17 @@ export async function transactionRoutes(app: FastifyInstance) {
         });
       }
 
-      try {
-        const authenticatedContext =
-          getAuthenticatedVidaSimulationRunContext(request);
+      const authenticatedContext = getAuthenticatedVidaSimulationRunContext(request);
 
-        const record = authenticatedContext
-          ? await getAuthenticatedVidaSimulationRunRecord(
-              authenticatedContext,
-              parsedParams.data.id
-            )
-          : await getVidaSimulationRunRecord(parsedParams.data.id);
+      if (!authenticatedContext) {
+        return sendWorkspaceAuthRequired(reply);
+      }
+
+      try {
+        const record = await getAuthenticatedVidaSimulationRunRecord(
+          authenticatedContext,
+          parsedParams.data.id
+        );
 
         if (!record) {
           return reply.status(404).send({

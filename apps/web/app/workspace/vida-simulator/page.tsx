@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -23,13 +24,39 @@ type VidaTransactionType =
   | "mixed"
   | "unknown";
 
+type VidaFindingSeverity = "info" | "warning" | "review_required";
+
+type VidaLegalConfidence =
+  | "educational_simulation"
+  | "professional_review_required";
+
 type VidaFinding = {
   code: string;
-  severity: string;
+  severity: VidaFindingSeverity;
   message: string;
-  legalConfidence: string;
+  legalConfidence: VidaLegalConfidence;
   sourceLabels: string[];
   fixSuggestion: string;
+};
+
+type VidaCountryContext = {
+  sellerInEu: boolean;
+  buyerInEu: boolean;
+  sameCountry: boolean;
+  crossBorderEu: boolean;
+};
+
+type VidaNormalizedInput = {
+  sellerCountryCode: string | null;
+  buyerCountryCode: string | null;
+  sellerVatId: string | null;
+  buyerVatId: string | null;
+  buyerType: VidaBuyerType;
+  transactionType: VidaTransactionType;
+  invoiceDate: string | null;
+  currency: string | null;
+  amount: string | null;
+  countryPackVersions: Record<string, string>;
 };
 
 type VidaSimulationResult = {
@@ -39,35 +66,21 @@ type VidaSimulationResult = {
   reason: string;
   effectiveDateContext: string;
   confidence: string;
-  legalConfidence: string;
-  countryContext: {
-    sellerInEu: boolean;
-    buyerInEu: boolean;
-    sameCountry: boolean;
-    crossBorderEu: boolean;
-  };
-  normalizedInput: {
-    sellerCountryCode: string | null;
-    buyerCountryCode: string | null;
-    sellerVatId: string | null;
-    buyerVatId: string | null;
-    buyerType: VidaBuyerType;
-    transactionType: VidaTransactionType;
-    invoiceDate: string | null;
-    currency: string | null;
-    amount: string | null;
-    countryPackVersions: Record<string, string>;
-  };
+  legalConfidence: VidaLegalConfidence;
+  countryContext: VidaCountryContext;
+  normalizedInput: VidaNormalizedInput;
   findings: VidaFinding[];
   recommendedNextActions: string[];
   disclaimer: string;
-  persisted?: boolean;
-  simulationRunId?: string | null;
+  persisted: boolean;
+  simulationRunId: string | null;
 };
+
+type VidaSimulationRunSource = "workspace" | "developer_api" | "system";
 
 type VidaSimulationRunSummary = {
   id: string;
-  source: string;
+  source: VidaSimulationRunSource;
   status: string;
   simulationVersion: string;
   sellerCountryCode: string | null;
@@ -76,12 +89,19 @@ type VidaSimulationRunSummary = {
   transactionType: string;
   transactionClass: string;
   vidaRelevance: string;
-  legalConfidence: string;
+  legalConfidence: VidaLegalConfidence;
+  invoiceDate: string | null;
+  currencyCode: string | null;
+  amountText: string | null;
+  countryPackVersions: Record<string, string>;
+  countryContext: VidaCountryContext;
+  normalizedInput: VidaNormalizedInput;
   findingCount: number;
   infoCount: number;
   warningCount: number;
   reviewRequiredCount: number;
   reason: string;
+  effectiveDateContext: string;
   disclaimer: string;
   createdAt: string;
   updatedAt: string;
@@ -97,6 +117,18 @@ type VidaSimulationForm = {
   invoiceDate: string;
   currency: string;
   amount: string;
+};
+
+const defaultVidaForm: VidaSimulationForm = {
+  sellerCountry: "DE",
+  buyerCountry: "HU",
+  sellerVatId: "DE123456789",
+  buyerVatId: "HU12345678",
+  buyerType: "business",
+  transactionType: "services",
+  invoiceDate: "2026-05-01",
+  currency: "EUR",
+  amount: "100.00"
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -191,6 +223,78 @@ function readStringArrayField(record: Record<string, unknown>, key: string) {
     .filter(Boolean);
 }
 
+function readStringRecordField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  if (!isPlainObject(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[0] === "string" && typeof entry[1] === "string"
+    )
+  );
+}
+
+function normalizeBuyerType(value: unknown): VidaBuyerType {
+  return value === "business" ||
+    value === "consumer" ||
+    value === "public_authority" ||
+    value === "unknown"
+    ? value
+    : "unknown";
+}
+
+function normalizeTransactionType(value: unknown): VidaTransactionType {
+  return value === "goods" ||
+    value === "services" ||
+    value === "digital_service" ||
+    value === "mixed" ||
+    value === "unknown"
+    ? value
+    : "unknown";
+}
+
+function normalizeFindingSeverity(value: unknown): VidaFindingSeverity {
+  return value === "warning" || value === "review_required" ? value : "info";
+}
+
+function normalizeLegalConfidence(value: unknown): VidaLegalConfidence {
+  return value === "professional_review_required"
+    ? "professional_review_required"
+    : "educational_simulation";
+}
+
+function normalizeCountryContext(value: unknown): VidaCountryContext {
+  const record = isPlainObject(value) ? value : {};
+
+  return {
+    sellerInEu: readBooleanField(record, "sellerInEu"),
+    buyerInEu: readBooleanField(record, "buyerInEu"),
+    sameCountry: readBooleanField(record, "sameCountry"),
+    crossBorderEu: readBooleanField(record, "crossBorderEu")
+  };
+}
+
+function normalizeNormalizedInput(value: unknown): VidaNormalizedInput {
+  const record = isPlainObject(value) ? value : {};
+
+  return {
+    sellerCountryCode: readNullableStringField(record, "sellerCountryCode"),
+    buyerCountryCode: readNullableStringField(record, "buyerCountryCode"),
+    sellerVatId: readNullableStringField(record, "sellerVatId"),
+    buyerVatId: readNullableStringField(record, "buyerVatId"),
+    buyerType: normalizeBuyerType(record.buyerType),
+    transactionType: normalizeTransactionType(record.transactionType),
+    invoiceDate: readNullableStringField(record, "invoiceDate"),
+    currency: readNullableStringField(record, "currency"),
+    amount: readNullableStringField(record, "amount"),
+    countryPackVersions: readStringRecordField(record, "countryPackVersions")
+  };
+}
+
 function normalizeFinding(value: unknown): VidaFinding | null {
   if (!isPlainObject(value)) {
     return null;
@@ -204,39 +308,26 @@ function normalizeFinding(value: unknown): VidaFinding | null {
 
   return {
     code,
-    severity: readStringField(value, "severity", "info"),
+    severity: normalizeFindingSeverity(value.severity),
     message: readStringField(value, "message"),
-    legalConfidence: readStringField(
-      value,
-      "legalConfidence",
-      "educational_simulation"
-    ),
+    legalConfidence: normalizeLegalConfidence(value.legalConfidence),
     sourceLabels: readStringArrayField(value, "sourceLabels"),
     fixSuggestion: readStringField(value, "fixSuggestion")
   };
+}
+
+function normalizeFindings(value: unknown) {
+  return Array.isArray(value)
+    ? value
+        .map((finding) => normalizeFinding(finding))
+        .filter((finding): finding is VidaFinding => finding !== null)
+    : [];
 }
 
 function normalizeVidaResult(value: unknown): VidaSimulationResult | null {
   if (!isPlainObject(value)) {
     return null;
   }
-
-  const countryContext = isPlainObject(value.countryContext)
-    ? value.countryContext
-    : {};
-  const normalizedInput = isPlainObject(value.normalizedInput)
-    ? value.normalizedInput
-    : {};
-  const countryPackVersions = isPlainObject(normalizedInput.countryPackVersions)
-    ? Object.fromEntries(
-        Object.entries(normalizedInput.countryPackVersions)
-          .filter(
-            (entry): entry is [string, string] =>
-              typeof entry[0] === "string" && typeof entry[1] === "string"
-          )
-          .map(([key, version]) => [key, version])
-      )
-    : {};
 
   return {
     simulationVersion: readStringField(
@@ -253,48 +344,10 @@ function normalizeVidaResult(value: unknown): VidaSimulationResult | null {
     reason: readStringField(value, "reason"),
     effectiveDateContext: readStringField(value, "effectiveDateContext"),
     confidence: readStringField(value, "confidence", "educational_simulation"),
-    legalConfidence: readStringField(
-      value,
-      "legalConfidence",
-      "educational_simulation"
-    ),
-    countryContext: {
-      sellerInEu: readBooleanField(countryContext, "sellerInEu"),
-      buyerInEu: readBooleanField(countryContext, "buyerInEu"),
-      sameCountry: readBooleanField(countryContext, "sameCountry"),
-      crossBorderEu: readBooleanField(countryContext, "crossBorderEu")
-    },
-    normalizedInput: {
-      sellerCountryCode: readNullableStringField(
-        normalizedInput,
-        "sellerCountryCode"
-      ),
-      buyerCountryCode: readNullableStringField(
-        normalizedInput,
-        "buyerCountryCode"
-      ),
-      sellerVatId: readNullableStringField(normalizedInput, "sellerVatId"),
-      buyerVatId: readNullableStringField(normalizedInput, "buyerVatId"),
-      buyerType: readStringField(
-        normalizedInput,
-        "buyerType",
-        "unknown"
-      ) as VidaBuyerType,
-      transactionType: readStringField(
-        normalizedInput,
-        "transactionType",
-        "unknown"
-      ) as VidaTransactionType,
-      invoiceDate: readNullableStringField(normalizedInput, "invoiceDate"),
-      currency: readNullableStringField(normalizedInput, "currency"),
-      amount: readNullableStringField(normalizedInput, "amount"),
-      countryPackVersions
-    },
-    findings: Array.isArray(value.findings)
-      ? value.findings
-          .map((finding) => normalizeFinding(finding))
-          .filter((finding): finding is VidaFinding => finding !== null)
-      : [],
+    legalConfidence: normalizeLegalConfidence(value.legalConfidence),
+    countryContext: normalizeCountryContext(value.countryContext),
+    normalizedInput: normalizeNormalizedInput(value.normalizedInput),
+    findings: normalizeFindings(value.findings),
     recommendedNextActions: readStringArrayField(
       value,
       "recommendedNextActions"
@@ -303,6 +356,10 @@ function normalizeVidaResult(value: unknown): VidaSimulationResult | null {
     persisted: value.persisted === true,
     simulationRunId: readNullableStringField(value, "simulationRunId")
   };
+}
+
+function normalizeRunSource(value: unknown): VidaSimulationRunSource {
+  return value === "developer_api" || value === "system" ? value : "workspace";
 }
 
 function normalizeVidaSimulationRunSummary(
@@ -321,7 +378,7 @@ function normalizeVidaSimulationRunSummary(
 
   return {
     id,
-    source: readStringField(value, "source", "workspace"),
+    source: normalizeRunSource(value.source),
     status: readStringField(value, "status", "completed"),
     simulationVersion: readStringField(value, "simulationVersion", "unknown"),
     sellerCountryCode: readNullableStringField(value, "sellerCountryCode"),
@@ -334,46 +391,22 @@ function normalizeVidaSimulationRunSummary(
       "insufficient_data"
     ),
     vidaRelevance: readStringField(value, "vidaRelevance", "review_required"),
-    legalConfidence: readStringField(
-      value,
-      "legalConfidence",
-      "educational_simulation"
-    ),
+    legalConfidence: normalizeLegalConfidence(value.legalConfidence),
+    invoiceDate: readNullableStringField(value, "invoiceDate"),
+    currencyCode: readNullableStringField(value, "currencyCode"),
+    amountText: readNullableStringField(value, "amountText"),
+    countryPackVersions: readStringRecordField(value, "countryPackVersions"),
+    countryContext: normalizeCountryContext(value.countryContext),
+    normalizedInput: normalizeNormalizedInput(value.normalizedInput),
     findingCount: readNumberField(value, "findingCount"),
     infoCount: readNumberField(value, "infoCount"),
     warningCount: readNumberField(value, "warningCount"),
     reviewRequiredCount: readNumberField(value, "reviewRequiredCount"),
     reason: readStringField(value, "reason"),
+    effectiveDateContext: readStringField(value, "effectiveDateContext"),
     disclaimer: readStringField(value, "disclaimer"),
     createdAt,
     updatedAt: readStringField(value, "updatedAt", createdAt)
-  };
-}
-
-function extractVidaResultFromRunDetail(value: unknown) {
-  if (!isPlainObject(value)) {
-    return null;
-  }
-
-  const record = isPlainObject(value.record) ? value.record : value;
-  const resultPayload = isPlainObject(record.resultPayload)
-    ? record.resultPayload
-    : null;
-
-  if (!resultPayload) {
-    return null;
-  }
-
-  const normalizedResult = normalizeVidaResult(resultPayload);
-
-  if (!normalizedResult) {
-    return null;
-  }
-
-  return {
-    ...normalizedResult,
-    persisted: true,
-    simulationRunId: readNullableStringField(record, "id")
   };
 }
 
@@ -403,10 +436,14 @@ function formatDateTime(value: string) {
   });
 }
 
+function formatNullable(value: string | null, fallback = "Not provided") {
+  return value && value.trim().length > 0 ? value : fallback;
+}
+
 function buildRequestBody(form: VidaSimulationForm) {
   const body: Record<string, unknown> = {
-    sellerCountry: form.sellerCountry,
-    buyerCountry: form.buyerCountry,
+    sellerCountry: form.sellerCountry.trim(),
+    buyerCountry: form.buyerCountry.trim(),
     buyerType: form.buyerType,
     transactionType: form.transactionType,
     persist: true
@@ -436,28 +473,18 @@ function buildRequestBody(form: VidaSimulationForm) {
 }
 
 export default function WorkspaceVidaSimulatorPage() {
-  const [form, setForm] = useState<VidaSimulationForm>({
-    sellerCountry: "DE",
-    buyerCountry: "HU",
-    sellerVatId: "DE123456789",
-    buyerVatId: "HU12345678",
-    buyerType: "business",
-    transactionType: "services",
-    invoiceDate: "2026-05-01",
-    currency: "EUR",
-    amount: "100.00"
-  });
+  const [form, setForm] = useState<VidaSimulationForm>(defaultVidaForm);
   const [simulationResult, setSimulationResult] =
     useState<VidaSimulationResult | null>(null);
-  const [simulationRunId, setSimulationRunId] = useState("");
   const [simulationHistory, setSimulationHistory] = useState<
     VidaSimulationRunSummary[]
   >([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
-  const [openingRunId, setOpeningRunId] = useState("");
   const [simulationMessage, setSimulationMessage] = useState("");
   const [historyMessage, setHistoryMessage] = useState("");
+
+  const simulationRunId = simulationResult?.simulationRunId ?? "";
 
   const findingCounts = useMemo(() => {
     const counts = {
@@ -479,7 +506,7 @@ export default function WorkspaceVidaSimulatorPage() {
     return counts;
   }, [simulationResult]);
 
-  async function loadSimulationHistory() {
+  const loadSimulationHistory = useCallback(async () => {
     setIsHistoryLoading(true);
     setHistoryMessage("");
 
@@ -524,55 +551,11 @@ export default function WorkspaceVidaSimulatorPage() {
     } finally {
       setIsHistoryLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void loadSimulationHistory();
-  }, []);
-
-  async function openSimulationRun(runId: string) {
-    setOpeningRunId(runId);
-    setSimulationMessage("");
-
-    try {
-      const response = await fetch(
-        `/api/local/transactions/vida-simulations/${encodeURIComponent(runId)}`,
-        {
-          method: "GET",
-          cache: "no-store"
-        }
-      );
-      const responseData = await readResponseBody(response);
-
-      if (!response.ok) {
-        setSimulationMessage(
-          getApiErrorMessage(
-            responseData,
-            "Could not open the saved ViDA simulation run."
-          )
-        );
-        return;
-      }
-
-      const normalizedResult = extractVidaResultFromRunDetail(responseData);
-
-      if (!normalizedResult) {
-        setSimulationMessage(
-          "The saved ViDA simulation run returned an unreadable response shape."
-        );
-        return;
-      }
-
-      setSimulationResult(normalizedResult);
-      setSimulationRunId(runId);
-    } catch {
-      setSimulationMessage(
-        "The saved ViDA simulation run could not be opened. Make sure apps/api and apps/web are both running."
-      );
-    } finally {
-      setOpeningRunId("");
-    }
-  }
+  }, [loadSimulationHistory]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -593,7 +576,6 @@ export default function WorkspaceVidaSimulatorPage() {
 
       if (!response.ok) {
         setSimulationResult(null);
-        setSimulationRunId("");
         setSimulationMessage(
           getApiErrorMessage(
             responseData,
@@ -607,29 +589,24 @@ export default function WorkspaceVidaSimulatorPage() {
 
       if (!normalizedResult) {
         setSimulationResult(null);
-        setSimulationRunId("");
         setSimulationMessage(
           "The ViDA simulator returned an unreadable response shape."
         );
         return;
       }
 
-      const persistedRunId =
-        normalizedResult.simulationRunId ??
-        (isPlainObject(responseData)
-          ? readNullableStringField(responseData, "simulationRunId")
-          : null);
-
       setSimulationResult(normalizedResult);
-      setSimulationRunId(persistedRunId ?? "");
 
-      if (normalizedResult.persisted || persistedRunId) {
+      if (normalizedResult.persisted && normalizedResult.simulationRunId) {
         setSimulationMessage("Simulation saved to workspace history.");
         void loadSimulationHistory();
+      } else {
+        setSimulationMessage(
+          "Simulation completed, but no workspace history record was saved."
+        );
       }
     } catch {
       setSimulationResult(null);
-      setSimulationRunId("");
       setSimulationMessage(
         "The local ViDA simulator API is unavailable. Make sure apps/api and apps/web are both running."
       );
@@ -920,6 +897,19 @@ export default function WorkspaceVidaSimulatorPage() {
                       This result is linked to workspace simulation run{" "}
                       {simulationRunId}.
                     </p>
+                    <p>
+                      This is an internal workspace evidence record, not filing
+                      evidence or official authority confirmation.
+                    </p>
+                    <Link
+                      href={`/workspace/vida-simulator/${encodeURIComponent(
+                        simulationRunId
+                      )}`}
+                      className="text-link-button"
+                    >
+                      <Eye size={16} />
+                      Open saved run detail
+                    </Link>
                   </div>
 
                   <span>saved</span>
@@ -953,6 +943,44 @@ export default function WorkspaceVidaSimulatorPage() {
                 <BookOpenCheck size={18} />
 
                 <div>
+                  <strong>VIDA_NORMALIZED_INPUT</strong>
+                  <p>
+                    Seller:{" "}
+                    {formatNullable(
+                      simulationResult.normalizedInput.sellerCountryCode,
+                      "Unknown"
+                    )}{" "}
+                    · Buyer:{" "}
+                    {formatNullable(
+                      simulationResult.normalizedInput.buyerCountryCode,
+                      "Unknown"
+                    )}{" "}
+                    · Buyer type:{" "}
+                    {formatStatus(simulationResult.normalizedInput.buyerType)} ·
+                    Transaction:{" "}
+                    {formatStatus(
+                      simulationResult.normalizedInput.transactionType
+                    )}
+                  </p>
+                  <p>
+                    Invoice date:{" "}
+                    {formatNullable(
+                      simulationResult.normalizedInput.invoiceDate
+                    )}
+                    . Currency:{" "}
+                    {formatNullable(simulationResult.normalizedInput.currency)}
+                    . Amount:{" "}
+                    {formatNullable(simulationResult.normalizedInput.amount)}.
+                  </p>
+                </div>
+
+                <span>normalized</span>
+              </div>
+
+              <div className="finding-console-row">
+                <BookOpenCheck size={18} />
+
+                <div>
                   <strong>VIDA_EFFECTIVE_DATE_CONTEXT</strong>
                   <p>{simulationResult.effectiveDateContext}</p>
                   <p>{simulationResult.disclaimer}</p>
@@ -961,8 +989,11 @@ export default function WorkspaceVidaSimulatorPage() {
                 <span>context</span>
               </div>
 
-              {simulationResult.findings.map((finding) => (
-                <div className="finding-console-row" key={finding.code}>
+              {simulationResult.findings.map((finding, index) => (
+                <div
+                  className="finding-console-row"
+                  key={`${finding.code}-${index}`}
+                >
                   <AlertTriangle size={18} />
 
                   <div>
@@ -977,15 +1008,20 @@ export default function WorkspaceVidaSimulatorPage() {
                         : "No source label"}
                       .
                     </p>
-                    <p>Fix suggestion: {finding.fixSuggestion}</p>
+                    {finding.fixSuggestion ? (
+                      <p>Fix suggestion: {finding.fixSuggestion}</p>
+                    ) : null}
                   </div>
 
                   <span>{finding.severity}</span>
                 </div>
               ))}
 
-              {simulationResult.recommendedNextActions.map((action) => (
-                <div className="finding-console-row" key={action}>
+              {simulationResult.recommendedNextActions.map((action, index) => (
+                <div
+                  className="finding-console-row"
+                  key={`recommended-action-${index}`}
+                >
                   <BookOpenCheck size={18} />
 
                   <div>
@@ -1074,15 +1110,15 @@ export default function WorkspaceVidaSimulatorPage() {
 
                 <span>{formatDateTime(run.createdAt)}</span>
 
-                <button
-                  type="button"
+                <Link
+                  href={`/workspace/vida-simulator/${encodeURIComponent(
+                    run.id
+                  )}`}
                   className="text-link-button"
-                  disabled={openingRunId === run.id}
-                  onClick={() => void openSimulationRun(run.id)}
                 >
                   <Eye size={16} />
-                  {openingRunId === run.id ? "Opening" : "Open"}
-                </button>
+                  Open
+                </Link>
               </div>
             ))
           )}

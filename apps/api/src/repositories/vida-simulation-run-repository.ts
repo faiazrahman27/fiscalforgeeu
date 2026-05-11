@@ -148,8 +148,12 @@ const MAX_STORED_VIDA_SIMULATION_RUNS = 250;
 const DEFAULT_RUN_LIMIT = 25;
 const MAX_RUN_LIMIT = 100;
 const LOCAL_ORGANIZATION_ID = "local";
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const VIDA_SIMULATION_RUN_ID_PATTERN =
+  /^(vida_sim_)?[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const VIDA_SIMULATION_RUN_SELECT_FIELDS =
   "id, organization_id, created_by, api_key_id, invoice_draft_id, validation_run_id, source, status, simulation_version, seller_country_code, buyer_country_code, buyer_type, transaction_type, transaction_class, vida_relevance, legal_confidence, invoice_date, currency_code, amount_text, country_pack_versions, input_payload, normalized_input, country_context, result_payload, findings, source_labels, recommended_next_actions, finding_count, info_count, warning_count, review_required_count, reason, effective_date_context, disclaimer, error_code, error_message, request_metadata, created_at, updated_at";
@@ -414,6 +418,10 @@ function collectSourceLabels(findings: VidaReadinessFinding[]) {
   }
 
   return [...labels].sort((first, second) => first.localeCompare(second));
+}
+
+function isValidVidaSimulationRunId(value: string) {
+  return VIDA_SIMULATION_RUN_ID_PATTERN.test(value);
 }
 
 function normalizeSupabaseVidaSimulationRunRow(
@@ -691,9 +699,7 @@ async function recordWorkspaceActivityEvent(
      * Activity logging must not break ViDA simulation persistence.
      * The vida_simulation_runs row remains the authoritative audit record.
      */
-    console.warn(
-      `Workspace activity event was not recorded: ${error.message}`
-    );
+    console.warn(`Workspace activity event was not recorded: ${error.message}`);
   }
 }
 
@@ -885,7 +891,9 @@ export async function getAuthenticatedVidaSimulationRunRecord(
   context: AuthenticatedVidaSimulationRunContext,
   id: string
 ) {
-  if (!UUID_PATTERN.test(id)) {
+  const simulationRunId = id.trim();
+
+  if (!isValidVidaSimulationRunId(simulationRunId)) {
     return null;
   }
 
@@ -896,7 +904,7 @@ export async function getAuthenticatedVidaSimulationRunRecord(
     .from("vida_simulation_runs")
     .select(VIDA_SIMULATION_RUN_SELECT_FIELDS)
     .eq("organization_id", workspace.organizationId)
-    .eq("id", id)
+    .eq("id", simulationRunId)
     .maybeSingle();
 
   if (error) {
