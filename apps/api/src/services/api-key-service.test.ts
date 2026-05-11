@@ -699,7 +699,7 @@ test("API key management routes create list and revoke with safe response fields
   assert.equal(JSON.stringify(revokeResponse.body).includes("keyHash"), false);
 });
 
-test("API key management routes preserve owner or admin authorization", async () => {
+test("API key management routes preserve owner, admin, or developer authorization", async () => {
   repository.membershipRole = "member";
 
   const listResponse = await callApiKeyRoute({
@@ -1437,7 +1437,7 @@ test("API request summary and current usage return zero defaults with no logs", 
   assert.equal(JSON.stringify(currentUsageBody).includes("keyHash"), false);
 });
 
-test("API request routes follow existing owner or admin visibility rules", async () => {
+test("API request routes follow owner, admin, or developer visibility rules", async () => {
   repository.membershipRole = "member";
 
   const response = await callApiRequestRoute("/", {});

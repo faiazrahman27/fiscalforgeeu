@@ -360,7 +360,7 @@ const openApiDocument = {
         tags: ["Authentication / API Keys"],
         summary: "List organization API keys",
         description:
-          "Lists safe API key metadata for the signed-in workspace. Requires an organization owner or admin. Full API keys and key hashes are never returned.",
+          "Lists safe API key metadata for the signed-in workspace. Requires an organization owner, admin, or developer role. Full API keys and key hashes are never returned.",
         responses: {
           "200": response("Safe API key metadata.", {
             type: "object",
@@ -378,7 +378,7 @@ const openApiDocument = {
         tags: ["Authentication / API Keys"],
         summary: "Create an organization API key",
         description:
-          "Creates a scoped organization API key for sandbox developer endpoints. Requires an organization owner or admin. The secret is returned once only; Invoice Lantern stores only hashed key material.",
+          "Creates a scoped organization API key for sandbox developer endpoints. Requires an organization owner, admin, or developer role. The secret is returned once only; Invoice Lantern stores only hashed key material.",
         requestBody: {
           required: true,
           content: jsonContent(ref("CreateApiKeyRequest"), {
@@ -419,7 +419,7 @@ const openApiDocument = {
         tags: ["Authentication / API Keys"],
         summary: "Revoke an organization API key",
         description:
-          "Revokes an organization API key for the signed-in workspace. Requires an organization owner or admin.",
+          "Revokes an organization API key for the signed-in workspace. Requires an organization owner, admin, or developer role.",
         parameters: [
           {
             name: "id",
@@ -447,7 +447,7 @@ const openApiDocument = {
         tags: ["Usage and Rate Limits"],
         summary: "List API request metadata",
         description:
-          "Lists safe API request log metadata for the signed-in workspace. Requires an organization owner or admin. Request bodies, XML payloads, full API keys, full VAT IDs, and key hashes are not returned.",
+          "Lists safe API request log metadata for the signed-in workspace. Requires an organization owner, admin, or developer role. Request bodies, XML payloads, full API keys, full VAT IDs, and key hashes are not returned.",
         parameters: [
           {
             name: "apiKeyId",
@@ -508,7 +508,7 @@ const openApiDocument = {
         tags: ["Usage and Rate Limits"],
         summary: "Get API usage summary",
         description:
-          "Returns a safe usage summary for the signed-in workspace over a recent day window. Requires an organization owner or admin.",
+          "Returns a safe usage summary for the signed-in workspace over a recent day window. Requires an organization owner, admin, or developer role.",
         parameters: [
           {
             name: "apiKeyId",
