@@ -31,6 +31,8 @@ declare module "fastify" {
   }
 }
 
+const EMPTY_API_KEY_SCOPES: readonly ApiKeyScope[] = [];
+
 function safeCompare(left: string, right: string) {
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);
@@ -40,6 +42,14 @@ function safeCompare(left: string, right: string) {
   }
 
   return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isDevelopmentApiKeyEnabled() {
+  return env.APP_ENV !== "production" && env.DEV_API_KEY.trim().length > 0;
+}
+
+function isValidDevelopmentApiKey(rawApiKey: string) {
+  return isDevelopmentApiKeyEnabled() && safeCompare(rawApiKey, env.DEV_API_KEY);
 }
 
 function readBearerToken(request: FastifyRequest) {
@@ -104,27 +114,6 @@ function sendAuthenticationError(
   });
 }
 
-function authenticateWithDevApiKey(
-  request: FastifyRequest,
-  reply: FastifyReply
-) {
-  const rawApiKey = readXApiKey(request);
-
-  if (!rawApiKey) {
-    return sendUnauthorized(
-      reply,
-      "API_KEY_REQUIRED",
-      "Missing x-api-key header."
-    );
-  }
-
-  if (!safeCompare(rawApiKey, env.DEV_API_KEY)) {
-    return sendUnauthorized(reply, "API_KEY_INVALID", "Invalid API key.");
-  }
-
-  request.authenticationMode = "dev_api_key";
-}
-
 async function authenticateWithOrganizationApiKey(
   rawApiKey: string,
   requiredScopes: readonly ApiKeyScope[],
@@ -169,6 +158,39 @@ async function authenticateWithOrganizationApiKey(
   request.apiKeyRequestStartedAt = Date.now();
 }
 
+async function authenticateWithApiKeyValue(
+  rawApiKey: string,
+  requiredScopes: readonly ApiKeyScope[],
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  if (!rawApiKey) {
+    return sendUnauthorized(
+      reply,
+      "API_KEY_REQUIRED",
+      "Missing x-api-key header."
+    );
+  }
+
+  /*
+   * Development API keys are explicitly disabled in production.
+   * Production API-key access must go through database-backed organization
+   * API keys so hashing, scoping, revocation, rate limits, and request logs
+   * remain enforceable.
+   */
+  if (isValidDevelopmentApiKey(rawApiKey)) {
+    request.authenticationMode = "dev_api_key";
+    return;
+  }
+
+  return authenticateWithOrganizationApiKey(
+    rawApiKey,
+    requiredScopes,
+    request,
+    reply
+  );
+}
+
 async function authenticateWithSupabaseBearerToken(
   token: string,
   request: FastifyRequest,
@@ -205,20 +227,45 @@ export async function requireApiKey(
   reply: FastifyReply
 ) {
   const bearerToken = readBearerToken(request);
+  const xApiKey = readXApiKey(request);
 
   /*
-   * During the current transition phase, the web proxy sends both:
-   * - x-api-key for the existing local API flow
-   * - Authorization: Bearer <token> when the user is signed in
-   *
-   * If the API does not have Supabase auth config yet, ignore the bearer token
-   * and preserve the working development API-key flow.
+   * Signed-in workspace requests should resolve as Supabase-user requests when
+   * Supabase auth is configured. The local web proxy may also send x-api-key;
+   * bearer auth is intentionally preferred so RLS-backed repositories can run
+   * as the authenticated user.
    */
-  if (bearerToken && hasSupabaseJwtConfig()) {
+  if (
+    bearerToken &&
+    !looksLikeInvoiceLanternApiKey(bearerToken) &&
+    hasSupabaseJwtConfig()
+  ) {
     return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
   }
 
-  return authenticateWithDevApiKey(request, reply);
+  if (xApiKey) {
+    return authenticateWithApiKeyValue(
+      xApiKey,
+      EMPTY_API_KEY_SCOPES,
+      request,
+      reply
+    );
+  }
+
+  if (bearerToken && looksLikeInvoiceLanternApiKey(bearerToken)) {
+    return authenticateWithOrganizationApiKey(
+      bearerToken,
+      EMPTY_API_KEY_SCOPES,
+      request,
+      reply
+    );
+  }
+
+  return sendUnauthorized(
+    reply,
+    "API_KEY_REQUIRED",
+    "Missing x-api-key header."
+  );
 }
 
 export function requireApiKeyScopes(requiredScopes: readonly ApiKeyScope[]) {
@@ -235,12 +282,7 @@ export function requireApiKeyScopes(requiredScopes: readonly ApiKeyScope[]) {
     }
 
     if (xApiKey) {
-      if (safeCompare(xApiKey, env.DEV_API_KEY)) {
-        request.authenticationMode = "dev_api_key";
-        return;
-      }
-
-      return authenticateWithOrganizationApiKey(
+      return authenticateWithApiKeyValue(
         xApiKey,
         requiredScopes,
         request,

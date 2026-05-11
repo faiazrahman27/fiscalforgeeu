@@ -1,3 +1,5 @@
+// apps/api/src/repositories/api-key-repository.ts
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   getSupabaseServiceRoleClient,
@@ -5,16 +7,16 @@ import {
 } from "../lib/supabase/server-client.js";
 import type {
   ApiKeyEnvironment,
-  ApiRequestMetadata,
-  ApiUsageSummary,
-  GetApiUsageSummaryInput,
-  ApiKeyRecord,
   ApiKeyMetadata,
+  ApiKeyRecord,
   ApiKeyScope,
   ApiKeyStatus,
-  ListApiRequestsInput,
   ApiKeyWorkspace,
+  ApiRequestMetadata,
+  ApiUsageSummary,
   CountRecentApiRequestsInput,
+  GetApiUsageSummaryInput,
+  ListApiRequestsInput,
   RecentApiRequestWindow,
   RecordApiRequestInput
 } from "../services/api-key-service.js";
@@ -131,6 +133,30 @@ const API_KEY_METADATA_SELECT_FIELDS =
 const API_REQUEST_SELECT_FIELDS =
   "id, organization_id, api_key_id, request_method, request_path, status_code, duration_ms, ip_address, user_agent, error_code, created_at, api_keys(name, key_prefix)";
 
+const SUPPORTED_API_KEY_SCOPES: readonly ApiKeyScope[] = [
+  "invoices:validate",
+  "invoices:export_ubl",
+  "invoices:parse_ubl",
+  "invoices:import_ubl",
+  "xml:validation_jobs",
+  "vat:validate_format",
+  "transactions:simulate_vida",
+  "validation_runs:read",
+  "rules:read"
+];
+
+const DEFAULT_API_REQUEST_LIMIT = 50;
+const MAX_API_REQUEST_LIMIT = 200;
+const DEFAULT_API_USAGE_LOOKBACK_DAYS = 30;
+const MAX_API_USAGE_LOOKBACK_DAYS = 365;
+const API_USAGE_PAGE_SIZE = 1000;
+const MAX_API_USAGE_ROWS = 50_000;
+const MAX_TEXT_FIELD_LENGTH = 512;
+const MAX_USER_AGENT_LENGTH = 512;
+const MAX_IP_ADDRESS_LENGTH = 80;
+const MAX_ERROR_CODE_LENGTH = 120;
+const MAX_PATH_PREFIX_LENGTH = 240;
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -190,27 +216,81 @@ function normalizeScopes(value: unknown): ApiKeyScope[] {
     return [];
   }
 
-  return value
-    .filter((scope): scope is ApiKeyScope => typeof scope === "string")
-    .map((scope) => scope.trim())
-    .filter((scope): scope is ApiKeyScope =>
-      [
-        "invoices:validate",
-        "invoices:export_ubl",
-        "invoices:parse_ubl",
-        "invoices:import_ubl",
-        "xml:validation_jobs",
-        "vat:validate_format",
-        "validation_runs:read",
-        "rules:read"
-      ].includes(scope)
-    );
+  const normalizedScopes: ApiKeyScope[] = [];
+
+  for (const rawScope of value) {
+    if (typeof rawScope !== "string") {
+      continue;
+    }
+
+    const scope = rawScope.trim() as ApiKeyScope;
+
+    if (
+      SUPPORTED_API_KEY_SCOPES.includes(scope) &&
+      !normalizedScopes.includes(scope)
+    ) {
+      normalizedScopes.push(scope);
+    }
+  }
+
+  return normalizedScopes;
 }
 
 function normalizeNullableString(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : null;
+}
+
+function normalizeLimitedNullableString(
+  value: string | null | undefined,
+  maxLength: number
+) {
+  const normalizedValue = normalizeNullableString(value);
+
+  return normalizedValue ? normalizedValue.slice(0, maxLength) : null;
+}
+
+function normalizeTextField(value: string, fallback: string) {
+  const normalizedValue = value.trim();
+
+  return normalizedValue.length > 0
+    ? normalizedValue.slice(0, MAX_TEXT_FIELD_LENGTH)
+    : fallback;
+}
+
+function normalizeApiRequestLimit(value: number | undefined) {
+  if (!Number.isInteger(value) || !value) {
+    return DEFAULT_API_REQUEST_LIMIT;
+  }
+
+  return Math.min(Math.max(value, 1), MAX_API_REQUEST_LIMIT);
+}
+
+function normalizeApiUsageLookbackDays(value: number | undefined) {
+  if (!Number.isInteger(value) || !value) {
+    return DEFAULT_API_USAGE_LOOKBACK_DAYS;
+  }
+
+  return Math.min(Math.max(value, 1), MAX_API_USAGE_LOOKBACK_DAYS);
+}
+
+function normalizePathPrefix(value: string | undefined) {
+  const normalizedValue = value?.trim() ?? "";
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  if (
+    normalizedValue.includes("%") ||
+    normalizedValue.includes("_") ||
+    normalizedValue.includes("*")
+  ) {
+    throw new Error("API request path prefix must not contain wildcard characters.");
+  }
+
+  return normalizedValue.slice(0, MAX_PATH_PREFIX_LENGTH);
 }
 
 function normalizeApiKeyRow(row: SupabaseApiKeyRow): ApiKeyRecord {
@@ -362,9 +442,7 @@ function createServiceRoleClient() {
   return getSupabaseServiceRoleClient();
 }
 
-function createAuthenticatedSupabaseClient(input: {
-  accessToken: string;
-}) {
+function createAuthenticatedSupabaseClient(input: { accessToken: string }) {
   return getSupabaseUserClient(input.accessToken);
 }
 
@@ -388,6 +466,12 @@ async function getWorkspaceForUser(
   supabase: SupabaseClient,
   userId: string
 ) {
+  const normalizedUserId = userId.trim();
+
+  if (!normalizedUserId) {
+    throw new Error("Authenticated user ID is required.");
+  }
+
   const { data, error } = await supabase.rpc("bootstrap_personal_workspace");
 
   if (error) {
@@ -399,10 +483,6 @@ async function getWorkspaceForUser(
 
   if (!workspace) {
     throw new Error("Workspace bootstrap returned an unreadable record.");
-  }
-
-  if (!userId) {
-    throw new Error("Authenticated user ID is required.");
   }
 
   return workspace;
@@ -423,9 +503,29 @@ function buildInsertValues(input: CreateApiKeyRecordInput) {
 }
 
 function getSafeIpAddress(value: string | null) {
-  const trimmedValue = value?.trim() ?? "";
+  return normalizeLimitedNullableString(value, MAX_IP_ADDRESS_LENGTH);
+}
 
-  return trimmedValue.length > 0 ? trimmedValue : null;
+function buildApiRequestInsertValues(input: RecordApiRequestInput) {
+  return {
+    organization_id: input.organizationId,
+    api_key_id: input.apiKeyId,
+    request_method: normalizeTextField(input.requestMethod, "UNKNOWN")
+      .toUpperCase()
+      .slice(0, 16),
+    request_path: normalizeTextField(input.requestPath, "unknown"),
+    status_code: input.statusCode,
+    duration_ms: input.durationMs,
+    ip_address: getSafeIpAddress(input.ipAddress),
+    user_agent: normalizeLimitedNullableString(
+      input.userAgent,
+      MAX_USER_AGENT_LENGTH
+    ),
+    error_code: normalizeLimitedNullableString(
+      input.errorCode ?? null,
+      MAX_ERROR_CODE_LENGTH
+    )
+  };
 }
 
 export const supabaseApiKeyRepository: ApiKeyRepository = {
@@ -547,23 +647,17 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
       .eq("id", input.apiKeyId);
 
     if (error) {
-      throw new Error(`Could not update API key last-used metadata: ${error.message}`);
+      throw new Error(
+        `Could not update API key last-used metadata: ${error.message}`
+      );
     }
   },
 
   async recordApiRequest(input) {
     const supabase = createServiceRoleClient();
-    const { error } = await supabase.from("api_requests").insert({
-      organization_id: input.organizationId,
-      api_key_id: input.apiKeyId,
-      request_method: input.requestMethod,
-      request_path: input.requestPath,
-      status_code: input.statusCode,
-      duration_ms: input.durationMs,
-      ip_address: getSafeIpAddress(input.ipAddress),
-      user_agent: input.userAgent,
-      error_code: input.errorCode ?? null
-    });
+    const { error } = await supabase
+      .from("api_requests")
+      .insert(buildApiRequestInsertValues(input));
 
     if (error) {
       throw new Error(`Could not record API request: ${error.message}`);
@@ -574,6 +668,8 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
     const supabase = createClientForAuthenticatedOrServiceRole({
       accessToken: input.accessToken
     });
+    const pathPrefix = normalizePathPrefix(input.pathPrefix);
+
     let query = supabase
       .from("api_requests")
       .select("created_at", {
@@ -590,8 +686,8 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
       query = query.eq("api_key_id", input.apiKeyId);
     }
 
-    if (input.pathPrefix) {
-      query = query.like("request_path", `${input.pathPrefix}%`);
+    if (pathPrefix) {
+      query = query.like("request_path", `${pathPrefix}%`);
     }
 
     const { data, error, count } = await query;
@@ -617,6 +713,8 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
     const supabase = createClientForAuthenticatedOrServiceRole({
       accessToken: input.accessToken
     });
+    const pathPrefix = normalizePathPrefix(input.pathPrefix);
+
     let query = supabase
       .from("api_requests")
       .select(API_REQUEST_SELECT_FIELDS)
@@ -624,7 +722,7 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
       .order("created_at", {
         ascending: false
       })
-      .limit(input.limit ?? 50);
+      .limit(normalizeApiRequestLimit(input.limit));
 
     if (input.apiKeyId) {
       query = query.eq("api_key_id", input.apiKeyId);
@@ -634,8 +732,8 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
       query = query.eq("status_code", input.statusCode);
     }
 
-    if (input.pathPrefix) {
-      query = query.like("request_path", `${input.pathPrefix}%`);
+    if (pathPrefix) {
+      query = query.like("request_path", `${pathPrefix}%`);
     }
 
     const { data, error } = await query;
@@ -653,12 +751,11 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
     const supabase = createClientForAuthenticatedOrServiceRole({
       accessToken: input.accessToken
     });
-    const sinceDays = input.sinceDays ?? 30;
+    const sinceDays = normalizeApiUsageLookbackDays(input.sinceDays);
     const sinceIso = new Date(
       Date.now() - sinceDays * 24 * 60 * 60 * 1000
     ).toISOString();
     const rows: SupabaseApiRequestSummaryRow[] = [];
-    const pageSize = 1000;
     let offset = 0;
 
     for (;;) {
@@ -670,7 +767,7 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
         .order("created_at", {
           ascending: false
         })
-        .range(offset, offset + pageSize - 1);
+        .range(offset, offset + API_USAGE_PAGE_SIZE - 1);
 
       if (input.apiKeyId) {
         query = query.eq("api_key_id", input.apiKeyId);
@@ -686,11 +783,11 @@ export const supabaseApiKeyRepository: ApiKeyRepository = {
 
       rows.push(...page);
 
-      if (page.length < pageSize) {
+      if (page.length < API_USAGE_PAGE_SIZE || rows.length >= MAX_API_USAGE_ROWS) {
         break;
       }
 
-      offset += pageSize;
+      offset += API_USAGE_PAGE_SIZE;
     }
 
     return buildApiUsageSummary(rows);

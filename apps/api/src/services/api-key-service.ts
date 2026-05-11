@@ -1,8 +1,4 @@
-import {
-  createHmac,
-  randomBytes,
-  timingSafeEqual
-} from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { env } from "../config/env.js";
 import {
   supabaseApiKeyRepository,
@@ -166,6 +162,15 @@ export class ApiKeyServiceError extends Error {
   }
 }
 
+const API_KEY_PREFIX_PATTERN = /^il_(test|live)_[A-Za-z0-9_-]{6,40}$/;
+const API_KEY_PATTERN =
+  /^il_(test|live)_[A-Za-z0-9_-]{6,40}\.[A-Za-z0-9_-]{24,}$/;
+const API_KEY_HASH_PATTERN = /^[a-f0-9]{64}$/;
+const API_KEY_PREFIX_RANDOM_BYTES = 8;
+const API_KEY_SECRET_RANDOM_BYTES = 32;
+const MAX_API_KEY_NAME_LENGTH = 120;
+const DEFAULT_API_REQUEST_LIMIT = 50;
+
 function toWorkspaceContextError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
 
@@ -224,10 +229,22 @@ export function normalizeApiKeyScopes(scopes: readonly string[]) {
   return normalizedScopes;
 }
 
+function normalizeApiKeyScopesForCreate(scopes: readonly string[]) {
+  const normalizedScopes = normalizeApiKeyScopes(scopes);
+
+  if (normalizedScopes.length === 0) {
+    throw new ApiKeyServiceError(
+      "API_KEY_SCOPE_REQUIRED",
+      "Select at least one API key scope.",
+      400
+    );
+  }
+
+  return normalizedScopes;
+}
+
 export function looksLikeInvoiceLanternApiKey(value: string) {
-  return /^il_(test|live)_[A-Za-z0-9_-]{6,40}\.[A-Za-z0-9_-]{24,}$/.test(
-    value.trim()
-  );
+  return API_KEY_PATTERN.test(value.trim());
 }
 
 export function getApiKeyPrefix(rawKey: string) {
@@ -240,7 +257,7 @@ export function getApiKeyPrefix(rawKey: string) {
 
   const prefix = trimmedKey.slice(0, separatorIndex);
 
-  return /^il_(test|live)_[A-Za-z0-9_-]{6,40}$/.test(prefix) ? prefix : "";
+  return API_KEY_PREFIX_PATTERN.test(prefix) ? prefix : "";
 }
 
 function getApiKeyHashSecret() {
@@ -268,7 +285,7 @@ export function hashApiKey(rawKey: string) {
 }
 
 function hashMatches(leftHash: string, rightHash: string) {
-  if (!/^[a-f0-9]{64}$/.test(leftHash) || !/^[a-f0-9]{64}$/.test(rightHash)) {
+  if (!API_KEY_HASH_PATTERN.test(leftHash) || !API_KEY_HASH_PATTERN.test(rightHash)) {
     return false;
   }
 
@@ -286,11 +303,11 @@ function generateToken(bytes: number) {
 }
 
 function buildKeyPrefix(environment: ApiKeyEnvironment) {
-  return `il_${environment}_${generateToken(8)}`;
+  return `il_${environment}_${generateToken(API_KEY_PREFIX_RANDOM_BYTES)}`;
 }
 
 function buildSecret(prefix: string) {
-  return `${prefix}.${generateToken(32)}`;
+  return `${prefix}.${generateToken(API_KEY_SECRET_RANDOM_BYTES)}`;
 }
 
 function isExpired(apiKey: Pick<ApiKeyMetadata, "expiresAt">) {
@@ -301,6 +318,57 @@ function isExpired(apiKey: Pick<ApiKeyMetadata, "expiresAt">) {
   const expiryTime = new Date(apiKey.expiresAt).getTime();
 
   return Number.isFinite(expiryTime) && expiryTime <= Date.now();
+}
+
+function normalizeOrganizationId(organizationId: string) {
+  const normalizedOrganizationId = organizationId.trim();
+
+  if (!normalizedOrganizationId) {
+    throw new ApiKeyServiceError(
+      "ORGANIZATION_ID_REQUIRED",
+      "Organization ID is required.",
+      400
+    );
+  }
+
+  return normalizedOrganizationId;
+}
+
+function normalizeApiKeyName(name: string) {
+  const normalizedName = name.trim();
+
+  if (
+    normalizedName.length < 1 ||
+    normalizedName.length > MAX_API_KEY_NAME_LENGTH
+  ) {
+    throw new ApiKeyServiceError(
+      "API_KEY_NAME_INVALID",
+      `API key name must be between 1 and ${MAX_API_KEY_NAME_LENGTH} characters.`,
+      400
+    );
+  }
+
+  return normalizedName;
+}
+
+function normalizeExpiresAt(value: string | null | undefined) {
+  const normalizedValue = value?.trim() ?? "";
+
+  if (!normalizedValue) {
+    return null;
+  }
+
+  const expiryTime = new Date(normalizedValue).getTime();
+
+  if (!Number.isFinite(expiryTime)) {
+    throw new ApiKeyServiceError(
+      "API_KEY_EXPIRY_INVALID",
+      "API key expiry must be a valid date-time string.",
+      400
+    );
+  }
+
+  return new Date(expiryTime).toISOString();
 }
 
 function toEffectiveMetadata(record: ApiKeyRecord): ApiKeyMetadata {
@@ -332,29 +400,22 @@ export async function getApiKeyWorkspaceForUser(input: {
 }
 
 export async function createApiKey(input: CreateApiKeyInput) {
-  const normalizedName = input.name.trim();
-
-  if (normalizedName.length < 1 || normalizedName.length > 120) {
-    throw new ApiKeyServiceError(
-      "API_KEY_NAME_INVALID",
-      "API key name must be between 1 and 120 characters.",
-      400
-    );
-  }
-
-  const scopes = normalizeApiKeyScopes(input.scopes);
+  const organizationId = normalizeOrganizationId(input.organizationId);
+  const normalizedName = normalizeApiKeyName(input.name);
+  const scopes = normalizeApiKeyScopesForCreate(input.scopes);
+  const expiresAt = normalizeExpiresAt(input.expiresAt);
   const keyPrefix = buildKeyPrefix(input.environment);
   const secret = buildSecret(keyPrefix);
   const keyHash = hashApiKey(secret);
 
   const record = await getRepository().createApiKeyRecord({
-    organizationId: input.organizationId,
+    organizationId,
     name: normalizedName,
     keyPrefix,
     keyHash,
     environment: input.environment,
     scopes,
-    expiresAt: input.expiresAt ?? null,
+    expiresAt,
     createdBy: input.createdBy ?? null,
     ...(input.accessToken ? { accessToken: input.accessToken } : {})
   });
@@ -371,7 +432,10 @@ export async function listApiKeys(input: {
   organizationId: string;
   accessToken?: string;
 }) {
-  const records = await getRepository().listApiKeys(input);
+  const records = await getRepository().listApiKeys({
+    organizationId: normalizeOrganizationId(input.organizationId),
+    ...(input.accessToken ? { accessToken: input.accessToken } : {})
+  });
 
   return records.map(toEffectiveMetadata);
 }
@@ -383,8 +447,8 @@ export async function revokeApiKey(input: {
   accessToken?: string;
 }) {
   const record = await getRepository().revokeApiKey({
-    organizationId: input.organizationId,
-    apiKeyId: input.apiKeyId,
+    organizationId: normalizeOrganizationId(input.organizationId),
+    apiKeyId: input.apiKeyId.trim(),
     revokedBy: input.revokedBy ?? null,
     ...(input.accessToken ? { accessToken: input.accessToken } : {})
   });
@@ -419,11 +483,13 @@ export async function verifyApiKey(
     };
   }
 
+  const submittedKeyHash = hashApiKey(trimmedKey);
   const candidates = await getRepository().findApiKeysByPrefix({ keyPrefix });
   const record =
-    candidates.find((candidate) =>
-      typeof candidate.keyHash === "string" &&
-      hashMatches(hashApiKey(trimmedKey), candidate.keyHash)
+    candidates.find(
+      (candidate) =>
+        typeof candidate.keyHash === "string" &&
+        hashMatches(submittedKeyHash, candidate.keyHash)
     ) ?? null;
 
   if (!record) {
@@ -487,14 +553,24 @@ export async function verifyApiKey(
 }
 
 export async function recordApiRequest(input: RecordApiRequestInput) {
-  await getRepository().recordApiRequest(input);
+  await getRepository().recordApiRequest({
+    organizationId: input.organizationId,
+    apiKeyId: input.apiKeyId,
+    requestMethod: input.requestMethod.trim().toUpperCase(),
+    requestPath: input.requestPath.trim(),
+    statusCode: input.statusCode,
+    durationMs: input.durationMs,
+    ipAddress: input.ipAddress,
+    userAgent: input.userAgent,
+    errorCode: input.errorCode ?? null
+  });
 }
 
 export async function countRecentApiRequests(
   input: CountRecentApiRequestsInput
 ) {
   const countInput: CountRecentApiRequestsInput = {
-    organizationId: input.organizationId,
+    organizationId: normalizeOrganizationId(input.organizationId),
     sinceIso: input.sinceIso
   };
 
@@ -515,8 +591,8 @@ export async function countRecentApiRequests(
 
 export async function listApiRequests(input: ListApiRequestsInput) {
   const listInput: ListApiRequestsInput = {
-    organizationId: input.organizationId,
-    limit: input.limit ?? 50
+    organizationId: normalizeOrganizationId(input.organizationId),
+    limit: input.limit ?? DEFAULT_API_REQUEST_LIMIT
   };
 
   if (input.apiKeyId) {
@@ -540,7 +616,7 @@ export async function listApiRequests(input: ListApiRequestsInput) {
 
 export async function getApiUsageSummary(input: GetApiUsageSummaryInput) {
   const summaryInput: GetApiUsageSummaryInput = {
-    organizationId: input.organizationId,
+    organizationId: normalizeOrganizationId(input.organizationId),
     sinceDays: input.sinceDays ?? 30
   };
 
