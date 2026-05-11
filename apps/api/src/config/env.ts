@@ -76,6 +76,10 @@ const optionalBooleanLikeSchema = z.preprocess((value) => {
   return value === true;
 }, z.boolean());
 
+const storageBackendSchema = z
+  .enum(["auto", "supabase", "json"])
+  .default("auto");
+
 const envSchema = z
   .object({
     APP_ENV: z
@@ -86,6 +90,27 @@ const envSchema = z
     API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
 
     WEB_APP_URL: z.string().url().default("http://localhost:3000"),
+
+    /*
+     * API storage backend policy.
+     *
+     * auto:
+     *   - development/test may use Supabase when configured or local JSON
+     *     storage for isolated local workflows.
+     *   - production resolves to Supabase only.
+     *
+     * supabase:
+     *   - always require Supabase-backed persistence.
+     *
+     * json:
+     *   - local development/test only.
+     *   - forbidden in production.
+     *
+     * This prevents a production deployment from silently downgrading real
+     * workspace, invoice, XML, VAT, API-key, audit, privacy, retention, or
+     * deletion data into local .data JSON files.
+     */
+    API_STORAGE_BACKEND: storageBackendSchema,
 
     /*
      * Development/test bootstrap key only.
@@ -178,6 +203,15 @@ const envSchema = z
       }
 
       return;
+    }
+
+    if (value.API_STORAGE_BACKEND === "json") {
+      context.addIssue({
+        code: "custom",
+        path: ["API_STORAGE_BACKEND"],
+        message:
+          "API_STORAGE_BACKEND=json is forbidden in production. Use API_STORAGE_BACKEND=supabase or API_STORAGE_BACKEND=auto with Supabase configured."
+      });
     }
 
     if (value.DEV_API_KEY.trim()) {
@@ -293,3 +327,39 @@ if (!parsedEnv.success) {
 }
 
 export const env = parsedEnv.data;
+
+export type AppEnvironment = typeof env.APP_ENV;
+export type ApiStorageBackend = typeof env.API_STORAGE_BACKEND;
+
+export function isProductionEnvironment() {
+  return env.APP_ENV === "production";
+}
+
+export function isSupabaseConfigured() {
+  return (
+    env.SUPABASE_URL.trim().length > 0 &&
+    env.SUPABASE_SERVICE_ROLE_KEY.trim().length > 0
+  );
+}
+
+export function resolveApiStorageBackend(): "supabase" | "json" {
+  if (env.API_STORAGE_BACKEND === "supabase") {
+    return "supabase";
+  }
+
+  if (env.API_STORAGE_BACKEND === "json") {
+    if (isProductionEnvironment()) {
+      throw new Error(
+        "Unsafe storage configuration: API_STORAGE_BACKEND=json is forbidden in production."
+      );
+    }
+
+    return "json";
+  }
+
+  if (isProductionEnvironment()) {
+    return "supabase";
+  }
+
+  return isSupabaseConfigured() ? "supabase" : "json";
+}
