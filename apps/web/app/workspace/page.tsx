@@ -72,12 +72,13 @@ const commandFlow = [
     icon: <KeyRound size={20} />,
     title: "Prepare API testing",
     description:
-      "Model API keys, request logs, webhook tests, scoped access, and rate-limited endpoint behavior.",
+      "Manage scoped API keys, request logs, usage windows, and rate-limited endpoint behavior for owner, admin, and developer workspace roles.",
     href: "/workspace/developer"
   }
 ];
 
 const alerts = [
+  "Workspace roles are separated: privacy administration remains owner/admin, developer API controls are owner/admin/developer, and general workspace access should not imply secret management rights.",
   "API and web are separated. The frontend calls local Next.js proxy routes, which forward requests to the dedicated API service.",
   "Validation outputs must never claim legal, tax, accounting, Peppol, EN 16931, ViDA, or authority certification.",
   "Every real rule later needs a source reference, reviewed date, confidence level, and rule version.",
@@ -445,7 +446,7 @@ export default function WorkspacePage() {
           <p>
             This workspace is shaped around the real Invoice Lantern workflow:
             invoice creation, validation report review, XML handling, API testing,
-            audit trails, and privacy controls.
+            audit trails, privacy controls, and role-aware access boundaries.
           </p>
         </div>
       </section>
@@ -546,8 +547,9 @@ export default function WorkspacePage() {
               <span />
               <p>
                 No workspace activity has been recorded yet. Create, update, or
-                delete an invoice draft, validation report, or XML report to
-                populate this feed.
+                delete an invoice draft, validation report, XML report, privacy
+                request, workspace setting, export package, retention run, or
+                deletion run to populate this feed.
               </p>
             </div>
           )}
@@ -560,8 +562,10 @@ export default function WorkspacePage() {
           <h3>Product data layer</h3>
           <p>
             The frontend consumes invoice drafts, invoice validation reports, XML
-            readiness reports, privacy settings, and audit events from the
-            dedicated API service. No demo records are shown as product data.
+            readiness reports, privacy settings, privacy requests, export packages,
+            retention reviews, deletion reviews, API key metadata, usage logs, and
+            audit events from the dedicated API service. No demo records are shown
+            as product data.
           </p>
         </div>
 
@@ -569,8 +573,9 @@ export default function WorkspacePage() {
           <ShieldCheck size={24} />
           <h3>Security-first shell</h3>
           <p>
-            The interface is planned around organization ownership, RBAC, secure API
-            key management, XML upload limits, audit logs, and GDPR-oriented controls.
+            The interface is planned around organization ownership, role-based
+            access, secure API key management, XML upload limits, audit logs,
+            metadata-only API usage logs, and GDPR-oriented controls.
           </p>
         </div>
       </section>
@@ -605,7 +610,7 @@ export default function WorkspacePage() {
           <h3>API layer</h3>
           <p>
             Keep web and API separated. The API owns validation, exports, logs, keys,
-            webhooks, and rate limits.
+            rate limits, and selected developer-facing simulation endpoints.
           </p>
         </div>
 
@@ -615,8 +620,9 @@ export default function WorkspacePage() {
           </div>
           <h3>Privacy controls</h3>
           <p>
-            Build toward exports, deletion requests, retention settings, audit history,
-            and clear data-processing boundaries.
+            Privacy administration covers exports, deletion requests, retention
+            settings, audit history, and clear data-processing boundaries. It should
+            remain restricted to owner and admin roles.
           </p>
         </div>
       </section>

@@ -197,25 +197,25 @@ const privacyControls: PrivacyControlCard[] = [
   {
     title: "Data export requests",
     description:
-      "Prepare a workspace-level control for user-requested data exports across invoice drafts, validation reports, XML reports, and activity records.",
+      "Prepare workspace-level controls for user-requested data exports across invoice drafts, validation reports, XML reports, privacy records, and activity records.",
     icon: <Download size={22} />
   },
   {
     title: "Deletion requests",
     description:
-      "Prepare deletion-request handling for workspace-owned records while preserving clear audit boundaries and future retention rules.",
+      "Prepare deletion-request handling for workspace-owned records while preserving clear review, audit, and legal-boundary warnings.",
     icon: <Trash2 size={22} />
   },
   {
     title: "Retention policy",
     description:
-      "Control how long invoice drafts, validation reports, XML readiness reports, and activity events should remain available.",
+      "Control how long invoice drafts, validation reports, XML readiness reports, and activity events should remain available inside the platform.",
     icon: <Archive size={22} />
   },
   {
     title: "Data minimisation",
     description:
-      "Keep the platform focused on structured invoice readiness data instead of storing unnecessary personal or document data.",
+      "Keep the platform focused on structured invoice readiness data instead of storing unnecessary personal, tax, or document data.",
     icon: <EyeOff size={22} />
   }
 ];
@@ -969,7 +969,10 @@ export default function WorkspacePrivacyPage() {
 
       if (!response.ok) {
         setErrorMessage(
-          "Workspace settings are not connected yet. The privacy controls are ready for the API route."
+          readErrorMessage(
+            responseData,
+            "Could not load workspace privacy settings. Owner or admin role may be required."
+          )
         );
         setIsLoading(false);
         return;
@@ -979,9 +982,7 @@ export default function WorkspacePrivacyPage() {
       setStatusMessage("Workspace privacy settings loaded.");
       setIsLoading(false);
     } catch {
-      setErrorMessage(
-        "Workspace settings are not connected yet. The privacy controls are ready for the API route."
-      );
+      setErrorMessage("Could not load workspace privacy settings.");
       setIsLoading(false);
     }
   }
@@ -1002,7 +1003,10 @@ export default function WorkspacePrivacyPage() {
       if (!response.ok) {
         setRetentionPreview(null);
         setRetentionPreviewErrorMessage(
-          "Retention preview is not connected yet. The preview UI is ready for the API route."
+          readErrorMessage(
+            responseData,
+            "Could not load retention preview. Owner or admin role may be required."
+          )
         );
         setIsLoadingRetentionPreview(false);
         return;
@@ -1015,9 +1019,7 @@ export default function WorkspacePrivacyPage() {
       setIsLoadingRetentionPreview(false);
     } catch {
       setRetentionPreview(null);
-      setRetentionPreviewErrorMessage(
-        "Retention preview is not connected yet. The preview UI is ready for the API route."
-      );
+      setRetentionPreviewErrorMessage("Could not load retention preview.");
       setIsLoadingRetentionPreview(false);
     }
   }
@@ -1038,7 +1040,10 @@ export default function WorkspacePrivacyPage() {
       if (!response.ok) {
         setRetentionRuns([]);
         setRetentionRunErrorMessage(
-          "Retention runs are not connected yet. The run history UI is ready for the API route."
+          readErrorMessage(
+            responseData,
+            "Could not load retention run history. Owner or admin role may be required."
+          )
         );
         setIsLoadingRetentionRuns(false);
         return;
@@ -1053,9 +1058,7 @@ export default function WorkspacePrivacyPage() {
       setIsLoadingRetentionRuns(false);
     } catch {
       setRetentionRuns([]);
-      setRetentionRunErrorMessage(
-        "Retention runs are not connected yet. The run history UI is ready for the API route."
-      );
+      setRetentionRunErrorMessage("Could not load retention run history.");
       setIsLoadingRetentionRuns(false);
     }
   }
@@ -1076,7 +1079,10 @@ export default function WorkspacePrivacyPage() {
       if (!response.ok) {
         setDeletionRuns([]);
         setDeletionRunErrorMessage(
-          "Deletion runs are not connected yet. The deletion review UI is ready for the API route."
+          readErrorMessage(
+            responseData,
+            "Could not load deletion run history. Owner or admin role may be required."
+          )
         );
         setIsLoadingDeletionRuns(false);
         return;
@@ -1091,9 +1097,7 @@ export default function WorkspacePrivacyPage() {
       setIsLoadingDeletionRuns(false);
     } catch {
       setDeletionRuns([]);
-      setDeletionRunErrorMessage(
-        "Deletion runs are not connected yet. The deletion review UI is ready for the API route."
-      );
+      setDeletionRunErrorMessage("Could not load deletion run history.");
       setIsLoadingDeletionRuns(false);
     }
   }
@@ -1114,7 +1118,10 @@ export default function WorkspacePrivacyPage() {
       if (!response.ok) {
         setPrivacyRequests([]);
         setRequestErrorMessage(
-          "Privacy requests are not connected yet. The request UI is ready for the API route."
+          readErrorMessage(
+            responseData,
+            "Could not load privacy requests. Owner or admin role may be required."
+          )
         );
         setIsLoadingRequests(false);
         return;
@@ -1130,9 +1137,7 @@ export default function WorkspacePrivacyPage() {
       setIsLoadingRequests(false);
     } catch {
       setPrivacyRequests([]);
-      setRequestErrorMessage(
-        "Privacy requests are not connected yet. The request UI is ready for the API route."
-      );
+      setRequestErrorMessage("Could not load privacy requests.");
       setIsLoadingRequests(false);
     }
   }
@@ -1153,7 +1158,10 @@ export default function WorkspacePrivacyPage() {
       if (!response.ok) {
         setExportPackages([]);
         setExportErrorMessage(
-          "Export packages are not connected yet. The export UI is ready for the API route."
+          readErrorMessage(
+            responseData,
+            "Could not load workspace export packages. Owner or admin role may be required."
+          )
         );
         setIsLoadingExportPackages(false);
         return;
@@ -1168,9 +1176,7 @@ export default function WorkspacePrivacyPage() {
       setIsLoadingExportPackages(false);
     } catch {
       setExportPackages([]);
-      setExportErrorMessage(
-        "Export packages are not connected yet. The export UI is ready for the API route."
-      );
+      setExportErrorMessage("Could not load workspace export packages.");
       setIsLoadingExportPackages(false);
     }
   }
@@ -1193,7 +1199,12 @@ export default function WorkspacePrivacyPage() {
       const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        setErrorMessage("Could not save workspace privacy settings.");
+        setErrorMessage(
+          readErrorMessage(
+            responseData,
+            "Could not save workspace privacy settings. Owner or admin role may be required."
+          )
+        );
         setIsSaving(false);
         return;
       }
@@ -1222,7 +1233,12 @@ export default function WorkspacePrivacyPage() {
       const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        setRetentionRunErrorMessage("Could not prepare retention run.");
+        setRetentionRunErrorMessage(
+          readErrorMessage(
+            responseData,
+            "Could not prepare retention run. Owner or admin role may be required."
+          )
+        );
         setIsPreparingRetentionRun(false);
         return;
       }
@@ -1276,7 +1292,10 @@ export default function WorkspacePrivacyPage() {
 
       if (!response.ok) {
         setDeletionRunErrorMessage(
-          readErrorMessage(responseData, "Could not prepare deletion run.")
+          readErrorMessage(
+            responseData,
+            "Could not prepare deletion run. Owner or admin role may be required."
+          )
         );
         setIsPreparingDeletionRun(false);
         return;
@@ -1330,7 +1349,10 @@ export default function WorkspacePrivacyPage() {
 
       if (!response.ok) {
         setRetentionRunErrorMessage(
-          readErrorMessage(responseData, "Could not execute retention run.")
+          readErrorMessage(
+            responseData,
+            "Could not execute retention run. Owner or admin role may be required."
+          )
         );
         setExecutingRetentionRunId("");
         return;
@@ -1386,7 +1408,10 @@ export default function WorkspacePrivacyPage() {
 
       if (!response.ok) {
         setDeletionRunErrorMessage(
-          readErrorMessage(responseData, "Could not execute deletion run.")
+          readErrorMessage(
+            responseData,
+            "Could not execute deletion run. Owner or admin role may be required."
+          )
         );
         setExecutingDeletionRunId("");
         return;
@@ -1459,7 +1484,9 @@ export default function WorkspacePrivacyPage() {
       const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        setRequestErrorMessage("Could not submit privacy request.");
+        setRequestErrorMessage(
+          readErrorMessage(responseData, "Could not submit privacy request.")
+        );
         setIsSubmittingRequest(false);
         return;
       }
@@ -1531,7 +1558,12 @@ export default function WorkspacePrivacyPage() {
       const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        setRequestErrorMessage("Could not update privacy request status.");
+        setRequestErrorMessage(
+          readErrorMessage(
+            responseData,
+            "Could not update privacy request status. Owner or admin role may be required."
+          )
+        );
         setUpdatingRequestId("");
         return;
       }
@@ -1600,7 +1632,12 @@ export default function WorkspacePrivacyPage() {
       const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        setExportErrorMessage("Could not create export package.");
+        setExportErrorMessage(
+          readErrorMessage(
+            responseData,
+            "Could not create export package. Owner or admin role may be required."
+          )
+        );
         setIsCreatingExportPackage(false);
         return;
       }
@@ -1641,7 +1678,9 @@ export default function WorkspacePrivacyPage() {
       const responseData = await readResponseBody(response);
 
       if (!response.ok) {
-        setExportErrorMessage("Could not load export package payload.");
+        setExportErrorMessage(
+          readErrorMessage(responseData, "Could not load export package payload.")
+        );
         setDownloadingExportPackageId("");
         return;
       }
@@ -1777,9 +1816,10 @@ export default function WorkspacePrivacyPage() {
         <h2>GDPR-oriented controls for invoice data.</h2>
         <p>
           Configure workspace-level privacy settings for retention, data exports,
-          deletion requests, and data minimisation boundaries. These controls are
-          platform settings only; they do not replace legal, tax, accounting, or
-          authority retention obligations.
+          deletion requests, and data minimisation boundaries. Privacy
+          administration is restricted to owner and admin workspace roles. These
+          controls are platform settings only; they do not replace legal, tax,
+          accounting, statutory-retention, or authority recordkeeping obligations.
         </p>
       </section>
 
@@ -1791,6 +1831,35 @@ export default function WorkspacePrivacyPage() {
             <p>{item.description}</p>
           </div>
         ))}
+      </section>
+
+      <section className="workspace-alerts">
+        <div className="alerts-head">
+          <LockKeyhole size={22} />
+          <div>
+            <p>Access boundary</p>
+            <h3>Owner/admin privacy administration.</h3>
+          </div>
+        </div>
+
+        <div className="alert-list">
+          <div className="alert-item">
+            <span />
+            <p>
+              Privacy settings, privacy-request review, export package
+              preparation, retention runs, and deletion runs are restricted to
+              owner and admin workspace roles.
+            </p>
+          </div>
+          <div className="alert-item">
+            <span />
+            <p>
+              Deletion and retention execution can remove workspace records. Use
+              these controls only after internal review and any required
+              professional or legal assessment.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section className="privacy-retention">
@@ -1983,7 +2052,7 @@ export default function WorkspacePrivacyPage() {
                 <span>{errorMessage}</span>
               </div>
 
-              <strong>Pending API</strong>
+              <strong>Review</strong>
             </div>
           </div>
         ) : null}
@@ -2065,7 +2134,8 @@ export default function WorkspacePrivacyPage() {
                 <AlertTriangle size={16} />
                 <span>
                   Retention preview is unavailable. Save settings and reload the
-                  preview after the API route is available.
+                  preview after confirming API connectivity and owner/admin
+                  access.
                 </span>
               </div>
 
@@ -2095,11 +2165,7 @@ export default function WorkspacePrivacyPage() {
                 <span>{retentionPreviewErrorMessage}</span>
               </div>
 
-              <strong>
-                {retentionPreviewErrorMessage.includes("not connected")
-                  ? "Pending API"
-                  : "Review"}
-              </strong>
+              <strong>Review</strong>
             </div>
           </div>
         ) : null}
@@ -2240,11 +2306,7 @@ export default function WorkspacePrivacyPage() {
                 <span>{retentionRunErrorMessage}</span>
               </div>
 
-              <strong>
-                {retentionRunErrorMessage.includes("not connected")
-                  ? "Pending API"
-                  : "Review"}
-              </strong>
+              <strong>Review</strong>
             </div>
           </div>
         ) : null}
@@ -2354,11 +2416,7 @@ export default function WorkspacePrivacyPage() {
                 <span>{requestErrorMessage}</span>
               </div>
 
-              <strong>
-                {requestErrorMessage.includes("not connected")
-                  ? "Pending API"
-                  : "Review"}
-              </strong>
+              <strong>Review</strong>
             </div>
           </div>
         ) : null}
@@ -2551,11 +2609,7 @@ export default function WorkspacePrivacyPage() {
                 <span>{deletionRunErrorMessage}</span>
               </div>
 
-              <strong>
-                {deletionRunErrorMessage.includes("not connected")
-                  ? "Pending API"
-                  : "Review"}
-              </strong>
+              <strong>Review</strong>
             </div>
           </div>
         ) : null}
@@ -2665,11 +2719,7 @@ export default function WorkspacePrivacyPage() {
                 <span>{exportErrorMessage}</span>
               </div>
 
-              <strong>
-                {exportErrorMessage.includes("not connected")
-                  ? "Pending API"
-                  : "Review"}
-              </strong>
+              <strong>Review</strong>
             </div>
           </div>
         ) : null}
@@ -2920,7 +2970,8 @@ export default function WorkspacePrivacyPage() {
             Retention settings, privacy requests, export packages, retention
             previews, retention runs, and deletion runs define product behavior
             inside Invoice Lantern. They do not decide statutory retention duties,
-            accounting obligations, or authority-facing recordkeeping requirements.
+            accounting obligations, legal duties, or authority-facing
+            recordkeeping requirements.
           </p>
         </div>
       </section>

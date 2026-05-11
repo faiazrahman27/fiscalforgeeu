@@ -8,6 +8,8 @@ import {
   Database,
   FileCheck2,
   FileCode2,
+  KeyRound,
+  LockKeyhole,
   ReceiptText,
   ShieldCheck
 } from "lucide-react";
@@ -50,6 +52,18 @@ function getRecordsFromResponse(data: unknown) {
   }
 
   return data.records;
+}
+
+function getErrorMessageFromResponse(data: unknown, fallback: string) {
+  if (!isPlainObject(data) || !isPlainObject(data.error)) {
+    return fallback;
+  }
+
+  const message = data.error.message;
+
+  return typeof message === "string" && message.trim()
+    ? message.trim()
+    : fallback;
 }
 
 function readStringField(
@@ -143,6 +157,20 @@ function getEventIcon(eventType: string) {
     return <FileCode2 size={18} />;
   }
 
+  if (eventType.startsWith("api_key.")) {
+    return <KeyRound size={18} />;
+  }
+
+  if (
+    eventType.startsWith("privacy_request.") ||
+    eventType.startsWith("workspace_settings.") ||
+    eventType.startsWith("workspace_retention.") ||
+    eventType.startsWith("workspace_deletion.") ||
+    eventType.startsWith("workspace_export.")
+  ) {
+    return <LockKeyhole size={18} />;
+  }
+
   return <Activity size={18} />;
 }
 
@@ -156,6 +184,9 @@ function getMetadataSummary(event: WorkspaceActivityEvent) {
   const findingsCount = metadata.findingsCount;
   const fileName = metadata.fileName;
   const technicalStatus = metadata.technicalStatus;
+  const requestType = metadata.requestType;
+  const status = metadata.status;
+  const retentionMode = metadata.retentionMode;
 
   if (typeof invoiceNumber === "string" && invoiceNumber.trim()) {
     parts.push(`Invoice ${invoiceNumber}`);
@@ -170,7 +201,9 @@ function getMetadataSummary(event: WorkspaceActivityEvent) {
     typeof payableAmount === "string" ||
     typeof payableAmount === "number"
   ) {
-    parts.push(`${String(currency || "").trim()} ${String(payableAmount || "").trim()}`.trim());
+    parts.push(
+      `${String(currency || "").trim()} ${String(payableAmount || "").trim()}`.trim()
+    );
   }
 
   if (typeof findingsCount === "number" && Number.isFinite(findingsCount)) {
@@ -179,6 +212,18 @@ function getMetadataSummary(event: WorkspaceActivityEvent) {
 
   if (typeof technicalStatus === "string" && technicalStatus.trim()) {
     parts.push(`Technical status: ${technicalStatus}`);
+  }
+
+  if (typeof requestType === "string" && requestType.trim()) {
+    parts.push(`Request type: ${requestType.replace(/_/g, " ")}`);
+  }
+
+  if (typeof status === "string" && status.trim()) {
+    parts.push(`Status: ${status.replace(/_/g, " ")}`);
+  }
+
+  if (typeof retentionMode === "string" && retentionMode.trim()) {
+    parts.push(`Retention mode: ${retentionMode}`);
   }
 
   return parts.length > 0 ? parts.join(" · ") : "No additional event metadata.";
@@ -207,7 +252,12 @@ export default function WorkspaceActivityPage() {
         if (!response.ok) {
           if (isMounted) {
             setEvents([]);
-            setMessage("Workspace activity could not be loaded.");
+            setMessage(
+              getErrorMessageFromResponse(
+                responseData,
+                "Workspace activity could not be loaded."
+              )
+            );
             setIsLoading(false);
           }
 
@@ -253,8 +303,9 @@ export default function WorkspaceActivityPage() {
         <h2>Workspace activity.</h2>
         <p>
           Review API-owned activity events created by invoice drafts, validation
-          reports, and XML readiness reports. This page reads from the
-          workspace_activity_events table through the local web proxy.
+          reports, XML readiness reports, privacy actions, retention actions,
+          deletion actions, exports, and developer operations. Activity access is
+          restricted to owner, admin, and developer workspace roles.
         </p>
       </section>
 
@@ -268,19 +319,19 @@ export default function WorkspaceActivityPage() {
         <div className="workspace-stat">
           <p>Warning events</p>
           <strong>{isLoading ? "Loading" : eventCounts.warnings}</strong>
-          <span>Events marked as warning by validation or XML checks.</span>
+          <span>Events marked as warnings by platform operations.</span>
         </div>
 
         <div className="workspace-stat">
           <p>Error events</p>
           <strong>{isLoading ? "Loading" : eventCounts.errors}</strong>
-          <span>Reserved for failed future platform operations.</span>
+          <span>Events marked as failed or high-risk operations.</span>
         </div>
 
         <div className="workspace-stat">
-          <p>Source</p>
-          <strong>API</strong>
-          <span>Activity is produced by backend repository operations.</span>
+          <p>Allowed roles</p>
+          <strong>3</strong>
+          <span>Owner, admin, and developer roles can view activity.</span>
         </div>
       </section>
 
@@ -300,7 +351,15 @@ export default function WorkspaceActivityPage() {
             <p>
               These events help trace platform actions inside the workspace. They
               do not replace official accounting logs, tax records, Peppol access
-              point logs, or authority submission receipts.
+              point logs, VIES evidence, or authority submission receipts.
+            </p>
+          </div>
+          <div className="alert-item">
+            <span />
+            <p>
+              Workspace activity is available to owner, admin, and developer
+              roles. Privacy settings, privacy-request review, retention runs,
+              and deletion runs remain restricted to owner and admin roles.
             </p>
           </div>
         </div>
@@ -347,9 +406,10 @@ export default function WorkspaceActivityPage() {
             <div className="alert-item">
               <span />
               <p>
-                No workspace activity has been recorded yet. Create, update, or
-                delete an invoice draft, validation report, or XML report to
-                populate this audit trail.
+                No workspace activity has been recorded yet. Create or update an
+                invoice draft, validation run, XML report, privacy request,
+                export package, retention run, deletion run, or API key to
+                populate this operational audit trail.
               </p>
             </div>
           )}
@@ -361,19 +421,21 @@ export default function WorkspaceActivityPage() {
           <Activity size={24} />
           <h3>Tracked actions</h3>
           <p>
-            The current activity table records invoice draft creation, update,
-            deletion, validation report creation and deletion, and XML readiness
-            report creation and deletion.
+            The current activity table records invoice draft changes, validation
+            report creation and deletion, XML readiness report changes, privacy
+            request actions, workspace settings changes, export packages,
+            retention runs, deletion runs, and selected developer operations.
           </p>
         </div>
 
         <div>
           <AlertTriangle size={24} />
-          <h3>Future expansion</h3>
+          <h3>Audit boundary</h3>
           <p>
-            Later this can include login events, API key changes, webhook
-            deliveries, export requests, retention changes, deletion requests, and
-            role changes.
+            Activity records support operational traceability inside Invoice
+            Lantern. They are not an official audit certificate, legal record,
+            tax filing receipt, Peppol transmission receipt, or authority
+            acknowledgement.
           </p>
         </div>
       </section>

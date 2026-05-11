@@ -836,7 +836,7 @@ export default function WorkspaceApiKeysPage() {
         setMessage(
           getApiErrorMessage(
             responseData,
-            "API keys could not be loaded for this workspace."
+            "API keys could not be loaded. Owner, admin, or developer role may be required."
           )
         );
         return;
@@ -924,7 +924,7 @@ export default function WorkspaceApiKeysPage() {
         setUsageMessage(
           getApiErrorMessage(
             requestsData,
-            "API request logs could not be loaded for this workspace."
+            "API request logs could not be loaded. Owner, admin, or developer role may be required."
           )
         );
         return;
@@ -938,7 +938,7 @@ export default function WorkspaceApiKeysPage() {
         setUsageMessage(
           getApiErrorMessage(
             summaryData,
-            "API usage summary could not be loaded for this workspace."
+            "API usage summary could not be loaded. Owner, admin, or developer role may be required."
           )
         );
         return;
@@ -1066,7 +1066,10 @@ export default function WorkspaceApiKeysPage() {
 
       if (!response.ok || !isPlainObject(responseData)) {
         setMessage(
-          getApiErrorMessage(responseData, "API key could not be created.")
+          getApiErrorMessage(
+            responseData,
+            "API key could not be created. Owner, admin, or developer role may be required."
+          )
         );
         return;
       }
@@ -1117,7 +1120,10 @@ export default function WorkspaceApiKeysPage() {
 
       if (!response.ok || !isPlainObject(responseData)) {
         setMessage(
-          getApiErrorMessage(responseData, "API key could not be revoked.")
+          getApiErrorMessage(
+            responseData,
+            "API key could not be revoked. Owner, admin, or developer role may be required."
+          )
         );
         return;
       }
@@ -1251,8 +1257,9 @@ export default function WorkspaceApiKeysPage() {
         <h2>Organization API keys.</h2>
         <p>
           Create scoped keys for Invoice Lantern technical validation endpoints.
-          This is not an official filing API, not authority submission, and not
-          a compliance guarantee.
+          API key management and API request logs are available to owner, admin,
+          and developer workspace roles. This is not an official filing API, not
+          authority submission, and not a compliance guarantee.
         </p>
         <div className="workspace-row-actions">
           <Link href="/developer-api/reference" className="text-link-button">
@@ -1282,7 +1289,7 @@ export default function WorkspaceApiKeysPage() {
         <div className="workspace-stat">
           <p>Revoked</p>
           <strong>{isLoading ? "Loading" : counts.revoked}</strong>
-          <span>Keys disabled by an organization owner or admin.</span>
+          <span>Keys disabled by an owner, admin, or developer.</span>
         </div>
 
         <div className="workspace-stat">
@@ -1302,6 +1309,14 @@ export default function WorkspaceApiKeysPage() {
         </div>
 
         <div className="alert-list">
+          <div className="alert-item">
+            <span />
+            <p>
+              API key management and API request logs are available to owner,
+              admin, and developer workspace roles. Accountants, reviewers, and
+              viewers should not manage developer secrets.
+            </p>
+          </div>
           <div className="alert-item">
             <span />
             <p>
@@ -1789,7 +1804,8 @@ export default function WorkspaceApiKeysPage() {
 
         <p className="workspace-muted-copy">
           Request logs show metadata only. Request bodies, XML payloads, full
-          API keys, and full VAT IDs are not stored here.
+          API keys, and full VAT IDs are not stored here. Logs are available to
+          owner, admin, and developer workspace roles.
         </p>
 
         <div className="api-request-log-list">

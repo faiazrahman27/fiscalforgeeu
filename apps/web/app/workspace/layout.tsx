@@ -22,6 +22,23 @@ import "./workspace.css";
 
 export const dynamic = "force-dynamic";
 
+type WorkspaceRole =
+  | "owner"
+  | "admin"
+  | "accountant"
+  | "developer"
+  | "reviewer"
+  | "viewer";
+
+const workspaceRoleLabels: Record<WorkspaceRole, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  accountant: "Accountant",
+  developer: "Developer",
+  reviewer: "Reviewer",
+  viewer: "Viewer"
+};
+
 const workspaceNav = [
   {
     href: "/workspace",
@@ -85,6 +102,7 @@ type WorkspaceContext = {
   workspaceTitle: string;
   workspaceSubtitle: string;
   workspaceStatusLabel: string;
+  workspaceRole: WorkspaceRole | null;
   requiresSignInAction: boolean;
 };
 
@@ -92,7 +110,7 @@ type BootstrapWorkspaceRecord = {
   organizationId: string;
   organizationName: string;
   organizationSlug: string;
-  membershipRole: string;
+  membershipRole: WorkspaceRole;
   userEmail: string;
 };
 
@@ -121,6 +139,36 @@ function readStringField(
     : fallback;
 }
 
+function normalizeWorkspaceRole(value: string): WorkspaceRole {
+  const normalizedRole = value.trim().toLowerCase();
+
+  if (
+    normalizedRole === "owner" ||
+    normalizedRole === "admin" ||
+    normalizedRole === "accountant" ||
+    normalizedRole === "developer" ||
+    normalizedRole === "reviewer" ||
+    normalizedRole === "viewer"
+  ) {
+    return normalizedRole;
+  }
+
+  /*
+   * Backward compatibility for workspaces created before the expanded RBAC
+   * migration. Migration 032 maps member -> accountant in the database, but
+   * this keeps the UI stable if an older local database has not been migrated.
+   */
+  if (normalizedRole === "member") {
+    return "accountant";
+  }
+
+  return "viewer";
+}
+
+function formatWorkspaceRoleLabel(role: WorkspaceRole) {
+  return workspaceRoleLabels[role];
+}
+
 function normalizeBootstrapWorkspaceRecord(
   value: unknown
 ): BootstrapWorkspaceRecord | null {
@@ -131,7 +179,9 @@ function normalizeBootstrapWorkspaceRecord(
   const organizationId = readStringField(value, "organization_id");
   const organizationName = readStringField(value, "organization_name");
   const organizationSlug = readStringField(value, "organization_slug");
-  const membershipRole = readStringField(value, "membership_role", "member");
+  const membershipRole = normalizeWorkspaceRole(
+    readStringField(value, "membership_role", "viewer")
+  );
   const userEmail = readStringField(value, "user_email");
 
   if (!organizationId || !organizationName || !organizationSlug) {
@@ -153,6 +203,7 @@ function getLocalWorkspaceContext(): WorkspaceContext {
     workspaceTitle: "Local workspace",
     workspaceSubtitle: "Supabase auth is not configured",
     workspaceStatusLabel: "Development workspace",
+    workspaceRole: null,
     requiresSignInAction: true
   };
 }
@@ -163,6 +214,7 @@ function getPersonalWorkspaceFallback(email: string): WorkspaceContext {
     workspaceTitle: "Personal workspace",
     workspaceSubtitle: email || "Organization bootstrap pending",
     workspaceStatusLabel: "Workspace status",
+    workspaceRole: null,
     requiresSignInAction: false
   };
 }
@@ -220,12 +272,14 @@ async function getWorkspaceContext(): Promise<WorkspaceContext> {
     }
 
     const visibleEmail = bootstrapRecord.userEmail || signedInUserEmail;
+    const visibleRole = formatWorkspaceRoleLabel(bootstrapRecord.membershipRole);
 
     return {
       signedInUserEmail: visibleEmail,
       workspaceTitle: bootstrapRecord.organizationName,
-      workspaceSubtitle: `${bootstrapRecord.membershipRole} · ${visibleEmail}`,
+      workspaceSubtitle: `${visibleRole} · ${visibleEmail}`,
       workspaceStatusLabel: "Organization workspace",
+      workspaceRole: bootstrapRecord.membershipRole,
       requiresSignInAction: false
     };
   } catch (error) {

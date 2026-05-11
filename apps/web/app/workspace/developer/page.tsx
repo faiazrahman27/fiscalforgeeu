@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -5,19 +6,31 @@ import {
   BookOpen,
   Braces,
   FileCode2,
+  Globe2,
   KeyRound,
   RadioTower,
   ShieldAlert,
   ShieldCheck
 } from "lucide-react";
 
-const developerModules = [
+type DeveloperModuleStatus = "active" | "planned";
+
+type DeveloperModule = {
+  title: string;
+  status: DeveloperModuleStatus;
+  actionLabel: string;
+  description: string;
+  href: string;
+  icon: ReactNode;
+};
+
+const developerModules: DeveloperModule[] = [
   {
     title: "API keys",
     status: "active",
     actionLabel: "Manage",
     description:
-      "Create, list, scope, expire, revoke, test, and review usage logs for organization-owned sandbox developer API keys.",
+      "Create, list, scope, expire, revoke, test, and review usage logs for organization-owned sandbox developer API keys. API key management is intended for owner, admin, and developer workspace roles.",
     href: "/workspace/developer/api-keys",
     icon: <KeyRound size={22} />
   },
@@ -53,7 +66,7 @@ const developerModules = [
     status: "active",
     actionLabel: "Open",
     description:
-      "Export and parse UBL XML through scoped sandbox developer API endpoints.",
+      "Export, parse, and import UBL XML through scoped sandbox developer API endpoints.",
     href: "/developer-api",
     icon: <FileCode2 size={22} />
   },
@@ -65,6 +78,24 @@ const developerModules = [
       "Run local VAT ID format checks only. This is not VIES and is not proof of VAT registration.",
     href: "/workspace/vat-checks",
     icon: <BadgeCheck size={22} />
+  },
+  {
+    title: "Country packs",
+    status: "active",
+    actionLabel: "Open",
+    description:
+      "Review the current country-pack registry, source labels, status levels, and educational simulation warnings. Country packs are not official tax authority guidance.",
+    href: "/workspace/country-packs",
+    icon: <Globe2 size={22} />
+  },
+  {
+    title: "ViDA simulator",
+    status: "active",
+    actionLabel: "Open",
+    description:
+      "Run educational ViDA-readiness simulations for selected transaction scenarios. Results are readiness signals, not legal, tax, accounting, filing, or authority-submission conclusions.",
+    href: "/workspace/vida-simulator",
+    icon: <ShieldCheck size={22} />
   },
   {
     title: "Webhook simulator",
@@ -80,25 +111,7 @@ const developerModules = [
     status: "planned",
     actionLabel: "Planned",
     description:
-      "VIES checks are planned for a later step and are not active in this sandbox API yet.",
-    href: "/boundaries",
-    icon: <ShieldAlert size={22} />
-  },
-  {
-    title: "Country packs",
-    status: "planned",
-    actionLabel: "Planned",
-    description:
-      "Country packs are planned for later technical simulation work and are not active in this step.",
-    href: "/boundaries",
-    icon: <ShieldAlert size={22} />
-  },
-  {
-    title: "ViDA simulator",
-    status: "planned",
-    actionLabel: "Planned",
-    description:
-      "ViDA simulator work is planned later and is not a compliance guarantee.",
+      "VIES checks are planned for a later step and are not active in this sandbox API yet. Current VAT checks are local format checks only.",
     href: "/boundaries",
     icon: <ShieldAlert size={22} />
   }
@@ -111,11 +124,12 @@ export default function WorkspaceDeveloperPage() {
         <p className="workspace-kicker">Developer console</p>
         <h2>Sandbox developer API controls.</h2>
         <p>
-          Manage organization-owned keys and review the safe boundaries for
-          Invoice Lantern technical validation endpoints. API keys do not grant
-          workspace UI permissions. The API reference documents active
-          endpoints only; planned webhook, VIES, country-pack, and ViDA work
-          stays inactive until implemented.
+          Manage organization-owned keys, review API usage, and check the safe
+          boundaries for Invoice Lantern technical validation endpoints. API keys
+          do not grant workspace UI permissions. API key management is reserved
+          for owner, admin, and developer workspace roles. The API reference
+          documents active endpoints only; planned webhook and VIES work stays
+          inactive until implemented.
         </p>
       </section>
 
@@ -131,8 +145,10 @@ export default function WorkspaceDeveloperPage() {
                 {item.status}
               </span>
             </header>
+
             <h3>{item.title}</h3>
             <p>{item.description}</p>
+
             <div className="workspace-row-actions">
               <Link
                 href={item.href}
@@ -164,6 +180,16 @@ export default function WorkspaceDeveloperPage() {
               endpoints only.
             </p>
           </div>
+
+          <div className="alert-item">
+            <span />
+            <p>
+              API key management and API request logs are available to owner,
+              admin, and developer workspace roles. Privacy, retention, deletion,
+              and workspace settings remain restricted to owner and admin roles.
+            </p>
+          </div>
+
           <div className="alert-item">
             <span />
             <p>
