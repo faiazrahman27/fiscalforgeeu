@@ -23,8 +23,8 @@
     "check:xml-worker": "npm --prefix apps/xml-worker run check",
     "check:packages": "npm run check:tax-engine && npm run check:invoice-core && npm run check:ubl && npm run check:country-packs && npm run check:vida-simulator",
     "check:api": "npm run build:packages && npm --prefix apps/api run check",
-    "check:web": "npm run build:packages && npm --prefix apps/web run build",
-    "check": "npm run check:packages && npm run check:api && npm run check:xml-worker && npm --prefix apps/web run build",
+    "check:web": "npm run build:packages && npm --prefix apps/web run check",
+    "check": "npm run check:packages && npm run check:api && npm run check:xml-worker && npm --prefix apps/web run check",
     "test:tax-engine": "npm --prefix packages/tax-engine run test",
     "test:invoice-core": "npm --prefix packages/invoice-core run test",
     "test:ubl": "npm --prefix packages/ubl run test",
@@ -36,6 +36,10 @@
     "start:api": "npm --prefix apps/api run start"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0"
+    "@types/node": "22.15.32"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
   }
 }
