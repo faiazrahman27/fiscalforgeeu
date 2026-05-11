@@ -68,6 +68,118 @@ test("OpenAPI includes X-API-Key auth and signed-in workspace auth", () => {
   assert.equal(bearerAuth.scheme, "bearer");
 });
 
+test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boundary", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+
+  const transactionsSimulateVida = readRecord(
+    paths,
+    "/transactions/simulate-vida"
+  );
+  const post = readRecord(transactionsSimulateVida, "post");
+  const responses = readRecord(post, "responses");
+
+  const apiKeyScopeSchema = readRecord(schemas, "ApiKeyScope");
+  const apiKeyScopeEnum = apiKeyScopeSchema.enum;
+
+  assert.equal(
+    Array.isArray(apiKeyScopeEnum),
+    true,
+    "ApiKeyScope enum should be an array"
+  );
+
+  assert.ok(
+    (apiKeyScopeEnum as unknown[]).includes("transactions:simulate_vida"),
+    "ApiKeyScope enum should include transactions:simulate_vida"
+  );
+
+  for (const statusCode of ["200", "400", "401", "403", "429"]) {
+    assert.ok(
+      responses[statusCode],
+      `Expected ViDA simulation response ${statusCode}`
+    );
+  }
+
+  const requestSchema = JSON.stringify(
+    readRecord(schemas, "VidaSimulationRequest")
+  );
+  const responseSchema = JSON.stringify(
+    readRecord(schemas, "VidaSimulationResponse")
+  );
+  const countryContextSchema = JSON.stringify(
+    readRecord(schemas, "VidaCountryContext")
+  );
+  const normalizedInputSchema = JSON.stringify(
+    readRecord(schemas, "VidaNormalizedInput")
+  );
+  const findingSchema = JSON.stringify(
+    readRecord(schemas, "VidaReadinessFinding")
+  );
+  const serializedPost = JSON.stringify(post);
+  const serializedVidaSchemas = JSON.stringify({
+    requestSchema,
+    responseSchema,
+    countryContextSchema,
+    normalizedInputSchema,
+    findingSchema
+  });
+
+  assert.match(serializedPost, /transactions:simulate_vida/);
+  assert.match(serializedPost, /ViDA-readiness simulation/i);
+  assert.match(serializedPost, /not official/i);
+  assert.match(serializedPost, /not legal/i);
+  assert.match(serializedPost, /not tax/i);
+  assert.match(serializedPost, /not accounting/i);
+  assert.match(serializedPost, /not.*compliance guarantee/i);
+
+  assert.match(requestSchema, /sellerCountry/);
+  assert.match(requestSchema, /buyerCountry/);
+  assert.match(requestSchema, /sellerVatId/);
+  assert.match(requestSchema, /buyerVatId/);
+  assert.match(requestSchema, /buyerType/);
+  assert.match(requestSchema, /transactionType/);
+  assert.match(requestSchema, /countryPackVersions/);
+  assert.match(requestSchema, /business/);
+  assert.match(requestSchema, /consumer/);
+  assert.match(requestSchema, /public_authority/);
+  assert.match(requestSchema, /goods/);
+  assert.match(requestSchema, /services/);
+  assert.match(requestSchema, /digital_service/);
+
+  assert.match(responseSchema, /simulationVersion/);
+  assert.match(responseSchema, /transactionClass/);
+  assert.match(responseSchema, /vidaRelevance/);
+  assert.match(responseSchema, /effectiveDateContext/);
+  assert.match(responseSchema, /legalConfidence/);
+  assert.match(responseSchema, /countryContext/);
+  assert.match(responseSchema, /normalizedInput/);
+  assert.match(responseSchema, /findings/);
+  assert.match(responseSchema, /recommendedNextActions/);
+  assert.match(responseSchema, /disclaimer/);
+
+  assert.match(countryContextSchema, /sellerInEu/);
+  assert.match(countryContextSchema, /buyerInEu/);
+  assert.match(countryContextSchema, /sameCountry/);
+  assert.match(countryContextSchema, /crossBorderEu/);
+
+  assert.match(normalizedInputSchema, /sellerCountryCode/);
+  assert.match(normalizedInputSchema, /buyerCountryCode/);
+  assert.match(normalizedInputSchema, /sellerVatId/);
+  assert.match(normalizedInputSchema, /buyerVatId/);
+
+  assert.match(findingSchema, /legalConfidence/);
+  assert.match(findingSchema, /sourceLabels/);
+  assert.match(findingSchema, /fixSuggestion/);
+
+  assert.doesNotMatch(
+    serializedPost + serializedVidaSchemas,
+    /\bofficially valid\b|\bViDA compliant\b|\bcompliance certified\b|\bauthority accepted\b|\baccepted by authority\b|\blegal determination\b|\btax determination\b|\bproves compliance\b/i
+  );
+});
+
+
 test("OpenAPI documents active endpoints and leaves planned endpoints inactive", () => {
   const document = getOpenApiDocument(openApiDocument);
   const paths = getPaths(document);
@@ -85,6 +197,9 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/xml/validation-jobs",
     "/xml/validation-jobs/{id}",
     "/vat/validate-format",
+    "/country-packs",
+    "/country-packs/{countryCode}",
+    "/transactions/simulate-vida",
     "/validation/rules",
     "/validation-runs/{id}",
     "/validation-runs/{id}/report.pdf"
@@ -97,8 +212,6 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
   assert.equal(paths["/invoices/import/ubl"], undefined);
   assert.doesNotMatch(documentedPathNames, /vies/);
   assert.doesNotMatch(documentedPathNames, /webhook/);
-  assert.doesNotMatch(documentedPathNames, /country/);
-  assert.doesNotMatch(documentedPathNames, /vida/);
 });
 
 test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated", () => {

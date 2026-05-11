@@ -74,6 +74,22 @@ const exampleCanonicalInvoice = {
   }
 };
 
+const exampleVidaSimulationRequest = {
+  sellerCountry: "DE",
+  buyerCountry: "HU",
+  sellerVatId: "DE123456789",
+  buyerVatId: "HU12345678",
+  buyerType: "business",
+  transactionType: "services",
+  invoiceDate: "2026-05-01",
+  currency: "EUR",
+  amount: "100.00",
+  countryPackVersions: {
+    DE: "2026.05.1",
+    HU: "2026.05.1"
+  }
+};
+
 const rateLimitHeaders = {
   "X-RateLimit-Limit": {
     description: "Maximum requests allowed for the active sandbox window.",
@@ -302,6 +318,16 @@ const openApiDocument = {
       name: "Validation Rules",
       description:
         "Published Invoice Lantern technical sandbox rule catalog."
+    },
+    {
+      name: "Country Packs",
+      description:
+        "Read-only country-pack catalogue endpoints for educational VAT, e-invoicing, source-reference, capability, lifecycle, and registry metadata. Country packs are not legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority compliance guarantees."
+    },
+    {
+      name: "Transactions",
+      description:
+        "ViDA-readiness transaction simulation endpoints for educational and technical readiness planning. These simulations are not official ViDA determinations, not legal, tax, or accounting advice, not authority submission, not filing software, and not compliance guarantees."
     },
     {
       name: "Usage and Rate Limits",
@@ -829,6 +855,76 @@ const openApiDocument = {
         }
       })
     },
+    "/country-packs": {
+      get: {
+        tags: ["Country Packs"],
+        summary: "List country packs",
+        description:
+          "Returns the Invoice Lantern country-pack catalogue with bundled pack data and registry metadata when the database registry is configured. Country packs are educational simulations only. They do not certify legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority compliance.",
+        responses: {
+          "200": response("Country-pack catalogue.", ref("CountryPackCatalogResponse")),
+          "500": commonErrorResponses["500"]
+        }
+      }
+    },
+    "/country-packs/{countryCode}": {
+      get: {
+        tags: ["Country Packs"],
+        summary: "Get country-pack detail",
+        description:
+          "Returns one Invoice Lantern country pack by two-letter country code, including VAT-format metadata, e-invoicing status, warnings, source references, rules, disclaimer text, and registry lifecycle metadata when available. This is a sandbox educational endpoint only.",
+        parameters: [
+          {
+            name: "countryCode",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              minLength: 2,
+              maxLength: 2,
+              pattern: "^[A-Za-z]{2}$",
+              example: "HU"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Country-pack detail.", ref("CountryPackDetailResponse")),
+          "400": errorResponse(
+            "Country code must be a two-letter ISO-style code.",
+            "INVALID_COUNTRY_CODE"
+          ),
+          "404": errorResponse(
+            "Country pack is not currently supported by Invoice Lantern.",
+            "COUNTRY_PACK_NOT_FOUND"
+          ),
+          "500": commonErrorResponses["500"]
+        }
+      }
+    },
+    "/transactions/simulate-vida": {
+      post: scopedApiKeyOperation({
+        tags: ["Transactions"],
+        summary: "Run a ViDA-readiness transaction simulation",
+        description:
+          "Runs an educational and technical ViDA-readiness simulation for a transaction scenario. The result classifies the scenario for readiness planning only, such as cross-border EU B2B relevance, missing VAT ID context, domestic review needs, or insufficient data. It is not official software, not an official ViDA determination, not authority submission, not filing software, not legal, tax, or accounting advice, and not a compliance guarantee.",
+        scope: "transactions:simulate_vida",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("VidaSimulationRequest"), {
+            crossBorderEuB2B: {
+              value: exampleVidaSimulationRequest
+            }
+          })
+        },
+        responses: {
+          "200": {
+            description: "ViDA-readiness simulation result.",
+            headers: rateLimitHeaders,
+            content: jsonContent(ref("VidaSimulationResponse"))
+          }
+        }
+      })
+    },
     "/validation/rules": {
       get: scopedApiKeyOperation({
         tags: ["Validation Rules"],
@@ -1123,7 +1219,7 @@ const openApiDocument = {
           }
         }
       },
-      ApiKeyScope: {
+            ApiKeyScope: {
         type: "string",
         enum: [
           "invoices:validate",
@@ -1132,6 +1228,7 @@ const openApiDocument = {
           "invoices:import_ubl",
           "xml:validation_jobs",
           "vat:validate_format",
+          "transactions:simulate_vida",
           "validation_runs:read",
           "rules:read"
         ]
@@ -4389,6 +4486,678 @@ const openApiDocument = {
           },
           checkRecordId: {
             type: "string"
+          }
+        }
+      },
+      VidaSimulationRequest: {
+        type: "object",
+        required: ["sellerCountry", "buyerCountry"],
+        additionalProperties: false,
+        properties: {
+          sellerCountry: {
+            type: "string",
+            minLength: 1,
+            maxLength: 8,
+            example: "DE",
+            description:
+              "Seller country as a two-letter country code. Greece aliases such as GR are normalized to EL by the simulator."
+          },
+          buyerCountry: {
+            type: "string",
+            minLength: 1,
+            maxLength: 8,
+            example: "HU",
+            description: "Buyer country as a two-letter country code."
+          },
+          sellerVatId: {
+            type: "string",
+            maxLength: 64,
+            example: "DE123456789",
+            description:
+              "Optional seller VAT ID context. This endpoint does not validate VIES status or prove VAT registration."
+          },
+          buyerVatId: {
+            type: "string",
+            maxLength: 64,
+            example: "HU12345678",
+            description:
+              "Optional buyer VAT ID context. This endpoint does not validate VIES status or prove VAT registration."
+          },
+          buyerType: {
+            type: "string",
+            enum: ["business", "consumer", "public_authority", "unknown"],
+            default: "unknown"
+          },
+          transactionType: {
+            type: "string",
+            enum: ["goods", "services", "digital_service", "mixed", "unknown"],
+            default: "unknown"
+          },
+          invoiceDate: {
+            type: "string",
+            maxLength: 32,
+            example: "2026-05-01"
+          },
+          currency: {
+            type: "string",
+            maxLength: 8,
+            example: "EUR"
+          },
+          amount: {
+            type: "string",
+            maxLength: 80,
+            example: "100.00"
+          },
+          countryPackVersions: {
+            type: "object",
+            additionalProperties: {
+              type: "string"
+            },
+            example: {
+              DE: "2026.05.1",
+              HU: "2026.05.1"
+            },
+            description:
+              "Optional country-pack version context retained in normalized simulation input."
+          }
+        }
+      },
+      VidaCountryContext: {
+        type: "object",
+        required: ["sellerInEu", "buyerInEu", "sameCountry", "crossBorderEu"],
+        properties: {
+          sellerInEu: {
+            type: "boolean"
+          },
+          buyerInEu: {
+            type: "boolean"
+          },
+          sameCountry: {
+            type: "boolean"
+          },
+          crossBorderEu: {
+            type: "boolean"
+          }
+        }
+      },
+      VidaNormalizedInput: {
+        type: "object",
+        required: [
+          "sellerCountryCode",
+          "buyerCountryCode",
+          "sellerVatId",
+          "buyerVatId",
+          "buyerType",
+          "transactionType",
+          "invoiceDate",
+          "currency",
+          "amount",
+          "countryPackVersions"
+        ],
+        properties: {
+          sellerCountryCode: {
+            type: ["string", "null"],
+            example: "DE"
+          },
+          buyerCountryCode: {
+            type: ["string", "null"],
+            example: "HU"
+          },
+          sellerVatId: {
+            type: ["string", "null"],
+            example: "DE123456789"
+          },
+          buyerVatId: {
+            type: ["string", "null"],
+            example: "HU12345678"
+          },
+          buyerType: {
+            type: "string",
+            enum: ["business", "consumer", "public_authority", "unknown"]
+          },
+          transactionType: {
+            type: "string",
+            enum: ["goods", "services", "digital_service", "mixed", "unknown"]
+          },
+          invoiceDate: {
+            type: ["string", "null"],
+            example: "2026-05-01"
+          },
+          currency: {
+            type: ["string", "null"],
+            example: "EUR"
+          },
+          amount: {
+            type: ["string", "null"],
+            example: "100.00"
+          },
+          countryPackVersions: {
+            type: "object",
+            additionalProperties: {
+              type: "string"
+            }
+          }
+        }
+      },
+      VidaReadinessFinding: {
+        type: "object",
+        required: ["code", "severity", "message", "legalConfidence", "sourceLabels", "fixSuggestion"],
+        properties: {
+          code: {
+            type: "string",
+            example: "VIDA_INTRA_EU_B2B_RELEVANCE_SIGNAL"
+          },
+          severity: {
+            type: "string",
+            enum: ["info", "warning", "review_required"]
+          },
+          message: {
+            type: "string"
+          },
+          legalConfidence: {
+            type: "string",
+            enum: ["educational_simulation", "professional_review_required"]
+          },
+          sourceLabels: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          fixSuggestion: {
+            type: "string"
+          }
+        }
+      },
+      VidaSimulationResponse: {
+        type: "object",
+        required: [
+          "simulationVersion",
+          "transactionClass",
+          "vidaRelevance",
+          "reason",
+          "effectiveDateContext",
+          "confidence",
+          "legalConfidence",
+          "countryContext",
+          "normalizedInput",
+          "findings",
+          "recommendedNextActions",
+          "disclaimer"
+        ],
+        properties: {
+          simulationVersion: {
+            type: "string",
+            example: "2026.05.1"
+          },
+          transactionClass: {
+            type: "string",
+            enum: [
+              "intra_eu_b2b_goods",
+              "intra_eu_b2b_service",
+              "intra_eu_b2b_digital_service",
+              "intra_eu_b2b_mixed",
+              "intra_eu_b2b_unknown",
+              "intra_eu_b2c",
+              "intra_eu_public_authority",
+              "domestic_eu_business",
+              "domestic_eu_consumer",
+              "domestic_eu_unknown",
+              "non_eu_or_unsupported",
+              "insufficient_data"
+            ]
+          },
+          vidaRelevance: {
+            type: "string",
+            enum: ["high", "medium", "low", "not_relevant", "review_required"]
+          },
+          reason: {
+            type: "string"
+          },
+          effectiveDateContext: {
+            type: "string",
+            description:
+              "ViDA rollout context for readiness planning only. This field is simulation context and does not decide legal obligations."
+          },
+          confidence: {
+            type: "string",
+            enum: ["educational_simulation"]
+          },
+          legalConfidence: {
+            type: "string",
+            enum: ["educational_simulation", "professional_review_required"]
+          },
+          countryContext: ref("VidaCountryContext"),
+          normalizedInput: ref("VidaNormalizedInput"),
+          findings: {
+            type: "array",
+            items: ref("VidaReadinessFinding")
+          },
+          recommendedNextActions: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "Invoice Lantern ViDA-readiness simulation is an educational and technical sandbox result only. It is not official software, not an official ViDA determination, not legal advice, not tax advice, not accounting advice, not authority submission, not filing software, and not a compliance guarantee."
+          }
+        }
+      },
+      CountryPackCatalogResponse: {
+        type: "object",
+        required: ["countryPacks", "count", "disclaimer", "registrySource"],
+        properties: {
+          countryPacks: {
+            type: "array",
+            items: ref("CountryPack")
+          },
+          count: {
+            type: "integer",
+            minimum: 0,
+            example: 28
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "Country rule packs are educational simulations and do not provide legal, tax, accounting, filing, or compliance advice."
+          },
+          registrySource: {
+            type: "string",
+            enum: ["database", "bundled"],
+            description:
+              "database means registry metadata was loaded from Supabase; bundled means package metadata fallback was used."
+          }
+        }
+      },
+      CountryPackDetailResponse: {
+        type: "object",
+        required: ["countryPack", "disclaimer", "registrySource"],
+        properties: {
+          countryPack: ref("CountryPack"),
+          disclaimer: {
+            type: "string"
+          },
+          registrySource: {
+            type: "string",
+            enum: ["database", "bundled"]
+          }
+        }
+      },
+      CountryPack: {
+        type: "object",
+        required: [
+          "countryCode",
+          "countryName",
+          "euMemberState",
+          "defaultCurrency",
+          "status",
+          "version",
+          "lastReviewedAt",
+          "vatNumber",
+          "vatRates",
+          "eInvoicingStatus",
+          "sourceReferences",
+          "rules",
+          "warnings",
+          "legalConfidence",
+          "disclaimer",
+          "registry"
+        ],
+        properties: {
+          countryCode: {
+            type: "string",
+            minLength: 2,
+            maxLength: 2,
+            example: "HU"
+          },
+          countryName: {
+            type: "string",
+            example: "Hungary"
+          },
+          euMemberState: {
+            type: "boolean"
+          },
+          defaultCurrency: {
+            type: "string",
+            example: "HUF"
+          },
+          status: {
+            type: "string",
+            description:
+              "Country-pack package status used for educational simulation boundaries.",
+            example: "eu_core_only"
+          },
+          version: {
+            type: "string",
+            example: "2026.1"
+          },
+          lastReviewedAt: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          vatNumber: ref("CountryPackVatNumber"),
+          vatRates: ref("CountryPackVatRates"),
+          eInvoicingStatus: ref("CountryPackEInvoicingStatus"),
+          sourceReferences: {
+            type: "array",
+            items: ref("CountryPackSourceReference")
+          },
+          rules: {
+            type: "array",
+            items: ref("CountryPackRule")
+          },
+          warnings: {
+            type: "array",
+            items: ref("CountryPackWarning")
+          },
+          legalConfidence: {
+            type: "string",
+            enum: [
+              "technical",
+              "standard_based",
+              "official_source_derived",
+              "educational_simulation",
+              "professional_review_required"
+            ]
+          },
+          disclaimer: {
+            type: "string"
+          },
+          registry: ref("CountryPackRegistry")
+        }
+      },
+      CountryPackRegistry: {
+        type: "object",
+        required: [
+          "registrySource",
+          "packVersion",
+          "lifecycleStatus",
+          "legalConfidence",
+          "sourceCount",
+          "ruleCount",
+          "capabilities",
+          "summary",
+          "disclaimer",
+          "publishedAt",
+          "deprecatedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        properties: {
+          registrySource: {
+            type: "string",
+            enum: ["database", "bundled"]
+          },
+          packVersion: {
+            type: "string",
+            example: "2026.1"
+          },
+          lifecycleStatus: {
+            type: "string",
+            enum: [
+              "draft",
+              "internal_review",
+              "published",
+              "deprecated",
+              "archived"
+            ]
+          },
+          legalConfidence: {
+            type: "string",
+            enum: [
+              "technical",
+              "standard_based",
+              "official_source_derived",
+              "educational_simulation",
+              "professional_review_required"
+            ]
+          },
+          sourceCount: {
+            type: "integer",
+            minimum: 0
+          },
+          ruleCount: {
+            type: "integer",
+            minimum: 0
+          },
+          capabilities: ref("CountryPackCapabilityMatrix"),
+          summary: {
+            type: "string"
+          },
+          disclaimer: {
+            type: "string"
+          },
+          publishedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          deprecatedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          createdAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          updatedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          }
+        }
+      },
+      CountryPackCapabilityMatrix: {
+        type: "object",
+        required: ["vatRules", "invoiceRules", "peppolRules", "vidaReadiness"],
+        properties: {
+          vatRules: {
+            type: "boolean"
+          },
+          invoiceRules: {
+            type: "boolean"
+          },
+          peppolRules: {
+            type: "boolean"
+          },
+          vidaReadiness: {
+            type: "boolean"
+          }
+        }
+      },
+      CountryPackVatNumber: {
+        type: "object",
+        required: [
+          "prefix",
+          "pattern",
+          "localFormatCheck",
+          "checksumCheck",
+          "sourceRefIds"
+        ],
+        properties: {
+          prefix: {
+            type: "string",
+            example: "HU"
+          },
+          pattern: {
+            type: "string",
+            example: "^HU[0-9]{8}$"
+          },
+          localFormatCheck: {
+            type: "boolean"
+          },
+          checksumCheck: {
+            type: "boolean"
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          }
+        }
+      },
+      CountryPackVatRates: {
+        type: "object",
+        required: ["standard", "reduced", "sourceRefIds", "lastReviewedAt"],
+        properties: {
+          standard: {
+            type: ["string", "null"],
+            example: "27"
+          },
+          reduced: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          lastReviewedAt: {
+            type: ["string", "null"],
+            format: "date"
+          }
+        }
+      },
+      CountryPackEInvoicingStatus: {
+        type: "object",
+        required: ["b2g", "b2bDomestic", "b2bCrossBorder", "clearanceModel"],
+        properties: {
+          b2g: {
+            type: "string"
+          },
+          b2bDomestic: {
+            type: "string"
+          },
+          b2bCrossBorder: {
+            type: "string"
+          },
+          clearanceModel: {
+            type: "string"
+          }
+        }
+      },
+      CountryPackSourceReference: {
+        type: "object",
+        required: [
+          "id",
+          "title",
+          "jurisdiction",
+          "publisher",
+          "url",
+          "reviewedAt",
+          "confidence"
+        ],
+        properties: {
+          id: {
+            type: "string"
+          },
+          title: {
+            type: "string"
+          },
+          jurisdiction: {
+            type: "string"
+          },
+          publisher: {
+            type: "string"
+          },
+          url: {
+            type: "string",
+            format: "uri"
+          },
+          reviewedAt: {
+            type: "string"
+          },
+          effectiveFrom: {
+            type: "string"
+          },
+          effectiveUntil: {
+            type: "string"
+          },
+          confidence: {
+            type: "string"
+          },
+          notes: {
+            type: "string"
+          }
+        }
+      },
+      CountryPackRule: {
+        type: "object",
+        required: [
+          "code",
+          "title",
+          "description",
+          "category",
+          "severity",
+          "legalConfidence",
+          "sourceRefIds"
+        ],
+        properties: {
+          code: {
+            type: "string"
+          },
+          title: {
+            type: "string"
+          },
+          description: {
+            type: "string"
+          },
+          category: {
+            type: "string",
+            example: "COUNTRY_PACK"
+          },
+          severity: {
+            type: "string",
+            enum: ["info", "warning", "fatal", "blocked"]
+          },
+          legalConfidence: {
+            type: "string",
+            enum: [
+              "technical",
+              "standard_based",
+              "official_source_derived",
+              "educational_simulation",
+              "professional_review_required"
+            ]
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          }
+        }
+      },
+      CountryPackWarning: {
+        type: "object",
+        required: ["code", "severity", "message", "legalConfidence"],
+        properties: {
+          code: {
+            type: "string",
+            example: "COUNTRY_REVIEW_REQUIRED"
+          },
+          severity: {
+            type: "string",
+            enum: ["info", "warning", "fatal", "blocked"]
+          },
+          message: {
+            type: "string"
+          },
+          legalConfidence: {
+            type: "string",
+            enum: [
+              "technical",
+              "standard_based",
+              "official_source_derived",
+              "educational_simulation",
+              "professional_review_required"
+            ]
           }
         }
       },

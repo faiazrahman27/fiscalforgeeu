@@ -4,10 +4,12 @@ import { healthRoutes } from "../health.js";
 import { apiKeyRoutes } from "./api-keys.js";
 import { apiRequestRoutes } from "./api-requests.js";
 import { apiUsageRoutes } from "./api-usage.js";
+import { countryPackRoutes } from "./country-packs.js";
 import { importUblRoutes } from "./import-ubl.js";
 import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { invoiceExportRoutes } from "./invoice-exports.js";
 import { parseUblRoutes } from "./parse-ubl.js";
+import { transactionRoutes } from "./transactions.js";
 import { vatRoutes } from "./vat.js";
 import { validateInvoiceRoutes } from "./validate-invoice.js";
 import { validationRuleRoutes } from "./validation-rules.js";
@@ -44,6 +46,10 @@ export async function v1Routes(app: FastifyInstance) {
     prefix: "/api-usage"
   });
 
+  await app.register(countryPackRoutes, {
+    prefix: "/country-packs"
+  });
+
   await app.register(validateInvoiceRoutes, {
     prefix: "/invoices"
   });
@@ -62,6 +68,10 @@ export async function v1Routes(app: FastifyInstance) {
 
   await app.register(importUblRoutes, {
     prefix: "/invoices"
+  });
+
+  await app.register(transactionRoutes, {
+    prefix: "/transactions"
   });
 
   await app.register(validationRunRoutes, {

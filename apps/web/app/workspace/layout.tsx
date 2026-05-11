@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Activity,
   BadgeCheck,
@@ -8,6 +9,7 @@ import {
   FileCheck2,
   FileCode2,
   FileInput,
+  Globe2,
   Home,
   KeyRound,
   LockKeyhole,
@@ -47,6 +49,16 @@ const workspaceNav = [
     icon: <BadgeCheck size={18} />
   },
   {
+    href: "/workspace/country-packs",
+    label: "Country Packs",
+    icon: <Globe2 size={18} />
+  },
+  {
+    href: "/workspace/vida-simulator",
+    label: "ViDA Simulator",
+    icon: <ShieldCheck size={18} />
+  },
+  {
     href: "/workspace/validation-rules",
     label: "Rules",
     icon: <BookOpenCheck size={18} />
@@ -73,6 +85,7 @@ type WorkspaceContext = {
   workspaceTitle: string;
   workspaceSubtitle: string;
   workspaceStatusLabel: string;
+  requiresSignInAction: boolean;
 };
 
 type BootstrapWorkspaceRecord = {
@@ -138,8 +151,9 @@ function getLocalWorkspaceContext(): WorkspaceContext {
   return {
     signedInUserEmail: "",
     workspaceTitle: "Local workspace",
-    workspaceSubtitle: "No organization account connected",
-    workspaceStatusLabel: "Workspace status"
+    workspaceSubtitle: "Supabase auth is not configured",
+    workspaceStatusLabel: "Development workspace",
+    requiresSignInAction: true
   };
 }
 
@@ -148,11 +162,18 @@ function getPersonalWorkspaceFallback(email: string): WorkspaceContext {
     signedInUserEmail: email,
     workspaceTitle: "Personal workspace",
     workspaceSubtitle: email || "Organization bootstrap pending",
-    workspaceStatusLabel: "Workspace status"
+    workspaceStatusLabel: "Workspace status",
+    requiresSignInAction: false
   };
 }
 
 async function getWorkspaceContext(): Promise<WorkspaceContext> {
+  /*
+   * Development safety:
+   * If Supabase public config is missing, keep the local workspace shell usable
+   * instead of breaking local builds/checks. In configured environments,
+   * workspace pages require a signed-in Supabase user.
+   */
   if (!hasSupabasePublicConfig()) {
     return getLocalWorkspaceContext();
   }
@@ -164,8 +185,13 @@ async function getWorkspaceContext(): Promise<WorkspaceContext> {
       data: { user }
     } = await supabase.auth.getUser();
 
+    /*
+     * Production/private behavior:
+     * Every /workspace route requires a signed-in user when Supabase auth is
+     * configured.
+     */
     if (!user) {
-      return getLocalWorkspaceContext();
+      redirect("/auth/sign-in");
     }
 
     const signedInUserEmail = user.email ?? "";
@@ -199,11 +225,12 @@ async function getWorkspaceContext(): Promise<WorkspaceContext> {
       signedInUserEmail: visibleEmail,
       workspaceTitle: bootstrapRecord.organizationName,
       workspaceSubtitle: `${bootstrapRecord.membershipRole} · ${visibleEmail}`,
-      workspaceStatusLabel: "Organization workspace"
+      workspaceStatusLabel: "Organization workspace",
+      requiresSignInAction: false
     };
   } catch (error) {
     console.error("Workspace context failed:", error);
-    return getLocalWorkspaceContext();
+    redirect("/auth/sign-in");
   }
 }
 
@@ -217,7 +244,8 @@ export default async function WorkspaceLayout({
     signedInUserEmail,
     workspaceTitle,
     workspaceSubtitle,
-    workspaceStatusLabel
+    workspaceStatusLabel,
+    requiresSignInAction
   } = workspaceContext;
 
   return (
@@ -248,8 +276,8 @@ export default async function WorkspaceLayout({
         <div className="workspace-side-note">
           <FileCode2 size={18} />
           <p>
-            Web routes use local Next.js proxy handlers, which forward requests to
-            the dedicated API service.
+            Web routes use local Next.js proxy handlers, which forward requests
+            to the dedicated API service.
           </p>
         </div>
       </aside>
@@ -269,12 +297,12 @@ export default async function WorkspaceLayout({
                   Sign out
                 </button>
               </form>
-            ) : (
+            ) : requiresSignInAction ? (
               <Link href="/auth/sign-in">
                 <LogIn size={16} />
                 Sign in
               </Link>
-            )}
+            ) : null}
 
             <Link href="/developer-api">
               <KeyRound size={16} />

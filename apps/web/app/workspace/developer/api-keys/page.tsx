@@ -26,6 +26,7 @@ type ApiKeyScope =
   | "invoices:import_ubl"
   | "xml:validation_jobs"
   | "vat:validate_format"
+  | "transactions:simulate_vida"
   | "validation_runs:read"
   | "rules:read";
 
@@ -112,6 +113,7 @@ type ApiKeyFormState = {
 type ApiTestEndpointId =
   | "validation-rules"
   | "vat-format"
+  | "vida-simulation"
   | "invoice-validation"
   | "ubl-parse"
   | "xml-validation-jobs";
@@ -172,6 +174,11 @@ const scopeOptions: {
     value: "vat:validate_format",
     label: "VAT format",
     description: "POST /api/v1/vat/validate-format"
+  },
+  {
+    value: "transactions:simulate_vida",
+    label: "ViDA simulation",
+    description: "POST /api/v1/transactions/simulate-vida"
   },
   {
     value: "validation_runs:read",
@@ -239,6 +246,22 @@ const invoiceValidationSample = {
   ]
 };
 
+const vidaSimulationSample = {
+  sellerCountry: "DE",
+  buyerCountry: "HU",
+  sellerVatId: "DE123456789",
+  buyerVatId: "HU12345678",
+  buyerType: "business",
+  transactionType: "services",
+  invoiceDate: "2026-05-01",
+  currency: "EUR",
+  amount: "100.00",
+  countryPackVersions: {
+    DE: "2026.05.1",
+    HU: "2026.05.1"
+  }
+};
+
 const tinyUblXmlSample = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
   xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
@@ -300,6 +323,14 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
       vatId: "HU12345678",
       countryHint: "HU"
     }
+  },
+  {
+    id: "vida-simulation",
+    label: "ViDA readiness simulation",
+    method: "POST",
+    path: "/api/v1/transactions/simulate-vida",
+    scope: "transactions:simulate_vida",
+    body: vidaSimulationSample
   },
   {
     id: "invoice-validation",
@@ -405,6 +436,7 @@ function isApiKeyScope(value: unknown): value is ApiKeyScope {
     value === "invoices:import_ubl" ||
     value === "xml:validation_jobs" ||
     value === "vat:validate_format" ||
+    value === "transactions:simulate_vida" ||
     value === "validation_runs:read" ||
     value === "rules:read"
   );
@@ -610,6 +642,7 @@ function formatPolicyLabel(value: string) {
   return value
     .replace(/^invoices_/, "invoice ")
     .replace(/^vat_/, "VAT ")
+    .replace(/^transactions_/, "transaction ")
     .replace(/^validation_/, "validation ")
     .replace(/^organization_/, "organization ")
     .replaceAll("_", " ");
@@ -1273,8 +1306,9 @@ export default function WorkspaceApiKeysPage() {
             <span />
             <p>
               Invoice Lantern API keys provide access to sandbox technical
-              validation tools only. They are not official filing credentials and
-              do not provide tax authority submission capability.
+              validation and readiness-simulation tools only. They are not
+              official filing credentials and do not provide tax authority
+              submission capability.
             </p>
           </div>
           <div className="alert-item">
@@ -1980,6 +2014,12 @@ curl -X POST http://localhost:4000/api/v1/vat/validate-format \\
   -H "content-type: application/json" \\
   -H "X-API-Key: il_test_your_key_here" \\
   -d '{"vatId":"HU12345678","countryHint":"HU"}'
+
+# ViDA-readiness simulation
+curl -X POST http://localhost:4000/api/v1/transactions/simulate-vida \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d '{"sellerCountry":"DE","buyerCountry":"HU","buyerType":"business","transactionType":"services"}'
 
 # Full keys are shown once only during creation.
 # Request bodies, XML payloads, full API keys, and full VAT IDs are not stored in API usage logs.`}</pre>

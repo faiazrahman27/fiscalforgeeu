@@ -33,6 +33,15 @@ export const API_RATE_LIMIT_POLICIES = {
     appliesTo: "api_key",
     requestPathPrefix: "/api/v1/vat/validate-format"
   },
+  transactions_simulate_vida: {
+    policyKey: "transactions_simulate_vida",
+    windowSeconds: 15 * 60,
+    maxRequests: 30,
+    scope: "transactions:simulate_vida",
+    description: "Sandbox ViDA-readiness simulation API limit.",
+    appliesTo: "api_key",
+    requestPathPrefix: "/api/v1/transactions/simulate-vida"
+  },
   invoices_validate: {
     policyKey: "invoices_validate",
     windowSeconds: 15 * 60,
@@ -120,6 +129,10 @@ export function getSandboxRateLimitMessage(policy: ApiRateLimitPolicy) {
 
   if (policy.policyKey === "vat_validate_format") {
     return "This API key exceeded the sandbox rate limit for VAT format checks.";
+  }
+
+  if (policy.policyKey === "transactions_simulate_vida") {
+    return "This API key exceeded the sandbox rate limit for ViDA-readiness simulations.";
   }
 
   if (policy.policyKey === "validation_rules_catalog") {

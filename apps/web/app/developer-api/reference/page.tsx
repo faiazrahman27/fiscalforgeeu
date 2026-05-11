@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BookOpen,
   Code2,
+  Globe2,
   KeyRound,
   ShieldCheck
 } from "lucide-react";
@@ -18,8 +19,15 @@ const scopeRows = [
   ["invoices:parse_ubl", "POST /api/v1/invoices/parse/ubl"],
   ["xml:validation_jobs", "POST/GET /api/v1/xml/validation-jobs"],
   ["vat:validate_format", "POST /api/v1/vat/validate-format"],
+  ["transactions:simulate_vida", "POST /api/v1/transactions/simulate-vida"],
   ["rules:read", "GET /api/v1/validation/rules"],
   ["validation_runs:read", "GET /api/v1/validation-runs/:id"]
+];
+
+const publicReadOnlyRows = [
+  ["Country-pack catalogue", "GET /api/v1/country-packs"],
+  ["Country-pack detail", "GET /api/v1/country-packs/:countryCode"],
+  ["OpenAPI document", "GET /api/v1/openapi.json"]
 ];
 
 export default function DeveloperApiReferencePage() {
@@ -44,11 +52,12 @@ export default function DeveloperApiReferencePage() {
             <p className="subpage-lead">
               This reference documents the implemented Invoice Lantern
               Developer API surface. It covers sandbox technical validation,
-              UBL export and parsing, local VAT format checks, validation-rule
-              metadata, validation-run detail reads, API key management, usage
-              logs, and rate-limit policy views. It is not official filing, not
-              authority submission, not tax, legal, or accounting advice, and
-              not a compliance guarantee.
+              UBL export and parsing, XML validation job metadata, local VAT
+              format checks, ViDA-readiness simulations, country-pack catalogue
+              reads, validation-rule metadata, validation-run detail reads, API
+              key management, usage logs, and rate-limit policy views. It is not
+              official filing, not authority submission, not tax, legal, or
+              accounting advice, and not a compliance guarantee.
             </p>
           </Reveal>
 
@@ -91,6 +100,56 @@ export default function DeveloperApiReferencePage() {
 # Keys are shown once during creation.
 # Request logs do not store request bodies, XML payloads, full API keys,
 # full VAT IDs, or key hashes.`}</pre>
+              </section>
+            </Reveal>
+
+            <Reveal>
+              <section className="terminal-shell reference-terminal">
+                <div className="terminal-top">
+                  <span />
+                  <span />
+                  <span />
+                  <p>ViDA simulation</p>
+                </div>
+                <pre>{`curl -X POST http://localhost:4000/api/v1/transactions/simulate-vida \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d '{
+    "sellerCountry": "DE",
+    "buyerCountry": "HU",
+    "sellerVatId": "DE123456789",
+    "buyerVatId": "HU12345678",
+    "buyerType": "business",
+    "transactionType": "services",
+    "invoiceDate": "2026-05-01",
+    "currency": "EUR",
+    "amount": "100.00"
+  }'
+
+# Requires the transactions:simulate_vida API-key scope.
+# This is an educational readiness simulation only.
+# It is not official ViDA software, not filing, not authority submission,
+# not legal, tax, or accounting advice, and not a compliance guarantee.`}</pre>
+              </section>
+            </Reveal>
+
+            <Reveal>
+              <section className="terminal-shell reference-terminal">
+                <div className="terminal-top">
+                  <span />
+                  <span />
+                  <span />
+                  <p>Country-pack catalogue</p>
+                </div>
+                <pre>{`curl http://localhost:4000/api/v1/country-packs
+
+curl http://localhost:4000/api/v1/country-packs/HU
+
+# Country packs are read-only educational simulations.
+# They expose VAT-pattern, source-reference, lifecycle, capability,
+# and registry metadata when available.
+# They do not certify legal, tax, accounting, Peppol, EN 16931,
+# ViDA, filing, or authority compliance.`}</pre>
               </section>
             </Reveal>
 
@@ -144,6 +203,34 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
                 The reserved `invoices:import_ubl` scope can exist on keys, but
                 UBL draft import is not documented as an active organization
                 API-key endpoint in this reference.
+              </p>
+            </section>
+          </Reveal>
+
+          <Reveal>
+            <section className="reference-scope-table">
+              <div className="reference-table-head">
+                <div>
+                  <p>Public read-only endpoints</p>
+                  <h2>Reference and country-pack metadata</h2>
+                </div>
+                <Globe2 size={22} />
+              </div>
+
+              <div className="reference-scope-list">
+                {publicReadOnlyRows.map(([label, endpoint]) => (
+                  <div className="reference-scope-row" key={endpoint}>
+                    <strong>{label}</strong>
+                    <span>{endpoint}</span>
+                  </div>
+                ))}
+              </div>
+
+              <p>
+                Country-pack endpoints are read-only catalogue endpoints. They
+                are documented separately from API-key scopes because they do
+                not perform user-owned invoice validation, XML processing, VAT
+                verification, filing, or authority submission.
               </p>
             </section>
           </Reveal>
