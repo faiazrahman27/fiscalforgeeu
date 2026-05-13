@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireSupabaseUser } from "../../middleware/require-api-key.js";
+import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
 import {
   createAuthenticatedWorkspaceExportPackage,
   getAuthenticatedWorkspaceExportPackageById,
@@ -62,7 +66,14 @@ export async function workspaceExportPackageRoutes(app: FastifyInstance) {
   app.get(
     "/export-packages",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.privacyManagers, {
+          code: "WORKSPACE_EXPORT_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace export packages require an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceExportPackageContext(request);
@@ -88,7 +99,14 @@ export async function workspaceExportPackageRoutes(app: FastifyInstance) {
   app.post(
     "/export-packages",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.privacyManagers, {
+          code: "WORKSPACE_EXPORT_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace export package creation requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceExportPackageContext(request);
@@ -143,7 +161,14 @@ export async function workspaceExportPackageRoutes(app: FastifyInstance) {
   app.get(
     "/export-packages/:id",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.privacyManagers, {
+          code: "WORKSPACE_EXPORT_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace export package detail requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceExportPackageContext(request);

@@ -8,6 +8,11 @@ import { apiRequestRoutes } from "../routes/v1/api-requests.js";
 import { apiUsageRoutes } from "../routes/v1/api-usage.js";
 import { requireApiKeyRateLimitPolicy } from "../middleware/require-api-rate-limit.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole,
+  type WorkspaceRole
+} from "../middleware/require-workspace-role.js";
+import {
   createApiKey,
   getApiUsageSummary,
   listApiRequests,
@@ -493,6 +498,33 @@ function createRouteReply() {
   };
 }
 
+async function callWorkspaceRolePreHandler(
+  allowedRoles: readonly WorkspaceRole[]
+) {
+  const handler = requireWorkspaceRole(allowedRoles, {
+    code: "WORKSPACE_ROLE_TEST_DENIED",
+    message: "Workspace role test denied."
+  });
+  const reply = createRouteReply();
+  const result = await handler(
+    {
+      authenticationMode: "supabase_user",
+      authenticatedUser: {
+        id: userId,
+        email: "admin@example.test",
+        role: "authenticated"
+      },
+      authenticatedAccessToken: "test-access-token"
+    } as never,
+    reply as never
+  );
+
+  return {
+    statusCode: reply.statusCode,
+    body: reply.payload ?? result
+  };
+}
+
 async function callApiRequestRoute(
   path: "/" | "/summary",
   query: Record<string, unknown>
@@ -700,7 +732,16 @@ test("API key management routes create list and revoke with safe response fields
 });
 
 test("API key management routes preserve owner, admin, or developer authorization", async () => {
-  repository.membershipRole = "member";
+  repository.membershipRole = "developer";
+
+  const developerListResponse = await callApiKeyRoute({
+    method: "GET",
+    path: "/"
+  });
+
+  assert.equal(developerListResponse.statusCode, 200);
+
+  repository.membershipRole = "viewer";
 
   const listResponse = await callApiKeyRoute({
     method: "GET",
@@ -720,6 +761,56 @@ test("API key management routes preserve owner, admin, or developer authorizatio
   assert.equal(createResponse.statusCode, 403);
   assert.match(JSON.stringify(listResponse.body), /API_KEY_MANAGER_ROLE_REQUIRED/);
   assert.match(JSON.stringify(createResponse.body), /API_KEY_MANAGER_ROLE_REQUIRED/);
+});
+
+test("workspace role helper enforces draft, API, report, and privacy permissions", async () => {
+  repository.membershipRole = "viewer";
+  const viewerDraftEdit = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.invoiceDraftEditors
+  );
+  const viewerReportRead = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.validationRunReaders
+  );
+
+  repository.membershipRole = "accountant";
+  const accountantDraftEdit = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.invoiceDraftEditors
+  );
+
+  repository.membershipRole = "developer";
+  const developerApiKeys = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.apiKeyManagers
+  );
+  const developerPrivacy = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.privacyManagers
+  );
+  const developerDraftEdit = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.invoiceDraftEditors
+  );
+
+  repository.membershipRole = "reviewer";
+  const reviewerValidation = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.invoiceValidators
+  );
+  const reviewerApiKeys = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.apiKeyManagers
+  );
+
+  repository.membershipRole = "owner";
+  const ownerPrivacy = await callWorkspaceRolePreHandler(
+    WORKSPACE_ROLE_SETS.privacyManagers
+  );
+
+  assert.equal(viewerDraftEdit.statusCode, 403);
+  assert.match(JSON.stringify(viewerDraftEdit.body), /WORKSPACE_ROLE_TEST_DENIED/);
+  assert.equal(viewerReportRead.statusCode, 200);
+  assert.equal(accountantDraftEdit.statusCode, 200);
+  assert.equal(developerApiKeys.statusCode, 200);
+  assert.equal(developerPrivacy.statusCode, 403);
+  assert.equal(developerDraftEdit.statusCode, 403);
+  assert.equal(reviewerValidation.statusCode, 200);
+  assert.equal(reviewerApiKeys.statusCode, 403);
+  assert.equal(ownerPrivacy.statusCode, 200);
 });
 
 test("developer API workspace context failures return clear non-500 responses", async () => {
@@ -835,6 +926,106 @@ test("insufficient API key scope is rejected", async (t) => {
 
   assert.equal(response.statusCode, 403);
   assert.match(response.body, /API_KEY_SCOPE_INSUFFICIENT/);
+});
+
+test("validation-run list requires the validation run read scope", async (t) => {
+  const created = await createKey(["rules:read"]);
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/v1/validation-runs",
+    headers: {
+      "x-api-key": created.secret
+    }
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.match(response.body, /API_KEY_SCOPE_INSUFFICIENT/);
+});
+
+test("organization API keys used as bearer user tokens stay rejected", async (t) => {
+  const created = await createKey(["rules:read"]);
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const responses = await Promise.all([
+    app.inject({
+      method: "GET",
+      url: "/api/v1/api-keys",
+      headers: {
+        authorization: `Bearer ${created.secret}`
+      }
+    }),
+    app.inject({
+      method: "GET",
+      url: "/api/v1/workspace/settings",
+      headers: {
+        authorization: `Bearer ${created.secret}`
+      }
+    })
+  ]);
+
+  for (const response of responses) {
+    assert.equal(response.statusCode, 401);
+    assert.match(response.body, /AUTH_TOKEN_REQUIRED/);
+    assert.doesNotMatch(response.body, /AUTH_NOT_CONFIGURED/);
+    assert.equal(response.body.includes(created.secret), false);
+    assert.doesNotMatch(response.body, /keyHash|key_hash/);
+  }
+});
+
+test("organization API keys cannot use signed-user workspace draft routes", async (t) => {
+  const created = await createKey(["rules:read"]);
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "GET",
+    url: "/api/v1/invoices/drafts",
+    headers: {
+      "x-api-key": created.secret
+    }
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.match(response.body, /SUPABASE_USER_REQUIRED/);
+  assert.equal(response.body.includes(created.secret), false);
+  assert.doesNotMatch(response.body, /keyHash|key_hash/);
+});
+
+test("organization API keys cannot create editable drafts through UBL import", async (t) => {
+  const created = await createKey(["invoices:import_ubl"]);
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/invoices/import/ubl",
+    headers: {
+      "x-api-key": created.secret,
+      "content-type": "application/xml"
+    },
+    payload: "<Invoice />"
+  });
+
+  assert.equal(response.statusCode, 403);
+  assert.match(response.body, /API_KEY_UBL_IMPORT_DRAFT_UNSUPPORTED/);
+  assert.equal(response.body.includes(created.secret), false);
+  assert.doesNotMatch(response.body, /keyHash|key_hash/);
 });
 
 test("valid API key can call a scoped developer endpoint", async (t) => {
@@ -1401,6 +1592,18 @@ test("API usage current route returns safe usage counts", async () => {
   assert.equal(serialized.includes("<Invoice"), false);
 });
 
+test("API usage routes deny viewer access", async () => {
+  repository.membershipRole = "viewer";
+
+  const policyResponse = await callApiUsageRoute("/policies");
+  const currentResponse = await callApiUsageRoute("/current");
+
+  assert.equal(policyResponse.statusCode, 403);
+  assert.equal(currentResponse.statusCode, 403);
+  assert.match(JSON.stringify(policyResponse.body), /API_USAGE_ROLE_REQUIRED/);
+  assert.match(JSON.stringify(currentResponse.body), /API_USAGE_ROLE_REQUIRED/);
+});
+
 test("API request summary and current usage return zero defaults with no logs", async () => {
   const summaryResponse = await callApiRequestRoute("/summary", {
     sinceDays: "30"
@@ -1438,7 +1641,7 @@ test("API request summary and current usage return zero defaults with no logs", 
 });
 
 test("API request routes follow owner, admin, or developer visibility rules", async () => {
-  repository.membershipRole = "member";
+  repository.membershipRole = "viewer";
 
   const response = await callApiRequestRoute("/", {});
 

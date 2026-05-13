@@ -5,6 +5,11 @@ import {
   requireApiKeyScopes
 } from "../../middleware/require-api-key.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  rejectOrganizationApiKey,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   deleteAuthenticatedValidationRunById,
   deleteValidationRunById,
   getAuthenticatedValidationRunById,
@@ -12,6 +17,7 @@ import {
   getValidationRunById,
   hasAuthenticatedValidationRunContext,
   listAuthenticatedValidationRuns,
+  listOrganizationValidationRuns,
   listValidationRuns,
   recordAuthenticatedValidationReportPdfExported,
   type AuthenticatedValidationRunContext,
@@ -389,15 +395,26 @@ export async function validationRunRoutes(app: FastifyInstance) {
   app.get(
     "/",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKeyScopes(["validation_runs:read"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "VALIDATION_RUN_READ_ROLE_REQUIRED",
+          message:
+            "Validation run reading requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       try {
         const authenticatedContext = getAuthenticatedValidationRunContext(request);
 
-        const runs = authenticatedContext
-          ? await listAuthenticatedValidationRuns(authenticatedContext)
-          : await listValidationRuns();
+        const runs = request.authenticatedApiKey
+          ? await listOrganizationValidationRuns(
+              request.authenticatedApiKey.organizationId
+            )
+          : authenticatedContext
+            ? await listAuthenticatedValidationRuns(authenticatedContext)
+            : await listValidationRuns();
 
         return {
           records: runs.map(buildValidationRunSummary)
@@ -411,7 +428,14 @@ export async function validationRunRoutes(app: FastifyInstance) {
   app.get(
     "/:id/report.pdf",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKeyScopes(["validation_runs:read"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "VALIDATION_RUN_REPORT_ROLE_REQUIRED",
+          message:
+            "Validation report export requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = validationRunParamsSchema.safeParse(request.params);
@@ -429,12 +453,17 @@ export async function validationRunRoutes(app: FastifyInstance) {
       try {
         const authenticatedContext = getAuthenticatedValidationRunContext(request);
 
-        const run = authenticatedContext
-          ? await getAuthenticatedValidationRunById(
-              authenticatedContext,
+        const run = request.authenticatedApiKey
+          ? await getOrganizationValidationRunById(
+              request.authenticatedApiKey.organizationId,
               parsedParams.data.id
             )
-          : await getValidationRunById(parsedParams.data.id);
+          : authenticatedContext
+            ? await getAuthenticatedValidationRunById(
+                authenticatedContext,
+                parsedParams.data.id
+              )
+            : await getValidationRunById(parsedParams.data.id);
 
         if (!run) {
           return reply.status(404).send({
@@ -478,7 +507,14 @@ export async function validationRunRoutes(app: FastifyInstance) {
   app.get(
     "/:id",
     {
-      preHandler: requireApiKeyScopes(["validation_runs:read"])
+      preHandler: [
+        requireApiKeyScopes(["validation_runs:read"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "VALIDATION_RUN_READ_ROLE_REQUIRED",
+          message:
+            "Validation run detail requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = validationRunParamsSchema.safeParse(request.params);
@@ -528,7 +564,15 @@ export async function validationRunRoutes(app: FastifyInstance) {
   app.delete(
     "/:id",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.workspaceManagers, {
+          code: "VALIDATION_RUN_DELETE_ROLE_REQUIRED",
+          message:
+            "Validation run deletion requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = validationRunParamsSchema.safeParse(request.params);

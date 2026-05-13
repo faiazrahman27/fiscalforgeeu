@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireSupabaseUser } from "../../middleware/require-api-key.js";
+import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
 import {
   WorkspaceSettingsRepositoryError,
   getAuthenticatedWorkspaceSettings,
@@ -81,7 +85,14 @@ export async function workspaceSettingsRoutes(app: FastifyInstance) {
   app.get(
     "/settings",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.workspaceManagers, {
+          code: "WORKSPACE_SETTINGS_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace privacy and retention settings require an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceSettingsContext(request);
@@ -111,7 +122,14 @@ export async function workspaceSettingsRoutes(app: FastifyInstance) {
   app.put(
     "/settings",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.workspaceManagers, {
+          code: "WORKSPACE_SETTINGS_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace privacy and retention settings require an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceSettingsContext(request);

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireSupabaseUser } from "../../middleware/require-api-key.js";
+import { WORKSPACE_ROLE_SETS } from "../../middleware/require-workspace-role.js";
 import {
   API_KEY_SCOPES,
   ApiKeyServiceError,
@@ -41,7 +42,9 @@ type ApiKeyManagerContext = {
   membershipRole: string;
 };
 
-const API_KEY_MANAGER_ROLES = new Set(["owner", "admin", "developer"]);
+const API_KEY_MANAGER_ROLES = new Set<string>(
+  WORKSPACE_ROLE_SETS.apiKeyManagers
+);
 
 function getAuthenticatedContext(request: FastifyRequest) {
   const userId = request.authenticatedUser?.id ?? "";

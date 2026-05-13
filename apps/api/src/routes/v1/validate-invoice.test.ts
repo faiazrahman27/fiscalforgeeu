@@ -4,6 +4,12 @@ import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { buildApp } from "../../app.js";
 import { env } from "../../config/env.js";
+import {
+  getOrganizationValidationRunById,
+  listOrganizationValidationRuns,
+  saveValidationRun,
+  type ValidationRunRecord
+} from "../../repositories/validation-run-repository.js";
 
 const validationRunDataPath = join(process.cwd(), ".data", "validation-runs.json");
 
@@ -136,6 +142,41 @@ function buildInvoicePayload(overrides: {
   payload.buyer.vatId = overrides.buyerVatId ?? "DE987654321";
 
   return payload;
+}
+
+function buildStoredValidationRun(
+  id: string,
+  organizationId: string,
+  invoiceNumber: string
+): ValidationRunRecord {
+  return {
+    id,
+    organizationId,
+    invoiceNumber,
+    buyer: "Tenant scoped buyer",
+    buyerCountry: "DE",
+    seller: "Tenant scoped seller",
+    sellerCountry: "DE",
+    issueDate: "2026-04-29",
+    createdAt: new Date().toISOString(),
+    technicalStatus: "passed",
+    standardStatus: "ready",
+    countrySimulationStatus: "not_relevant",
+    vidaReadinessStatus: "not_relevant",
+    confidence: "technical_preview",
+    profile: "API_VALIDATION",
+    currency: "EUR",
+    totals: {
+      lineExtensionAmount: "100.00",
+      taxExclusiveAmount: "100.00",
+      taxAmount: "19.00",
+      taxInclusiveAmount: "119.00",
+      payableAmount: "119.00"
+    },
+    findings: [],
+    disclaimer:
+      "Stored validation runs are non-official technical sandbox records and are not legal, tax, accounting, or authority conclusions."
+  };
 }
 
 test("invoice validation returns richer rule metadata on findings", async (t) => {
@@ -542,6 +583,45 @@ test("validation run PDF endpoint requires authentication", async (t) => {
   });
 
   assert.equal(pdfResponse.statusCode, 401);
+});
+
+test("organization validation-run reads are tenant scoped in JSON storage", async () => {
+  const organizationA = "00000000-0000-4000-8000-0000000000a1";
+  const organizationB = "00000000-0000-4000-8000-0000000000b1";
+  const runA = buildStoredValidationRun(
+    "validation-run-org-a",
+    organizationA,
+    "INV-ORG-A"
+  );
+  const runB = buildStoredValidationRun(
+    "validation-run-org-b",
+    organizationB,
+    "INV-ORG-B"
+  );
+
+  await saveValidationRun(runA);
+  await saveValidationRun(runB);
+
+  const organizationARuns = await listOrganizationValidationRuns(organizationA);
+  const organizationBRunFromA = await getOrganizationValidationRunById(
+    organizationA,
+    runB.id
+  );
+  const organizationARunFromA = await getOrganizationValidationRunById(
+    organizationA,
+    runA.id
+  );
+
+  assert.equal(
+    organizationARuns.some((run) => run.id === runA.id),
+    true
+  );
+  assert.equal(
+    organizationARuns.some((run) => run.id === runB.id),
+    false
+  );
+  assert.equal(organizationBRunFromA, null);
+  assert.equal(organizationARunFromA?.id, runA.id);
 });
 
 test("rule catalog endpoint returns published core technical rules", async (t) => {

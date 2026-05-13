@@ -11,7 +11,11 @@ import {
   ublInvoiceXmlToCanonicalInvoice
 } from "@invoice-lantern/ubl";
 import { env } from "../../config/env.js";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
+import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
 import {
   buildDraftSummary,
   createAuthenticatedInvoiceDraft,
@@ -452,9 +456,31 @@ export async function importUblRoutes(app: FastifyInstance) {
   app.post(
     "/import/ubl",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKeyScopes(["invoices:import_ubl"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceDraftEditors, {
+          code: "UBL_IMPORT_ROLE_REQUIRED",
+          message:
+            "UBL draft import requires an organization owner, admin, accountant, or reviewer role."
+        })
+      ]
     },
     async (request, reply) => {
+      if (request.authenticatedApiKey) {
+        return reply.status(403).send({
+          error: {
+            code: "API_KEY_UBL_IMPORT_DRAFT_UNSUPPORTED",
+            message:
+              "Organization API keys can parse UBL XML with the parse scope, but editable draft import requires a signed-in workspace user in this step.",
+            details: null
+          },
+          ...buildCreatedFalseResponse({
+            reason:
+              "Editable draft import requires a signed-in workspace user in this step."
+          })
+        });
+      }
+
       const parsedRequest = readXmlFromRequest(request);
 
       if (!parsedRequest.ok) {

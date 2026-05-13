@@ -10,6 +10,11 @@ import {
 } from "../../middleware/require-api-key.js";
 import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  rejectOrganizationApiKey,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   hasAuthenticatedVatNumberCheckContext,
   listAuthenticatedVatNumberCheckRecords,
   listVatNumberCheckRecords,
@@ -110,6 +115,11 @@ export async function vatRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireApiKeyScopes(["vat:validate_format"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceValidators, {
+          code: "VAT_VALIDATE_ROLE_REQUIRED",
+          message:
+            "VAT format checks require an organization owner, admin, accountant, developer, or reviewer role."
+        }),
         requireApiKeyRateLimitPolicy("vat_validate_format")
       ]
     },
@@ -178,7 +188,15 @@ export async function vatRoutes(app: FastifyInstance) {
   app.get(
     "/checks",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "VAT_CHECK_READ_ROLE_REQUIRED",
+          message:
+            "VAT check history requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedQuery = vatCheckListQuerySchema.safeParse(request.query);

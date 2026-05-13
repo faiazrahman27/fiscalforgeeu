@@ -1,6 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  rejectOrganizationApiKey,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   invoiceDraftParamsSchema,
   invoiceEditorDraftSchema
 } from "../../schemas/invoice.js";
@@ -54,7 +59,15 @@ export async function invoiceDraftRoutes(app: FastifyInstance) {
   app.get(
     "/drafts",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceDraftReaders, {
+          code: "INVOICE_DRAFT_READ_ROLE_REQUIRED",
+          message:
+            "Invoice draft reading requires workspace membership with an allowed invoice-read role."
+        })
+      ]
     },
     async (request, reply) => {
       try {
@@ -76,7 +89,15 @@ export async function invoiceDraftRoutes(app: FastifyInstance) {
   app.post(
     "/drafts",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceDraftEditors, {
+          code: "INVOICE_DRAFT_EDIT_ROLE_REQUIRED",
+          message:
+            "Invoice draft creation requires an organization owner, admin, accountant, or reviewer role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedBody = invoiceEditorDraftSchema.safeParse(request.body);
@@ -114,7 +135,15 @@ export async function invoiceDraftRoutes(app: FastifyInstance) {
   app.get(
     "/drafts/:id",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceDraftReaders, {
+          code: "INVOICE_DRAFT_READ_ROLE_REQUIRED",
+          message:
+            "Invoice draft reading requires workspace membership with an allowed invoice-read role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = invoiceDraftParamsSchema.safeParse(request.params);
@@ -161,7 +190,15 @@ export async function invoiceDraftRoutes(app: FastifyInstance) {
   app.put(
     "/drafts/:id",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceDraftEditors, {
+          code: "INVOICE_DRAFT_EDIT_ROLE_REQUIRED",
+          message:
+            "Invoice draft updates require an organization owner, admin, accountant, or reviewer role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = invoiceDraftParamsSchema.safeParse(request.params);
@@ -222,7 +259,15 @@ export async function invoiceDraftRoutes(app: FastifyInstance) {
   app.delete(
     "/drafts/:id",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.workspaceManagers, {
+          code: "INVOICE_DRAFT_DELETE_ROLE_REQUIRED",
+          message:
+            "Invoice draft deletion requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = invoiceDraftParamsSchema.safeParse(request.params);

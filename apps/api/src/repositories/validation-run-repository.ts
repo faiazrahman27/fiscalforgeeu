@@ -31,6 +31,7 @@ export type ValidationTotals = {
 
 export type ValidationRunRecord = {
   id: string;
+  organizationId?: string;
   invoiceNumber: string;
   buyer: string;
   buyerCountry?: string;
@@ -53,6 +54,11 @@ export type ValidationRunRecord = {
 export type AuthenticatedValidationRunContext = {
   userId: string;
   accessToken: string;
+};
+
+export type OrganizationValidationRunContext = {
+  organizationId: string;
+  userId: string;
 };
 
 type SupabaseWorkspaceBootstrapRecord = {
@@ -603,6 +609,32 @@ export async function listValidationRuns() {
   return sortValidationRunsByCreatedAt(records);
 }
 
+export async function listOrganizationValidationRuns(organizationId: string) {
+  if (!hasSupabaseServerConfig()) {
+    const records = await listValidationRuns();
+
+    return records.filter((record) => record.organizationId === organizationId);
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("validation_runs")
+    .select(VALIDATION_RUN_SELECT_FIELDS)
+    .eq("organization_id", organizationId)
+    .order("created_at", {
+      ascending: false
+    })
+    .limit(MAX_STORED_VALIDATION_RUNS);
+
+  if (error) {
+    throw new Error(`Could not list organization validation runs: ${error.message}`);
+  }
+
+  return ((data ?? []) as SupabaseValidationRunRow[]).map((row) =>
+    normalizeSupabaseValidationRunRow(row)
+  );
+}
+
 export async function getValidationRunById(id: string) {
   const runs = await listValidationRuns();
 
@@ -693,7 +725,9 @@ export async function getOrganizationValidationRunById(
   id: string
 ) {
   if (!hasSupabaseServerConfig()) {
-    throw new Error("Supabase server configuration is required.");
+    const runs = await listOrganizationValidationRuns(organizationId);
+
+    return runs.find((run) => run.id === id) ?? null;
   }
 
   const supabase = getSupabaseServiceRoleClient();
@@ -771,6 +805,74 @@ export async function saveAuthenticatedValidationRun(
 
   await recordWorkspaceActivityEvent(supabase, {
     organizationId: workspace.organizationId,
+    actorUserId: context.userId,
+    eventType: "validation_run.created",
+    entityType: "validation_run",
+    entityId: savedRecord.id,
+    entityLabel: savedRecord.invoiceNumber || savedRecord.id,
+    severity: savedRecord.technicalStatus === "failed" ? "warning" : "info",
+    metadata: buildValidationRunActivityMetadata(savedRecord, requestPayload)
+  });
+
+  return savedRecord;
+}
+
+export async function saveOrganizationValidationRun(
+  context: OrganizationValidationRunContext,
+  record: ValidationRunRecord,
+  requestPayload: InvoiceValidationRequest
+) {
+  if (!hasSupabaseServerConfig()) {
+    return saveValidationRun({
+      ...record,
+      organizationId: context.organizationId
+    });
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+
+  const { data, error } = await supabase
+    .from("validation_runs")
+    .insert(
+      buildSupabaseValidationRunValues(
+        record,
+        requestPayload,
+        context.organizationId,
+        context.userId
+      )
+    )
+    .select(VALIDATION_RUN_SELECT_FIELDS)
+    .single();
+
+  if (error) {
+    throw new Error(
+      `Could not create organization validation run: ${error.message}`
+    );
+  }
+
+  const savedRecord = normalizeSupabaseValidationRunRow(
+    data as SupabaseValidationRunRow
+  );
+
+  try {
+    await replaceValidationRunRelationalRows(
+      supabase,
+      context.organizationId,
+      savedRecord.id,
+      savedRecord
+    );
+  } catch (relationalError) {
+    await supabase
+      .from("validation_runs")
+      .delete()
+      .eq("id", savedRecord.id)
+      .eq("organization_id", context.organizationId);
+
+    throw relationalError;
+  }
+
+  await recordWorkspaceActivityEvent(supabase, {
+    organizationId: context.organizationId,
     actorUserId: context.userId,
     eventType: "validation_run.created",
     entityType: "validation_run",

@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireSupabaseUser } from "../../middleware/require-api-key.js";
+import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
 import {
   createAuthenticatedWorkspaceDeletionRun,
   executeAuthenticatedWorkspaceDeletionRun,
@@ -61,7 +65,14 @@ export async function workspaceDeletionRunRoutes(app: FastifyInstance) {
   app.get(
     "/deletion-runs",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.deletionManagers, {
+          code: "DELETION_MANAGER_ROLE_REQUIRED",
+          message:
+            "Deletion runs require an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceDeletionRunContext(request);
@@ -87,7 +98,14 @@ export async function workspaceDeletionRunRoutes(app: FastifyInstance) {
   app.post(
     "/deletion-runs",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.deletionManagers, {
+          code: "DELETION_MANAGER_ROLE_REQUIRED",
+          message:
+            "Deletion run preparation requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceDeletionRunContext(request);
@@ -158,7 +176,14 @@ export async function workspaceDeletionRunRoutes(app: FastifyInstance) {
   app.post(
     "/deletion-runs/:id/execute",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.deletionManagers, {
+          code: "DELETION_MANAGER_ROLE_REQUIRED",
+          message:
+            "Deletion run execution requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceDeletionRunContext(request);

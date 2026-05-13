@@ -1,5 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireSupabaseUser } from "../../middleware/require-api-key.js";
+import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
 import {
   WorkspaceActivityRepositoryError,
   hasAuthenticatedWorkspaceActivityContext,
@@ -66,7 +70,14 @@ export async function workspaceActivityRoutes(app: FastifyInstance) {
   app.get(
     "/activity",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.workspaceActivityViewers, {
+          code: "WORKSPACE_ACTIVITY_ROLE_REQUIRED",
+          message:
+            "Workspace activity requires an organization owner, admin, or developer role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceActivityContext(request);

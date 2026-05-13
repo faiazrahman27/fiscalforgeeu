@@ -1,5 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireSupabaseUser } from "../../middleware/require-api-key.js";
+import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
 import {
   getAuthenticatedWorkspaceRetentionPreview,
   hasAuthenticatedWorkspaceRetentionPreviewContext,
@@ -45,7 +49,14 @@ export async function workspaceRetentionPreviewRoutes(app: FastifyInstance) {
   app.get(
     "/retention-preview",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.retentionManagers, {
+          code: "RETENTION_MANAGER_ROLE_REQUIRED",
+          message:
+            "Retention preview requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspaceRetentionPreviewContext(request);

@@ -10,6 +10,10 @@ import { canonicalToUblInvoiceXml } from "@invoice-lantern/ubl";
 import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   getAuthenticatedInvoiceDraftById,
   getInvoiceDraftById,
   hasAuthenticatedInvoiceDraftContext,
@@ -20,6 +24,7 @@ import {
   calculateValidationTotals,
   hasAuthenticatedValidationRunContext,
   saveAuthenticatedValidationRun,
+  saveOrganizationValidationRun,
   saveValidationRun,
   type AuthenticatedValidationRunContext,
   type ValidationRunRecord
@@ -27,6 +32,7 @@ import {
 import {
   hasAuthenticatedInvoiceExportContext,
   saveAuthenticatedInvoiceExportRecord,
+  saveOrganizationInvoiceExportRecord,
   saveInvoiceExportRecord,
   type AuthenticatedInvoiceExportContext
 } from "../../repositories/invoice-export-repository.js";
@@ -261,6 +267,11 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireApiKeyScopes(["invoices:validate"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceValidators, {
+          code: "INVOICE_VALIDATE_ROLE_REQUIRED",
+          message:
+            "Invoice validation requires an organization owner, admin, accountant, developer, or reviewer role."
+        }),
         requireApiKeyRateLimitPolicy("invoices_validate")
       ]
     },
@@ -337,13 +348,33 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
       try {
         const authenticatedContext = getAuthenticatedValidationRunContext(request);
 
-        const savedRecord = authenticatedContext
-          ? await saveAuthenticatedValidationRun(
-              authenticatedContext,
+        if (request.authenticatedApiKey && !request.authenticatedApiKey.createdBy) {
+          return reply.status(403).send({
+            error: {
+              code: "API_KEY_WORKSPACE_ACTOR_REQUIRED",
+              message:
+                "This API key cannot create workspace validation records because it is not linked to a creating workspace user.",
+              details: null
+            }
+          });
+        }
+
+        const savedRecord = request.authenticatedApiKey
+          ? await saveOrganizationValidationRun(
+              {
+                organizationId: request.authenticatedApiKey.organizationId,
+                userId: request.authenticatedApiKey.createdBy ?? ""
+              },
               record,
               payload
             )
-          : await saveValidationRun(record);
+          : authenticatedContext
+            ? await saveAuthenticatedValidationRun(
+                authenticatedContext,
+                record,
+                payload
+              )
+            : await saveValidationRun(record);
 
         return reply.status(200).send({
           validationRunId: savedRecord.id,
@@ -367,6 +398,11 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireApiKeyScopes(["invoices:export_ubl"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceExporters, {
+          code: "INVOICE_EXPORT_ROLE_REQUIRED",
+          message:
+            "UBL export requires an organization owner, admin, accountant, or developer role."
+        }),
         requireApiKeyRateLimitPolicy("invoices_export_ubl")
       ]
     },
@@ -463,12 +499,20 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
           disclaimer
         };
 
-        const exportRecord = authenticatedContext
-          ? await saveAuthenticatedInvoiceExportRecord(
-              authenticatedContext,
+        const exportRecord = request.authenticatedApiKey
+          ? await saveOrganizationInvoiceExportRecord(
+              {
+                organizationId: request.authenticatedApiKey.organizationId,
+                userId: request.authenticatedApiKey.createdBy
+              },
               exportRecordInput
             )
-          : await saveInvoiceExportRecord(exportRecordInput);
+          : authenticatedContext
+            ? await saveAuthenticatedInvoiceExportRecord(
+                authenticatedContext,
+                exportRecordInput
+              )
+            : await saveInvoiceExportRecord(exportRecordInput);
 
         return reply.status(200).send({
           xml,

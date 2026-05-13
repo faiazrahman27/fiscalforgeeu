@@ -10,6 +10,10 @@ import {
 } from "../../middleware/require-api-key.js";
 import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   getAuthenticatedVidaSimulationRunRecord,
   hasAuthenticatedVidaSimulationRunContext,
   listAuthenticatedVidaSimulationRunRecords,
@@ -271,6 +275,11 @@ export async function transactionRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireApiKeyScopes(["transactions:simulate_vida"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceValidators, {
+          code: "VIDA_SIMULATION_ROLE_REQUIRED",
+          message:
+            "ViDA-readiness simulation requires an organization owner, admin, accountant, developer, or reviewer role."
+        }),
         requireApiKeyRateLimitPolicy("transactions_simulate_vida")
       ]
     },
@@ -347,7 +356,14 @@ export async function transactionRoutes(app: FastifyInstance) {
   app.get(
     "/vida-simulations",
     {
-      preHandler: requireSupabaseUser
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "VIDA_SIMULATION_READ_ROLE_REQUIRED",
+          message:
+            "ViDA simulation history requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedQuery = vidaSimulationListQuerySchema.safeParse(request.query);
@@ -386,7 +402,14 @@ export async function transactionRoutes(app: FastifyInstance) {
   app.get(
     "/vida-simulations/:id",
     {
-      preHandler: requireSupabaseUser
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "VIDA_SIMULATION_READ_ROLE_REQUIRED",
+          message:
+            "ViDA simulation detail requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = vidaSimulationDetailParamsSchema.safeParse(

@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../middleware/require-api-key.js";
+import { requireSupabaseUser } from "../../middleware/require-api-key.js";
+import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
 import {
   WorkspacePrivacyRequestRepositoryError,
   createAuthenticatedWorkspacePrivacyRequest,
@@ -94,7 +98,14 @@ export async function workspacePrivacyRequestRoutes(app: FastifyInstance) {
   app.get(
     "/privacy-requests",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.privacyManagers, {
+          code: "PRIVACY_REQUEST_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace privacy requests require an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspacePrivacyRequestContext(request);
@@ -124,7 +135,14 @@ export async function workspacePrivacyRequestRoutes(app: FastifyInstance) {
   app.post(
     "/privacy-requests",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.privacyManagers, {
+          code: "PRIVACY_REQUEST_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace privacy requests require an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspacePrivacyRequestContext(request);
@@ -169,7 +187,14 @@ export async function workspacePrivacyRequestRoutes(app: FastifyInstance) {
   app.patch(
     "/privacy-requests/:id",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.privacyManagers, {
+          code: "PRIVACY_REQUEST_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace privacy request review requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const context = getAuthenticatedWorkspacePrivacyRequestContext(request);

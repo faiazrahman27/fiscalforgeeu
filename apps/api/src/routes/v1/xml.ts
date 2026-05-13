@@ -8,6 +8,11 @@ import {
   requireApiKeyScopes
 } from "../../middleware/require-api-key.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  rejectOrganizationApiKey,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   createAuthenticatedXmlUploadRecord,
   createXmlUploadRecord,
   deleteAuthenticatedXmlUploadRecordById,
@@ -421,6 +426,11 @@ export async function xmlRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireApiKeyScopes(["xml:validation_jobs"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceValidators, {
+          code: "XML_VALIDATION_JOB_ROLE_REQUIRED",
+          message:
+            "XML validation jobs require an organization owner, admin, accountant, developer, or reviewer role."
+        }),
         requireApiKeyRateLimitPolicy("xml_validation_jobs")
       ]
     },
@@ -639,6 +649,11 @@ export async function xmlRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireApiKeyScopes(["xml:validation_jobs"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "XML_VALIDATION_JOB_READ_ROLE_REQUIRED",
+          message:
+            "XML validation job reading requires workspace membership with an allowed report-read role."
+        }),
         requireApiKeyRateLimitPolicy("xml_validation_jobs")
       ]
     },
@@ -677,6 +692,11 @@ export async function xmlRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireApiKeyScopes(["xml:validation_jobs"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "XML_VALIDATION_JOB_READ_ROLE_REQUIRED",
+          message:
+            "XML validation job detail requires workspace membership with an allowed report-read role."
+        }),
         requireApiKeyRateLimitPolicy("xml_validation_jobs")
       ]
     },
@@ -720,7 +740,15 @@ export async function xmlRoutes(app: FastifyInstance) {
   app.get(
     "/uploads",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "XML_UPLOAD_READ_ROLE_REQUIRED",
+          message:
+            "XML upload history requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       try {
@@ -742,7 +770,15 @@ export async function xmlRoutes(app: FastifyInstance) {
   app.get(
     "/uploads/:id",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "XML_UPLOAD_READ_ROLE_REQUIRED",
+          message:
+            "XML upload detail requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = xmlUploadParamsSchema.safeParse(request.params);
@@ -788,7 +824,15 @@ export async function xmlRoutes(app: FastifyInstance) {
   app.delete(
     "/uploads/:id",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.workspaceManagers, {
+          code: "XML_UPLOAD_DELETE_ROLE_REQUIRED",
+          message:
+            "XML upload deletion requires an organization owner or admin role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedParams = xmlUploadParamsSchema.safeParse(request.params);
@@ -835,7 +879,15 @@ export async function xmlRoutes(app: FastifyInstance) {
   app.post(
     "/inspect",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceValidators, {
+          code: "XML_INSPECT_ROLE_REQUIRED",
+          message:
+            "XML inspection requires an organization owner, admin, accountant, developer, or reviewer role."
+        })
+      ]
     },
     async (request, reply) => {
       const contentType = readHeaderString(request.headers["content-type"]);

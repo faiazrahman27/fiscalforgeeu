@@ -14,6 +14,10 @@ import { env } from "../../config/env.js";
 import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   createAuthenticatedWorkspaceActivityEvent,
   hasAuthenticatedWorkspaceActivityContext,
   type AuthenticatedWorkspaceActivityContext
@@ -225,6 +229,11 @@ export async function parseUblRoutes(app: FastifyInstance) {
     {
       preHandler: [
         requireApiKeyScopes(["invoices:parse_ubl"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceValidators, {
+          code: "UBL_PARSE_ROLE_REQUIRED",
+          message:
+            "UBL parsing requires an organization owner, admin, accountant, developer, or reviewer role."
+        }),
         requireApiKeyRateLimitPolicy("invoices_parse_ubl")
       ]
     },

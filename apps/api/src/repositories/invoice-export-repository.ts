@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSupabaseUserClient } from "../lib/supabase/server-client.js";
+import {
+  getSupabaseServiceRoleClient,
+  getSupabaseUserClient,
+  hasSupabaseServerConfig
+} from "../lib/supabase/server-client.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
 export type InvoiceExportStatus =
@@ -11,6 +15,7 @@ export type InvoiceExportStatus =
 
 export type InvoiceExportRecord = {
   id: string;
+  organizationId?: string;
   invoiceDraftId: string | null;
   validationRunId: string | null;
   exportType: "ubl_invoice";
@@ -26,6 +31,7 @@ export type InvoiceExportRecord = {
 };
 
 export type CreateInvoiceExportRecordInput = {
+  organizationId?: string;
   invoiceDraftId?: string | null;
   validationRunId?: string | null;
   exportType: "ubl_invoice";
@@ -48,6 +54,11 @@ export type InvoiceExportListFilters = {
 export type AuthenticatedInvoiceExportContext = {
   userId: string;
   accessToken: string;
+};
+
+export type OrganizationInvoiceExportContext = {
+  organizationId: string;
+  userId: string | null;
 };
 
 type SupabaseWorkspaceBootstrapRecord = {
@@ -196,7 +207,7 @@ function normalizeOptionalId(value: string | null | undefined) {
 function buildSupabaseInvoiceExportValues(
   input: CreateInvoiceExportRecordInput,
   organizationId: string,
-  userId: string,
+  userId: string | null,
   invoiceDraftId: string | null,
   validationRunId: string | null
 ) {
@@ -345,6 +356,10 @@ export async function saveInvoiceExportRecord(
     createdAt: now
   };
 
+  if (input.organizationId) {
+    record.organizationId = input.organizationId;
+  }
+
   const currentRecords =
     await storageProvider.readCollection<InvoiceExportRecord>(
       INVOICE_EXPORTS_FILE
@@ -356,6 +371,70 @@ export async function saveInvoiceExportRecord(
   ]).slice(0, MAX_STORED_INVOICE_EXPORTS);
 
   await storageProvider.writeCollection(INVOICE_EXPORTS_FILE, nextRecords);
+
+  return record;
+}
+
+export async function saveOrganizationInvoiceExportRecord(
+  context: OrganizationInvoiceExportContext,
+  input: CreateInvoiceExportRecordInput
+): Promise<InvoiceExportRecord> {
+  if (!hasSupabaseServerConfig()) {
+    return saveInvoiceExportRecord({
+      ...input,
+      organizationId: context.organizationId
+    });
+  }
+
+  const supabase = getSupabaseServiceRoleClient();
+
+  const invoiceDraftId = await resolveWorkspaceOwnedReference({
+    supabase,
+    organizationId: context.organizationId,
+    tableName: "invoice_drafts",
+    id: normalizeOptionalId(input.invoiceDraftId),
+    label: "invoice draft"
+  });
+
+  const validationRunId = await resolveWorkspaceOwnedReference({
+    supabase,
+    organizationId: context.organizationId,
+    tableName: "validation_runs",
+    id: normalizeOptionalId(input.validationRunId),
+    label: "validation run"
+  });
+
+  const { data, error } = await supabase
+    .from("invoice_exports")
+    .insert(
+      buildSupabaseInvoiceExportValues(
+        input,
+        context.organizationId,
+        context.userId,
+        invoiceDraftId,
+        validationRunId
+      )
+    )
+    .select(INVOICE_EXPORT_SELECT_FIELDS)
+    .single();
+
+  if (error) {
+    throw new Error(`Could not create organization invoice export: ${error.message}`);
+  }
+
+  const record = normalizeSupabaseInvoiceExportRow(data as SupabaseInvoiceExportRow);
+
+  if (context.userId) {
+    await recordWorkspaceActivityEvent(supabase, {
+      organizationId: context.organizationId,
+      actorUserId: context.userId,
+      eventType: "invoice_export.generated",
+      entityType: "invoice_export",
+      entityId: record.id,
+      entityLabel: record.filename || record.id,
+      metadata: buildInvoiceExportActivityMetadata(record)
+    });
+  }
 
   return record;
 }

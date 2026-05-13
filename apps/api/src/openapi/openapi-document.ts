@@ -1108,11 +1108,20 @@ const openApiDocument = {
       }
     },
     "/validation-runs/{id}/report.pdf": {
-      get: bearerOperation({
+      get: {
         tags: ["Reports"],
         summary: "Download a validation report PDF",
         description:
-          "Downloads a non-official technical sandbox validation report PDF. Documented for signed-in workspace users. Local development may also accept the development API key for compatibility, but organization API keys are not documented for PDF report downloads.",
+          "Downloads a non-official technical sandbox validation report PDF. Organization API keys require the `validation_runs:read` scope and can only download reports for validation runs owned by their organization. Signed-in workspace users may download reports permitted by workspace authorization.",
+        security: [
+          {
+            ApiKeyAuth: []
+          },
+          {
+            SupabaseBearerAuth: []
+          }
+        ],
+        "x-required-scope": "validation_runs:read",
         parameters: [
           {
             name: "id",
@@ -1125,7 +1134,7 @@ const openApiDocument = {
             }
           }
         ],
-        responses: {
+        responses: apiKeyResponses({
           "200": {
             description: "PDF validation report.",
             headers: {
@@ -1151,8 +1160,8 @@ const openApiDocument = {
               }
             }
           }
-        }
-      })
+        })
+      }
     }
   },
   components: {

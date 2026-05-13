@@ -2,6 +2,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireApiKey } from "../../middleware/require-api-key.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  rejectOrganizationApiKey,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   hasAuthenticatedInvoiceExportContext,
   listAuthenticatedInvoiceExportRecords,
   listInvoiceExportRecords,
@@ -68,7 +73,15 @@ export async function invoiceExportRoutes(app: FastifyInstance) {
   app.get(
     "/exports",
     {
-      preHandler: requireApiKey
+      preHandler: [
+        requireApiKey,
+        rejectOrganizationApiKey,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.validationRunReaders, {
+          code: "INVOICE_EXPORT_READ_ROLE_REQUIRED",
+          message:
+            "Invoice export history requires workspace membership with an allowed report-read role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedQuery = invoiceExportListQuerySchema.safeParse(request.query);

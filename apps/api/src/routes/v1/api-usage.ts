@@ -2,6 +2,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireSupabaseUser } from "../../middleware/require-api-key.js";
 import {
+  WORKSPACE_ROLE_SETS,
+  requireWorkspaceRole
+} from "../../middleware/require-workspace-role.js";
+import {
   ApiKeyServiceError,
   getApiKeyWorkspaceForUser
 } from "../../services/api-key-service.js";
@@ -28,6 +32,10 @@ type ApiUsageViewerContext = {
   organizationId: string;
   membershipRole: string;
 };
+
+const API_USAGE_VIEWER_ROLES = new Set<string>(
+  WORKSPACE_ROLE_SETS.apiRequestViewers
+);
 
 function getAuthenticatedContext(request: FastifyRequest) {
   const userId = request.authenticatedUser?.id ?? "";
@@ -61,6 +69,20 @@ async function getApiUsageViewerContext(
   }
 
   const workspace = await getApiKeyWorkspaceForUser(authenticatedContext);
+
+  if (!API_USAGE_VIEWER_ROLES.has(workspace.membershipRole)) {
+    reply.status(403).send({
+      error: {
+        code: "API_USAGE_ROLE_REQUIRED",
+        message:
+          "API usage viewing requires an organization owner, admin, or developer role.",
+        details: {
+          allowedRoles: Array.from(API_USAGE_VIEWER_ROLES)
+        }
+      }
+    });
+    return null;
+  }
 
   return {
     ...authenticatedContext,
@@ -104,7 +126,14 @@ export async function apiUsageRoutes(app: FastifyInstance) {
   app.get(
     "/policies",
     {
-      preHandler: requireSupabaseUser
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.apiRequestViewers, {
+          code: "API_USAGE_ROLE_REQUIRED",
+          message:
+            "API usage viewing requires an organization owner, admin, or developer role."
+        })
+      ]
     },
     async (request, reply) => {
       try {
@@ -127,7 +156,14 @@ export async function apiUsageRoutes(app: FastifyInstance) {
   app.get(
     "/current",
     {
-      preHandler: requireSupabaseUser
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.apiRequestViewers, {
+          code: "API_USAGE_ROLE_REQUIRED",
+          message:
+            "API usage viewing requires an organization owner, admin, or developer role."
+        })
+      ]
     },
     async (request, reply) => {
       const parsedQuery = apiUsageCurrentQuerySchema.safeParse(request.query);
