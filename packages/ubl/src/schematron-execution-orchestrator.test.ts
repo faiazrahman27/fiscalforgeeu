@@ -206,6 +206,10 @@ test("mode normalization defaults unknown values to disabled", () => {
     "internal_test_only"
   );
   assert.equal(
+    normalizeSchematronExecutionOrchestratorMode("execute"),
+    "execute"
+  );
+  assert.equal(
     normalizeSchematronExecutionOrchestratorMode("production"),
     "disabled"
   );

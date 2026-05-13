@@ -84,6 +84,54 @@ function captureUblXsdEnv() {
   };
 }
 
+function captureSchematronEnv() {
+  return {
+    PEPPOL_SCHEMATRON_ROOT_DIR: process.env.PEPPOL_SCHEMATRON_ROOT_DIR,
+    PEPPOL_BIS_SCHEMATRON_PATH: process.env.PEPPOL_BIS_SCHEMATRON_PATH,
+    EN16931_SCHEMATRON_PATH: process.env.EN16931_SCHEMATRON_PATH,
+    SCHEMATRON_ARTIFACT_VERSION: process.env.SCHEMATRON_ARTIFACT_VERSION,
+    SCHEMATRON_EXECUTION_MODE: process.env.SCHEMATRON_EXECUTION_MODE,
+    SCHEMATRON_ENGINE: process.env.SCHEMATRON_ENGINE,
+    SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION:
+      process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION
+  };
+}
+
+async function writeQueueSchematronFixture(tempRoot: string) {
+  const peppolPath = join(tempRoot, "peppol.sch");
+  const en16931Path = join(tempRoot, "en16931.sch");
+
+  await writeFile(
+    peppolPath,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+  <pattern id="queue-peppol">
+    <rule context="/Invoice">
+      <assert id="PEPPOL-QUEUE-RULE" test="normalize-space(ID) = 'QUEUE-SCHEMATRON-EXEC'">Peppol-style queue assertion passed.</assert>
+    </rule>
+  </pattern>
+</schema>`,
+    "utf8"
+  );
+  await writeFile(
+    en16931Path,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+  <pattern id="queue-en16931">
+    <rule context="/Invoice">
+      <assert id="EN16931-QUEUE-RULE" test="normalize-space(ID) = 'QUEUE-SCHEMATRON-EXEC'">EN 16931-style queue assertion passed.</assert>
+    </rule>
+  </pattern>
+</schema>`,
+    "utf8"
+  );
+
+  return {
+    peppolPath,
+    en16931Path
+  };
+}
+
 function restoreEnv(snapshot: Record<string, string | undefined>) {
   for (const [key, value] of Object.entries(snapshot)) {
     if (value === undefined) {
@@ -362,6 +410,69 @@ test("queue runner can complete a job when transient XML is supplied safely", as
     result.events.some((event) => event.status === "job_completed"),
     true
   );
+});
+
+test("queue runner persists safe real Schematron execution summaries", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-queue-sch-"));
+  const originalEnv = captureSchematronEnv();
+  const rawXml = "<Invoice><ID>QUEUE-SCHEMATRON-EXEC</ID></Invoice>";
+  const job = createClaimedJob({
+    xmlSha256: sha256(rawXml),
+    xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+    requestedChecks: ["schematron_peppol"]
+  });
+  const fake = createFakeRepository(job);
+
+  try {
+    const fixture = await writeQueueSchematronFixture(tempRoot);
+
+    process.env.PEPPOL_SCHEMATRON_ROOT_DIR = tempRoot;
+    process.env.PEPPOL_BIS_SCHEMATRON_PATH = fixture.peppolPath;
+    process.env.EN16931_SCHEMATRON_PATH = fixture.en16931Path;
+    process.env.SCHEMATRON_ARTIFACT_VERSION = "queue-step-8-test";
+    process.env.SCHEMATRON_EXECUTION_MODE = "execute";
+    process.env.SCHEMATRON_ENGINE = "xpath_engine";
+    process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION = "true";
+
+    const result = await runXmlValidationQueueOnce({
+      repository: fake.repository,
+      loadTransientXml: async () => rawXml,
+      now: () => fixedNow
+    });
+    const completeInput = fake.getCompleteInput();
+
+    assert.equal(result.status, "completed");
+    assert.ok(completeInput);
+    assert.deepEqual(completeInput.completedChecks, ["schematron_peppol"]);
+    assert.deepEqual(completeInput.failedChecks, []);
+
+    const schematronPeppol = completeInput.resultSummary
+      .schematronPeppol as Record<string, unknown>;
+    const checkStatuses = completeInput.resultSummary
+      .checkStatuses as Record<string, unknown>;
+
+    assert.equal(checkStatuses.schematron_peppol, "passed");
+    assert.equal(schematronPeppol.implemented, true);
+    assert.equal(schematronPeppol.policyMode, "execute");
+    assert.equal(schematronPeppol.engineId, "xpath_engine");
+    assert.equal(schematronPeppol.validationExecuted, true);
+    assert.equal(schematronPeppol.markedValid, true);
+    assert.equal(schematronPeppol.status, "passed");
+    assert.equal(JSON.stringify(completeInput).includes(rawXml), false);
+    assert.equal(JSON.stringify(completeInput).includes(fixture.peppolPath), false);
+    assert.equal(JSON.stringify(completeInput).includes(fixture.en16931Path), false);
+    assert.equal(JSON.stringify(completeInput).includes(tempRoot), false);
+    assert.doesNotMatch(
+      JSON.stringify(completeInput),
+      /\bPeppol certified\b|\bEN 16931 compliant\b|\baccepted by authority\b|\blegally valid\b|\bPeppol passed\b|\bEN 16931 passed\b/i
+    );
+  } finally {
+    restoreEnv(originalEnv);
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
 });
 
 test("queue runner requeues retryable worker execution failures when attempts remain", async () => {

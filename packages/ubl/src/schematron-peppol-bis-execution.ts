@@ -30,10 +30,17 @@ import {
   type SchematronInternalAssertionFixtureSummary
 } from "./schematron-internal-assertion-fixtures.js";
 import {
+  runSchematronArtifactExecutor,
+  type SchematronArtifactExecutorSummary
+} from "./schematron-artifact-executor.js";
+import {
   SCHEMATRON_XPATH_ENGINE_ID,
   runSchematronXPathEngine
 } from "./schematron-xpath-engine.js";
-import type { SchematronSafeArtifactDiagnostics } from "./xsd-artifact-registry.js";
+import type {
+  SchematronArtifactConfigInput,
+  SchematronSafeArtifactDiagnostics
+} from "./xsd-artifact-registry.js";
 
 export const PEPPOL_BIS_EXECUTION_PATH_VERSION =
   "peppol_bis_execution_path_v1";
@@ -41,6 +48,7 @@ export const PEPPOL_BIS_EXECUTION_PATH_VERSION =
 export type PeppolBisExecutionMode =
   | "disabled"
   | "preflight_only"
+  | "execute"
   | "internal_test_only";
 
 export type PeppolBisExecutionStatus =
@@ -53,7 +61,8 @@ export type PeppolBisExecutionStatus =
   | "executed"
   | "failed"
   | "unsafe_input"
-  | "unsupported";
+  | "unsupported"
+  | "error";
 
 export type PeppolBisExecutionInput = {
   xml: string;
@@ -61,6 +70,7 @@ export type PeppolBisExecutionInput = {
   policy?: SchematronExecutionPolicy;
   engineCandidate?: SchematronEngineCandidateInfo;
   artifactDiagnostics?: SchematronSafeArtifactDiagnostics;
+  artifactConfig?: SchematronArtifactConfigInput;
   prototypeRules?: SchematronLocalPrototypeRule[];
   svrlResults?: SchematronSvrlInputResult[];
   allowInternalXPathExecution?: boolean;
@@ -78,13 +88,14 @@ export type PeppolBisExecutionSummary = {
   schematronLayer: "peppol_bis_billing";
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   findingCount: number;
   fatalCount: number;
   warningCount: number;
   infoCount: number;
   reason: string;
   internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
+  artifactExecution?: SchematronArtifactExecutorSummary;
 };
 
 export type PeppolBisExecutionResult = {
@@ -94,10 +105,11 @@ export type PeppolBisExecutionResult = {
   schematronLayer: "peppol_bis_billing";
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   reason: string;
   findings: SchematronContractFinding[];
   internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
+  artifactExecution?: SchematronArtifactExecutorSummary;
   safeSummary: PeppolBisExecutionSummary;
 };
 
@@ -146,9 +158,11 @@ function buildResult(input: {
   status: PeppolBisExecutionStatus;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
+  markedValid?: boolean;
   reason: string;
   findings: SchematronContractFinding[];
   internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
+  artifactExecution?: SchematronArtifactExecutorSummary;
 }): PeppolBisExecutionResult {
   const counts = countFindings(input.findings);
   const base = {
@@ -158,7 +172,7 @@ function buildResult(input: {
     schematronLayer: "peppol_bis_billing",
     validationExecutionEnabled: input.validationExecutionEnabled,
     validationExecuted: input.validationExecuted,
-    markedValid: false,
+    markedValid: input.markedValid ?? false,
     reason: sanitizeReason(input.reason),
     ...counts
   } satisfies Omit<
@@ -167,6 +181,7 @@ function buildResult(input: {
   >;
   const internalAssertionFixtureSummary =
     input.internalAssertionFixtureSummary;
+  const artifactExecution = input.artifactExecution;
 
   return {
     executionPathVersion: PEPPOL_BIS_EXECUTION_PATH_VERSION,
@@ -175,18 +190,20 @@ function buildResult(input: {
     schematronLayer: base.schematronLayer,
     validationExecutionEnabled: base.validationExecutionEnabled,
     validationExecuted: base.validationExecuted,
-    markedValid: false,
+    markedValid: base.markedValid,
     reason: base.reason,
     findings: input.findings,
     ...(internalAssertionFixtureSummary
       ? { internalAssertionFixtureSummary }
       : {}),
+    ...(artifactExecution ? { artifactExecution } : {}),
     safeSummary: {
       diagnosticKind: "peppol_bis_execution_path",
       ...base,
       ...(internalAssertionFixtureSummary
         ? { internalAssertionFixtureSummary }
-        : {})
+        : {}),
+      ...(artifactExecution ? { artifactExecution } : {})
     }
   };
 }
@@ -382,11 +399,57 @@ function mapXPathStatusToPeppolStatus(
 export function normalizePeppolBisExecutionMode(
   value: unknown
 ): PeppolBisExecutionMode {
-  if (value === "preflight_only" || value === "internal_test_only") {
+  if (
+    value === "preflight_only" ||
+    value === "internal_test_only" ||
+    value === "execute"
+  ) {
     return value;
   }
 
   return "disabled";
+}
+
+function mapArtifactStatusToPeppolStatus(
+  status: Awaited<ReturnType<typeof runSchematronArtifactExecutor>>["status"]
+): PeppolBisExecutionStatus {
+  if (status === "executed") {
+    return "executed";
+  }
+
+  if (status === "failed") {
+    return "failed";
+  }
+
+  if (status === "not_configured") {
+    return "not_configured";
+  }
+
+  if (status === "artifact_unreadable") {
+    return "artifact_unreadable";
+  }
+
+  if (status === "engine_unavailable") {
+    return "engine_unavailable";
+  }
+
+  if (status === "unsafe_input") {
+    return "unsafe_input";
+  }
+
+  if (status === "unsupported") {
+    return "unsupported";
+  }
+
+  if (status === "disabled") {
+    return "disabled";
+  }
+
+  if (status === "preflight_only" || status === "blocked_by_policy") {
+    return "blocked_by_policy";
+  }
+
+  return "error";
 }
 
 async function resolvePolicyAndEngine(input: {
@@ -726,6 +789,37 @@ async function runInternalTestOnly(input: PeppolBisExecutionInput) {
   }
 }
 
+async function runArtifactExecution(input: PeppolBisExecutionInput) {
+  const mode: PeppolBisExecutionMode = "execute";
+  const { policy, engineCandidate } = await resolvePolicyAndEngine({
+    ...(input.policy ? { policy: input.policy } : {}),
+    ...(input.engineCandidate ? { engineCandidate: input.engineCandidate } : {})
+  });
+  const artifactExecution = await runSchematronArtifactExecutor({
+    xml: input.xml,
+    layer: "peppol_bis_billing",
+    policy,
+    engineCandidate,
+    ...(input.artifactConfig ? { artifactConfig: input.artifactConfig } : {}),
+    ...(input.artifactDiagnostics
+      ? { artifactDiagnostics: input.artifactDiagnostics }
+      : {}),
+    ...(input.maxXmlBytes !== undefined ? { maxXmlBytes: input.maxXmlBytes } : {}),
+    ...(input.maxRules !== undefined ? { maxResults: input.maxRules } : {})
+  });
+
+  return buildResult({
+    mode,
+    status: mapArtifactStatusToPeppolStatus(artifactExecution.status),
+    validationExecutionEnabled: artifactExecution.validationExecutionEnabled,
+    validationExecuted: artifactExecution.validationExecuted,
+    markedValid: artifactExecution.markedValid,
+    reason: artifactExecution.reason,
+    findings: artifactExecution.findings,
+    artifactExecution: artifactExecution.safeSummary
+  });
+}
+
 export async function runPeppolBisBillingExecutionPath(
   input: PeppolBisExecutionInput
 ): Promise<PeppolBisExecutionResult> {
@@ -751,6 +845,10 @@ export async function runPeppolBisBillingExecutionPath(
         ? { artifactDiagnostics: input.artifactDiagnostics }
         : {})
     });
+  }
+
+  if (mode === "execute") {
+    return runArtifactExecution(input);
   }
 
   return runInternalTestOnly(input);

@@ -58,4 +58,4 @@ Reviewer labels, notes, timestamps, artifact version labels, and expected hashes
 
 The reviewed-artifact intake process is technical checklist metadata only. It does not represent official validation, does not certify compliance, does not provide legal/tax/accounting advice, does not submit to any authority, and does not predict authority acceptance.
 
-This foundation prepares future reviewed artifact integration while preserving the current platform boundary: public XML validation jobs and normal worker jobs remain metadata-only for Schematron, guarded execution remains disabled, and professional review remains required before any production Schematron execution path is considered.
+This foundation prepares reviewed artifact integration while preserving the platform boundary: guarded execution is possible only through the explicit Step 8 policy, local artifact, engine, and XML safety gates. Professional review remains required, and any execution result is a technical sandbox result only, not official validation or a legal/tax/accounting/compliance conclusion.

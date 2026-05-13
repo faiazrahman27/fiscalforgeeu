@@ -33,6 +33,7 @@ function assertPolicyShape(input: {
   mode: SchematronExecutionPolicyMode;
   engineId: SchematronEngineId;
   reason: string;
+  executionPermitted?: boolean;
 }) {
   assert.equal(
     input.policy.policyVersion,
@@ -49,7 +50,14 @@ function assertPolicyShape(input: {
   assert.equal(input.policy.safeSummary.engineId, input.engineId);
   assert.equal(input.policy.reason, input.reason);
   assert.equal(input.policy.safeSummary.reason, input.reason);
-  assertPolicyNeverExecutes(input.policy);
+  if (input.executionPermitted) {
+    assert.equal(input.policy.executionPermitted, true);
+    assert.equal(input.policy.validationExecutionEnabled, true);
+    assert.equal(input.policy.safeSummary.executionPermitted, true);
+    assert.equal(input.policy.safeSummary.validationExecutionEnabled, true);
+  } else {
+    assertPolicyNeverExecutes(input.policy);
+  }
 }
 
 test("default policy is preflight_only with placeholder engine and no execution permission", () => {
@@ -99,7 +107,7 @@ test("preflight_only requested mode returns preflight-only policy", () => {
 });
 
 test("execution-like requested modes are blocked", () => {
-  for (const requestedMode of ["enabled", "execute", "real", "production"]) {
+  for (const requestedMode of ["enabled", "real", "production"]) {
     const policy = buildSchematronExecutionPolicy({
       requestedMode,
       requestedEngine: "saxon"
@@ -116,7 +124,48 @@ test("execution-like requested modes are blocked", () => {
   }
 });
 
-test("allowExperimentalExecution true still does not permit execution", () => {
+test("explicit execute mode requires xpath_engine and experimental allow", () => {
+  const missingAllow = buildSchematronExecutionPolicy({
+    requestedMode: "execute",
+    requestedEngine: "xpath_engine"
+  });
+  const wrongEngine = buildSchematronExecutionPolicy({
+    requestedMode: "execute",
+    requestedEngine: "future_schxslt",
+    allowExperimentalExecution: true
+  });
+  const permitted = buildSchematronExecutionPolicy({
+    requestedMode: "execute",
+    requestedEngine: "xpath_engine",
+    allowExperimentalExecution: true
+  });
+
+  assertPolicyShape({
+    policy: missingAllow,
+    mode: "execute",
+    engineId: "xpath_engine",
+    reason: "schematron_execution_requires_explicit_experimental_allow"
+  });
+  assertPolicyShape({
+    policy: wrongEngine,
+    mode: "execute",
+    engineId: "future_schxslt",
+    reason: "schematron_execution_requires_xpath_engine"
+  });
+  assertPolicyShape({
+    policy: permitted,
+    mode: "execute",
+    engineId: "xpath_engine",
+    reason: "schematron_execution_explicitly_permitted",
+    executionPermitted: true
+  });
+  assert.equal(permitted.requestedMode, "execute");
+  assert.equal(permitted.requestedEngine, "xpath_engine");
+  assert.equal(permitted.allowExperimentalExecution, true);
+  assert.equal(permitted.safeSummary.allowExperimentalExecution, true);
+});
+
+test("allowExperimentalExecution true still does not permit non-execute requests", () => {
   const policy = buildSchematronExecutionPolicy({
     requestedMode: "enabled",
     requestedEngine: "future_schxslt",
@@ -127,7 +176,7 @@ test("allowExperimentalExecution true still does not permit execution", () => {
     policy,
     mode: "blocked_requested_execution",
     engineId: "future_schxslt",
-    reason: "schematron_experimental_execution_not_available"
+    reason: "schematron_execution_requested_but_blocked"
   });
   assert.equal(policy.allowExperimentalExecution, true);
   assert.equal(policy.safeSummary.allowExperimentalExecution, true);
@@ -147,7 +196,7 @@ test("mode normalization classifies safe and execution-like values", () => {
   );
   assert.equal(
     normalizeSchematronExecutionPolicyMode("execute"),
-    "blocked_requested_execution"
+    "execute"
   );
   assert.equal(
     normalizeSchematronExecutionPolicyMode("production"),

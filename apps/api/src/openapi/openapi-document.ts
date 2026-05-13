@@ -334,7 +334,7 @@ const openApiDocument = {
     {
       name: "XML Validation Jobs",
       description:
-        "Metadata-only XML validation job endpoints for the validation worker foundation. UBL XSD checks are configuration-gated local technical XSD validation when local artefacts are available. Schematron placeholder results include safe Schematron artifact diagnostics, the schematron_contract_v1 finding contract foundation, schematron_adapter_preflight_v1 execution preflight metadata, schematron_policy_v1 execution policy metadata, and schematron_engine_candidate_v1 engine candidate metadata only. Step 53 adds schematron_local_execution_prototype_v1 as an internal package-level, test-only prototype. Step 54 adds schematron_result_mapper_v1 as a package-level future mapper for sanitized SVRL-style failed assertions and reports into schematron_contract_v1 findings. Step 55 adds peppol_bis_execution_path_v1 as a package-level/internal test-only Peppol BIS Billing execution path foundation that can compose policy, prototype, and mapper behavior in package tests only. Step 56 adds en16931_execution_path_v1 as the parallel package-level/internal test-only EN 16931 / TC434 execution path foundation. Step 57 adds schematron_execution_orchestrator_v1 as a unified package-level/internal test-only orchestration foundation for Peppol and EN 16931 layer summaries, merged findings, safe counts, and aggregate statuses. Step 58 adds xml_worker_schematron_orchestrator_v1 as a worker-side bridge that can call the unified package orchestrator for disabled/preflight-safe metadata summaries, while internal_test_only remains explicit local worker test behavior only. Step 59 exposes that worker orchestration metadata through XML validation job API read/list responses and the Workspace XML Upload UI as preflight/orchestration metadata, not official validation. Step 60 adds schematron_artifact_source_register_v1 as source provenance metadata for local Schematron artifact slots, including safe labels, configured environment variable names, review status, public HTTPS documentation metadata, and already-inspected local SHA-256 values when present. Step 61 adds schematron_artifact_manifest_v1 hash verification metadata for expected local artifact slots; hash match is not validation success. Normal public API and worker job paths still do not execute production Schematron. Schematron execution, Peppol validation, and EN 16931 validation remain disabled for public job paths."
+        "XML validation job endpoints for worker readiness, configuration-gated local UBL XSD validation, and guarded local Schematron execution. schematron_peppol and schematron_en16931 execute only when explicit policy, xpath_engine, reviewed local artefacts, safe XML, and supported Schematron/XPath gates pass. schematron_peppol_placeholder remains a deprecated preflight metadata alias. These endpoints return sanitized technical summaries and findings only; they do not provide official validation, certification, filing, authority acceptance, legal/tax/accounting advice, or compliance guarantees."
     },
     {
       name: "VAT",
@@ -984,7 +984,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "List XML validation jobs",
         description:
-          "Lists metadata-only XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD check results include safe local artefact metadata such as configured paths, artefact version, schema readability, schema hashes, validator name/availability, and dependency graph status where inspected. Failed UBL XSD checks return mapped Invoice Lantern findings with stable codes, safe fields, source labels, sanitized technical messages, and technical confidence only. UBL XSD may report not_configured when local UBL XSD artefacts are unavailable, passed or failed only after a real local XSD validation operation executes, or error for controlled validator/runtime failures. schematron_peppol_placeholder results may include metadata-only safe Schematron artifact diagnostics with configured/readable/usable status, safe labels, basenames, relativePathUnderRoot, SHA-256 hashes, sourceRegisterVersion, artifactProvenance, artifactManifestVersion, manifestVerification, reviewStatus, checkedAt, and a disclaimer. Step 50 adds schematron_adapter_preflight_v1 executionPreflight metadata with preflightStatus values such as disabled, not_configured, artifact_unreadable, ready_for_future_execution, and unsupported, plus reasons such as schematron_execution_disabled and schematron_execution_engine_not_implemented. Step 51 adds schematron_policy_v1 executionPolicy metadata with policyVersion, policyMode, policyReason, engineId, executionPermitted, and validationExecutionEnabled. Step 52 adds schematron_engine_candidate_v1 engineCandidate metadata with engineCandidateVersion, engineAvailabilityStatus, engineExecutionSupported, availability statuses not_selected, placeholder_only, available, unavailable, unsupported, and error, and candidate IDs none, placeholder, future_xslt2, future_schxslt, and internal_test_candidate. Step 53 adds schematron_local_execution_prototype_v1 as an internal package-layer, internal test-only execution prototype that can produce sanitized schematron_contract_v1 findings outside normal job execution. Step 54 adds schematron_result_mapper_v1 as a future production-oriented mapping contract for sanitized SVRL-style failed assertions and successful reports. Step 55 adds peppol_bis_execution_path_v1 as a guarded package-level Peppol BIS Billing execution path foundation that can compose schematron_policy_v1, schematron_engine_candidate_v1, schematron_local_execution_prototype_v1, and schematron_result_mapper_v1 only in explicit package/internal test-only calls. Step 56 adds en16931_execution_path_v1 as the parallel guarded package-level EN 16931 / TC434 execution path foundation for explicit package/internal test-only calls. Step 57 adds schematron_execution_orchestrator_v1 as a unified package-level orchestration foundation that can coordinate Peppol and EN 16931 layers, layer summaries, aggregate statuses, merged findings, and safe fatal/warning/info counts in explicit internal test-only package calls. Step 58 adds xml_worker_schematron_orchestrator_v1 as the XML worker bridge to schematron_execution_orchestrator_v1 for disabled/preflight-safe metadata summaries. Step 59 exposes worker fields such as schematronOrchestration, workerSchematronOrchestratorVersion, orchestrationMode, orchestrationStatus, orchestrationReason, selectedLayers, and layerSummaries through job responses as preflight/orchestration metadata, not official validation. Step 60 adds schematron_artifact_source_register_v1 source provenance metadata for Peppol BIS Billing-style and EN 16931 / TC434-style local artifact slots. Step 61 adds schematron_artifact_manifest_v1 expected-slot and hash verification metadata. A hash match is not validation success and does not enable execution. The mapper and package-level execution paths can map future Peppol findings to PEPPOL_SCHEMATRON_RULE_FAILED, future EN 16931 findings to EN16931_SCHEMATRON_RULE_FAILED, and successful reports to SCHEMATRON_REPORT_WARNING with optional sanitized ruleId, businessRuleId, schematronLayer, ruleLocation, testExpression, assertionText, and diagnosticReference metadata. The mapper, prototype, Peppol execution path, and EN 16931 execution path are not exposed as public XML validation job checks. The worker bridge may invoke the unified orchestrator for metadata-safe disabled/preflight summaries, while internal_test_only remains explicit local worker test behavior only. Engine candidate metadata does not enable validation. Server-side policy metadata can be influenced by SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION, but these variables do not enable validation. Execution-like values are blocked as blocked_requested_execution with schematron_execution_requested_but_blocked until a future step explicitly implements a reviewed engine. The preflight, policy, engine candidate metadata, internal prototype note, result mapper note, package-level execution path foundations, unified orchestrator foundation, source provenance layer, manifest verification layer, and worker orchestration bridge do not make public jobs execute Schematron validation, parse production Schematron rules, evaluate XPath assertions in normal job paths, certify Peppol/EN16931, prove compliance, or include raw XML, Schematron file contents, or full absolute paths. Step 49 also prepares the schematron_contract_v1 finding/result contract for future rule-level results, including optional sanitized schematronLayer, ruleId, businessRuleId, ruleLocation, testExpression, assertionText, and diagnosticReference fields. Schematron execution is not implemented for normal jobs, validationExecutionEnabled is false, validationExecuted is false, markedValid is false, and executionPermitted is false. Public responses do not include raw XML, Schematron contents, full absolute Schematron paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance.",
+          "Lists XML validation jobs for the caller's organization. Raw XML is never returned. UBL XSD checks use the configured local XSD adapter. schematron_peppol and schematron_en16931 can run guarded local Schematron execution only when reviewed local artifacts are configured, SCHEMATRON_EXECUTION_MODE=execute, SCHEMATRON_ENGINE=xpath_engine, SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION is true-like, XML safety checks pass, and the artifact uses supported constructs. Blank/default configuration remains disabled or preflight-only with validationExecuted=false and markedValid=false. Unsupported, unsafe, missing, unreadable, out-of-root, timeout, and error cases fail safely and are not marked valid. schematron_peppol_placeholder remains a deprecated safe preflight alias. Responses include sanitized summaries/findings only and never raw XML, Schematron file contents, full absolute local paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance.",
         scope: "xml:validation_jobs",
         parameters: [
           {
@@ -1020,7 +1020,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "Create an XML validation job",
         description:
-          "Creates a metadata-only XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, and schematron_peppol_placeholder metadata diagnostics. UBL XSD returns not_configured when local UBL XSD artefacts for Invoice or CreditNote are missing, unreadable, outside the configured root, or not configured; passed or failed only after a real local XSD validation operation executes; and error for controlled validator/runtime or schema dependency failures. Failed UBL XSD results map xmllint-wasm messages into mapped Invoice Lantern findings with stable codes such as UBL_XSD_ELEMENT_INVALID, UBL_XSD_REQUIRED_ELEMENT_MISSING, and UBL_XSD_VALUE_INVALID. Server-side UBL XSD artefact configuration uses UBL_XSD_ROOT_DIR, UBL_INVOICE_XSD_PATH, UBL_CREDIT_NOTE_XSD_PATH, and UBL_XSD_ARTIFACT_VERSION. Server-side Schematron artifact diagnostics use PEPPOL_SCHEMATRON_ROOT_DIR, PEPPOL_BIS_SCHEMATRON_PATH, EN16931_SCHEMATRON_PATH, and SCHEMATRON_ARTIFACT_VERSION. Server-side Schematron execution policy metadata uses SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION. These policy variables only affect policy and engine candidate metadata and do not enable validation; execution-like values such as enabled, execute, real, or production are blocked as blocked_requested_execution with schematron_execution_requested_but_blocked until a future step explicitly implements a reviewed engine. Schematron metadata may include configured/readable/usable status, validatorName, validatorAvailable, artifactVersion, safe labels, basenames, relativePathUnderRoot, SHA-256 hashes, sourceRegisterVersion, artifactProvenance, artifactManifestVersion, manifestVerification, manifestHashStatus, expectedSha256Recorded, actualSha256Recorded, reviewStatus, checkedAt, adapterVersion, executionPreflight, executionPolicy, engineCandidate, engineCandidateVersion, engineAvailabilityStatus, engineExecutionSupported, policyVersion, policyMode, policyReason, engineId, executionPermitted, preflightStatus, preflightReason, validationExecutionEnabled, validationExecuted, markedValid, findingContractVersion, supportedFutureFindingCodes, workerSchematronOrchestratorVersion, schematronOrchestration, orchestrationMode, orchestrationStatus, orchestrationReason, selectedLayers, layerSummaries, and a disclaimer. Step 59 exposes worker orchestration fields through job responses as preflight/orchestration metadata, not official validation. Step 60 adds schematron_artifact_source_register_v1 source provenance metadata only; it records local artifact slots and does not add a public execution option. Step 61 adds schematron_artifact_manifest_v1 expected-slot and hash verification metadata only; a hash match is not validation success and does not add a public execution option. schematron_adapter_preflight_v1 is preflight metadata only; ready_for_future_execution means local artefact metadata looks usable for a future engine, but no Schematron rules are parsed or executed. schematron_policy_v1 is policy metadata only and keeps executionPermitted false. schematron_engine_candidate_v1 is engine-readiness metadata only and can report not_selected, placeholder_only, available, unavailable, unsupported, or error for none, placeholder, future_xslt2, future_schxslt, xpath_engine, or internal_test_candidate. Step 53 introduces schematron_local_execution_prototype_v1 only inside the @invoice-lantern/ubl package for explicit internal test-only calls; it is not exposed as a public XML validation job check, and creating a public XML validation job does not call it. schematron_xpath_engine_v1 introduces the guarded xpath_engine package-level foundation in @invoice-lantern/ubl; it can evaluate explicitly provided sanitized XPath assertion definitions only through guarded internal/package-level calls, and normal public API and worker XML validation jobs still do not execute it. Step 54 introduces schematron_result_mapper_v1 only inside @invoice-lantern/ubl as a future mapping layer for sanitized SVRL-style failed assertions and successful reports. Step 55 introduces peppol_bis_execution_path_v1 only inside @invoice-lantern/ubl as a guarded Peppol BIS Billing execution path foundation for package-level/internal test-only calls. Step 56 introduces en16931_execution_path_v1 only inside @invoice-lantern/ubl as a guarded EN 16931 / TC434 execution path foundation for package-level/internal test-only calls. Step 57 introduces schematron_execution_orchestrator_v1 only inside @invoice-lantern/ubl as a unified package-level/internal test-only orchestration foundation for Peppol plus EN 16931 layer summaries, safe counts, aggregate statuses, and merged findings. Step 58 introduces xml_worker_schematron_orchestrator_v1 inside the XML worker as a default-safe bridge that may call schematron_execution_orchestrator_v1 in disabled or preflight_only mode for worker summaries; internal_test_only is explicit local worker test behavior only and is not a public/default mode. The future mapper, package-level execution paths, unified orchestrator, and xpath_engine foundation can map PEPPOL_SCHEMATRON_RULE_FAILED, EN16931_SCHEMATRON_RULE_FAILED, SCHEMATRON_ASSERTION_FAILED, SCHEMATRON_EXECUTION_ERROR, and SCHEMATRON_REPORT_WARNING and preserve only sanitized ruleId, businessRuleId, schematronLayer, ruleLocation, testExpression, assertionText, and diagnosticReference metadata. Normal public API and worker XML validation jobs still do not execute production Schematron, do not call peppol_bis_execution_path_v1 or en16931_execution_path_v1 as public checks, do not execute schematron_xpath_engine_v1, and do not produce real mapped Schematron findings from production execution. Engine candidate metadata does not enable validation. Other future adapter reasons include schematron_execution_disabled and schematron_execution_engine_not_implemented. The Step 49 Schematron finding contract is prepared for future rule results and documents optional sanitized schematronLayer, ruleId, businessRuleId, ruleLocation, testExpression, assertionText, and diagnosticReference fields. Schematron execution is not implemented for this endpoint; validationExecutionEnabled is false, validationExecuted is false, markedValid is false, and executionPermitted is false. Public responses do not include raw XML, Schematron contents, file contents, full absolute Schematron paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance. This endpoint performs no certification, no authority acceptance, no filing, and no legal/tax/accounting compliance validation.",
+          "Creates an XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, the deprecated schematron_peppol_placeholder preflight alias, and guarded local Schematron execution checks schematron_peppol or schematron_en16931. UBL XSD returns not_configured when local XSD artifacts are unavailable and passed or failed only after real local XSD validation executes. Schematron execution is disabled unless PEPPOL_SCHEMATRON_ROOT_DIR, PEPPOL_BIS_SCHEMATRON_PATH or EN16931_SCHEMATRON_PATH, SCHEMATRON_ARTIFACT_VERSION, SCHEMATRON_EXECUTION_MODE=execute, SCHEMATRON_ENGINE=xpath_engine, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION=true/1/yes are configured safely. The executor uses reviewed local artifacts only, performs no remote fetching, rejects unsafe XML and unsupported Schematron/XPath constructs, and maps supported failed assertions and successful reports to sanitized findings. markedValid=true means only the configured technical Schematron check executed fully and produced no failed assertions or fatal/error findings. Public responses do not include raw XML, Schematron contents, file contents, full absolute Schematron paths, certification, compliance or legal/tax/accounting guarantees, filing, or authority acceptance.",
         scope: "xml:validation_jobs",
         requestBody: {
           required: true,
@@ -1033,7 +1033,9 @@ const openApiDocument = {
                 requestedChecks: [
                   "worker_readiness",
                   "xsd_ubl",
-                  "schematron_peppol_placeholder"
+                  "schematron_peppol_placeholder",
+                  "schematron_peppol",
+                  "schematron_en16931"
                 ]
               }
             }
@@ -2950,7 +2952,9 @@ const openApiDocument = {
               enum: [
                 "worker_readiness",
                 "xsd_ubl",
-                "schematron_peppol_placeholder"
+                "schematron_peppol_placeholder",
+                "schematron_peppol",
+                "schematron_en16931"
               ]
             },
             default: ["worker_readiness"]
@@ -3588,7 +3592,7 @@ const openApiDocument = {
       XmlValidationJobSchematronArtifactDiagnostics: {
         type: "object",
         description:
-          "Metadata-only safe Schematron artifact diagnostics returned for schematron_peppol_placeholder. Schematron execution is not implemented; validationExecutionEnabled is false, validationExecuted is false, and markedValid is false. Step 60 adds schematron_artifact_source_register_v1 provenance metadata for local artifact slots as technical metadata only. Step 61 adds schematron_artifact_manifest_v1 hash verification metadata; a hash match is not validation success. These diagnostics do not certify Peppol or EN 16931 status and do not provide legal, tax, accounting, filing, or authority conclusions.",
+          "Safe Schematron artifact diagnostics for configured Peppol BIS Billing-style and EN 16931 / TC434-style local artifact slots. Diagnostics alone do not execute validation or mark XML valid; guarded execution requires explicit execute policy, xpath_engine, experimental allow, local reviewed artifacts, and safe XML. A hash match is not validation success. These diagnostics do not certify Peppol or EN 16931 status and do not provide legal, tax, accounting, filing, or authority conclusions.",
         required: [
           "diagnosticKind",
           "configured",
@@ -3635,11 +3639,10 @@ const openApiDocument = {
           validatorAvailable: {
             type: "boolean",
             description:
-              "False because no Schematron execution engine is wired into XML validation jobs."
+              "Artifact diagnostics availability. Real execution also requires the explicit Schematron execution policy and xpath_engine gate."
           },
           validationExecutionEnabled: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           artifactVersion: {
             type: ["string", "null"]
@@ -3842,7 +3845,7 @@ const openApiDocument = {
       XmlValidationJobSchematronEngineCandidate: {
         type: "object",
         description:
-          "Metadata-only schematron_engine_candidate_v1 result for selected local Schematron engine readiness. Engine candidate metadata reports availability only; it does not enable normal API or worker XML validation jobs to execute Schematron, parse Schematron rules, evaluate XPath assertions, certify Peppol/EN 16931, prove compliance, return raw XML, return Schematron file contents, or return full absolute local filesystem paths. Step 53 can report internal_test_candidate as the package-level schematron_local_execution_prototype_v1 candidate for internal test-only execution. The xpath_engine candidate represents the guarded package-level schematron_xpath_engine_v1 foundation backed by fontoxpath and slimdom for explicitly provided sanitized XPath assertions only through internal/test-only calls; public job execution remains disabled.",
+          "schematron_engine_candidate_v1 result for selected local Schematron engine readiness. Engine candidate metadata reports availability only; execution still requires explicit execute policy, xpath_engine, reviewed local artifacts, safe XML, and supported Schematron/XPath constructs. The xpath_engine candidate represents the guarded package-level schematron_xpath_engine_v1 foundation backed by fontoxpath and slimdom. This metadata does not certify Peppol/EN 16931, prove compliance, return raw XML, return Schematron file contents, or return full absolute local filesystem paths.",
         required: [
           "diagnosticKind",
           "engineCandidateVersion",
@@ -3980,7 +3983,7 @@ const openApiDocument = {
       XmlValidationJobSchematronExecutionPolicy: {
         type: "object",
         description:
-          "Metadata-only schematron_policy_v1 result for future Schematron engine selection. Policy metadata records disabled, preflight_only, or blocked_requested_execution mode and the selected engineId, but it does not enable validation. Step 51 keeps executionPermitted false and validationExecutionEnabled false. Step 52 may inspect the selected engineId through schematron_engine_candidate_v1, but engine candidate metadata still does not enable validation. Step 53's schematron_local_execution_prototype_v1 and schematron_xpath_engine_v1 are internal test-only package foundations in packages/ubl and are not a public policy mode. SCHEMATRON_EXECUTION_MODE, SCHEMATRON_ENGINE, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION only affect policy metadata; execution-like values are blocked with schematron_execution_requested_but_blocked. This policy does not parse Schematron rules, evaluate XPath assertions in normal jobs, execute Schematron validation, certify Peppol/EN 16931, prove compliance, return raw XML, return Schematron file contents, or return full absolute local filesystem paths.",
+          "schematron_policy_v1 result for guarded local Schematron execution. Blank or missing configuration stays disabled/preflight-only. Execution is permitted only for SCHEMATRON_EXECUTION_MODE=execute with SCHEMATRON_ENGINE=xpath_engine and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION set to a true-like value. Policy permission alone is not validation success; local reviewed artifacts, safe XML, and supported Schematron/XPath are still required. This policy does not certify Peppol/EN 16931, prove compliance, return raw XML, return Schematron file contents, or return full absolute local filesystem paths.",
         required: [
           "diagnosticKind",
           "policyVersion",
@@ -4007,6 +4010,7 @@ const openApiDocument = {
             enum: [
               "disabled",
               "preflight_only",
+              "execute",
               "blocked_requested_execution"
             ]
           },
@@ -4023,12 +4027,10 @@ const openApiDocument = {
             ]
           },
           executionPermitted: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           validationExecutionEnabled: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           reason: {
             type: "string",
@@ -4036,7 +4038,10 @@ const openApiDocument = {
               "schematron_execution_disabled_by_policy",
               "schematron_execution_preflight_only",
               "schematron_execution_requested_but_blocked",
-              "schematron_experimental_execution_not_available"
+              "schematron_experimental_execution_not_available",
+              "schematron_execution_requires_xpath_engine",
+              "schematron_execution_requires_explicit_experimental_allow",
+              "schematron_execution_explicitly_permitted"
             ]
           },
           requestedMode: {
@@ -4052,14 +4057,14 @@ const openApiDocument = {
           allowExperimentalExecution: {
             type: "boolean",
             description:
-              "True only when SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION is true-like. Execution remains blocked and normal XML validation jobs do not implement an experimental engine."
+              "True only when SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION is true-like. Execution still requires execute mode, xpath_engine, reviewed local artifacts, safe XML, and supported constructs."
           }
         }
       },
       XmlValidationJobSchematronXPathEngineFoundation: {
         type: "object",
         description:
-          "Documentation-only schematron_xpath_engine_v1 foundation for the guarded xpath_engine package candidate in @invoice-lantern/ubl. This internal/test-only foundation can evaluate explicitly provided, sanitized XPath assertion definitions against a local DOM through guarded package-level calls only. It never enables normal public API or XML worker validation jobs to execute Schematron, never reads Schematron files, never fetches remote resources, never loads arbitrary local files, never returns raw XML, never returns Schematron file contents, never returns full absolute local filesystem paths, and never returns remote fetch output. It is independent technical validation infrastructure only: no official validation, no Peppol certification, no EN 16931 compliance guarantee, no legal/tax/accounting compliance guarantee, and no authority acceptance.",
+          "schematron_xpath_engine_v1 foundation for the guarded xpath_engine package candidate in @invoice-lantern/ubl. Step 8 uses this engine through the local artifact executor only when explicit policy, reviewed local artifacts, safe XML, and supported XPath gates pass. It never fetches remote resources, never loads arbitrary local files, never returns raw XML, never returns Schematron file contents, never returns full absolute local filesystem paths, and never returns remote fetch output. It is independent technical validation infrastructure only: no official validation, no Peppol certification, no EN 16931 compliance guarantee, no legal/tax/accounting compliance guarantee, and no authority acceptance.",
         required: [
           "diagnosticKind",
           "engineVersion",
@@ -4090,33 +4095,27 @@ const openApiDocument = {
           },
           internalPackageLevelOnly: {
             type: "boolean",
-            const: true,
             description:
-              "The engine is a package-level foundation only and requires explicit internal/test-only execution input."
+              "False when represented through the guarded API/worker artifact executor; legacy package-only diagnostics may keep this true."
           },
           normalPublicApiExecutionEnabled: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           normalWorkerExecutionEnabled: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           validationExecutionEnabled: {
             type: "boolean",
-            const: false,
             description:
-              "Normal public XML validation jobs keep this false. Internal package tests may produce engine results with execution enabled only when explicitly allowed."
+              "True only when guarded local Schematron execution is explicitly enabled and the selected check is executable."
           },
           validationExecuted: {
             type: "boolean",
-            const: false,
             description:
-              "Normal public API and worker XML validation jobs still do not execute Schematron or XPath assertions."
+              "True only after guarded local Schematron execution actually evaluates supported XPath assertions."
           },
           markedValid: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           assertionInputFields: {
             type: "array",
@@ -4211,26 +4210,24 @@ const openApiDocument = {
                 const: false
               },
               normalPublicApiExecutionEnabled: {
-                type: "boolean",
-                const: false
+                type: "boolean"
               },
               normalWorkerExecutionEnabled: {
-                type: "boolean",
-                const: false
+                type: "boolean"
               }
             }
           },
           disclaimer: {
             type: "string",
             example:
-              "schematron_xpath_engine_v1 is an internal/test-only readiness sandbox foundation. It is not official validation, not Peppol certification, not an EN 16931 compliance guarantee, not legal/tax/accounting advice, and not authority acceptance."
+              "schematron_xpath_engine_v1 is a guarded local technical execution foundation. It is not official validation, not Peppol certification, not an EN 16931 compliance guarantee, not legal/tax/accounting advice, and not authority acceptance."
           }
         }
       },
       XmlValidationJobSchematronResultMappingContract: {
         type: "object",
         description:
-          "Documentation-only future Schematron result mapping contract for schematron_result_mapper_v1. The mapper lives in @invoice-lantern/ubl and converts already-extracted, sanitized SVRL-style failed assertions and successful reports into schematron_contract_v1 findings for later production integration. Normal API and worker XML validation jobs do not call this mapper in Step 54, do not execute Schematron, do not claim Peppol or EN 16931 validation passed, and do not return raw XML, Schematron file contents, file contents, or full absolute local filesystem paths.",
+          "Schematron result mapping contract for schematron_result_mapper_v1. The mapper lives in @invoice-lantern/ubl and converts sanitized SVRL-style failed assertions and successful reports into schematron_contract_v1 findings during guarded local Schematron execution. It does not claim Peppol certification, EN 16931 certification, legal validity, compliance, or authority acceptance and does not return raw XML, Schematron file contents, file contents, or full absolute local filesystem paths.",
         required: [
           "mapperVersion",
           "diagnosticKind",
@@ -4249,12 +4246,10 @@ const openApiDocument = {
             const: "schematron_result_mapping"
           },
           normalJobExecutionEnabled: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           validationExecuted: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           supportedMappedFindingCodes: {
             type: "array",
@@ -4300,7 +4295,7 @@ const openApiDocument = {
       XmlValidationJobPeppolBisExecutionPathFoundation: {
         type: "object",
         description:
-          "Documentation-only Step 55 Peppol BIS Billing execution path foundation for peppol_bis_execution_path_v1. The path lives in @invoice-lantern/ubl for package-level/internal test-only execution-path proofing. It can compose schematron_policy_v1, schematron_engine_candidate_v1, schematron_local_execution_prototype_v1, and schematron_result_mapper_v1. It is not exposed as a public XML validation job check; Step 58's worker bridge may reach it only through schematron_execution_orchestrator_v1 disabled/preflight metadata paths. Normal public API and worker XML validation jobs do not execute Peppol Schematron and do not claim certification, compliance, authority acceptance, legal validity, Peppol validation passed, or EN 16931 validation passed.",
+          "Peppol BIS Billing-style execution path foundation for peppol_bis_execution_path_v1. The path lives in @invoice-lantern/ubl and can run through the guarded local artifact executor for schematron_peppol when explicit policy, xpath_engine, reviewed local artifact, safe XML, and supported Schematron/XPath gates pass. It does not claim certification, compliance, authority acceptance, legal validity, Peppol certification, or EN 16931 certification.",
         required: [
           "executionPathVersion",
           "schematronLayer",
@@ -4320,18 +4315,16 @@ const openApiDocument = {
             const: "peppol_bis_billing"
           },
           normalJobExecutionEnabled: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           normalJobValidationExecuted: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           internalTestOnlyModes: {
             type: "array",
             items: {
               type: "string",
-              enum: ["disabled", "preflight_only", "internal_test_only"]
+              enum: ["disabled", "preflight_only", "execute", "internal_test_only"]
             }
           },
           packageLevelStatuses: {
@@ -4347,8 +4340,10 @@ const openApiDocument = {
                 "ready_for_future_execution",
                 "executed",
                 "failed",
+                "partial",
                 "unsafe_input",
-                "unsupported"
+                "unsupported",
+                "error"
               ]
             }
           },
@@ -4381,7 +4376,7 @@ const openApiDocument = {
       XmlValidationJobEn16931ExecutionPathFoundation: {
         type: "object",
         description:
-          "Documentation-only Step 56 EN 16931 / TC434 execution path foundation for en16931_execution_path_v1. The path lives in @invoice-lantern/ubl for package-level/internal test-only execution-path proofing. It can compose schematron_policy_v1, schematron_engine_candidate_v1, schematron_local_execution_prototype_v1, and schematron_result_mapper_v1. It is not exposed as a public XML validation job check; Step 58's worker bridge may reach it only through schematron_execution_orchestrator_v1 disabled/preflight metadata paths. Normal public API and worker XML validation jobs do not execute EN 16931 Schematron and do not claim certification, compliance, authority acceptance, legal validity, Peppol validation passed, or EN 16931 validation passed.",
+          "EN 16931 / TC434-style execution path foundation for en16931_execution_path_v1. The path lives in @invoice-lantern/ubl and can run through the guarded local artifact executor for schematron_en16931 when explicit policy, xpath_engine, reviewed local artifact, safe XML, and supported Schematron/XPath gates pass. It does not claim certification, compliance, authority acceptance, legal validity, Peppol certification, or EN 16931 certification.",
         required: [
           "executionPathVersion",
           "schematronLayer",
@@ -4401,18 +4396,16 @@ const openApiDocument = {
             const: "en16931_tc434"
           },
           normalJobExecutionEnabled: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           normalJobValidationExecuted: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           internalTestOnlyModes: {
             type: "array",
             items: {
               type: "string",
-              enum: ["disabled", "preflight_only", "internal_test_only"]
+              enum: ["disabled", "preflight_only", "execute", "internal_test_only"]
             }
           },
           packageLevelStatuses: {
@@ -4428,8 +4421,10 @@ const openApiDocument = {
                 "ready_for_future_execution",
                 "executed",
                 "failed",
+                "partial",
                 "unsafe_input",
-                "unsupported"
+                "unsupported",
+                "error"
               ]
             }
           },
@@ -4462,7 +4457,7 @@ const openApiDocument = {
       XmlValidationJobSchematronExecutionOrchestratorFoundation: {
         type: "object",
         description:
-          "Documentation-only Step 57 unified Schematron execution orchestration foundation for schematron_execution_orchestrator_v1. The orchestrator lives in @invoice-lantern/ubl for package-level/internal test-only orchestration proofing. It can coordinate peppol_bis_execution_path_v1 and en16931_execution_path_v1 layer summaries, aggregate statuses, safe counts, and merged schematron_contract_v1 findings. Step 58's xml_worker_schematron_orchestrator_v1 may call it for worker-side disabled/preflight-safe metadata summaries, while internal_test_only remains explicit local worker test behavior only. Normal public API and worker XML validation jobs do not execute production Schematron and do not claim certification, compliance, authority acceptance, legal validity, Peppol validation passed, or EN 16931 validation passed.",
+          "Unified Schematron execution orchestration foundation for schematron_execution_orchestrator_v1. The orchestrator lives in @invoice-lantern/ubl and coordinates Peppol BIS Billing-style and EN 16931 / TC434-style layer summaries, aggregate statuses, safe counts, and merged schematron_contract_v1 findings. API and worker jobs can call it for guarded local execution only when explicit policy, engine, artifact, and XML safety gates pass. It does not claim certification, compliance, authority acceptance, legal validity, Peppol certification, or EN 16931 certification.",
         required: [
           "orchestratorVersion",
           "diagnosticKind",
@@ -4491,18 +4486,16 @@ const openApiDocument = {
             }
           },
           normalJobExecutionEnabled: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           normalJobValidationExecuted: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           internalTestOnlyModes: {
             type: "array",
             items: {
               type: "string",
-              enum: ["disabled", "preflight_only", "internal_test_only"]
+              enum: ["disabled", "preflight_only", "execute", "internal_test_only"]
             }
           },
           packageLevelStatuses: {
@@ -4520,7 +4513,8 @@ const openApiDocument = {
                 "failed",
                 "partial",
                 "unsafe_input",
-                "unsupported"
+                "unsupported",
+                "error"
               ]
             }
           },
@@ -4572,7 +4566,7 @@ const openApiDocument = {
       XmlValidationJobXmlWorkerSchematronOrchestration: {
         type: "object",
         description:
-          "Step 58 worker-side Schematron orchestration bridge summary for xml_worker_schematron_orchestrator_v1, exposed through Step 59 XML validation job responses as preflight/orchestration metadata, not official validation. The XML worker can build disabled or preflight_only metadata through schematron_execution_orchestrator_v1 for schematron_peppol_placeholder, including nested selectedLayers and layerSummaries when present, but validationExecutionEnabled and validationExecuted remain false in normal public worker/API paths, markedValid remains false, and internal_test_only is not public/default behavior. This summary never returns raw XML, Schematron file contents, full absolute local filesystem paths, remote fetch results, Java/system dependency output, certification, compliance, authority acceptance, legal validity, Peppol validation passed, or EN 16931 validation passed.",
+          "XML worker Schematron orchestration summary for xml_worker_schematron_orchestrator_v1. The worker can build disabled/preflight metadata for the deprecated placeholder alias and can run guarded local execution for schematron_peppol and schematron_en16931 only when explicit policy, engine, artifact, and XML safety gates pass. This summary never returns raw XML, Schematron file contents, full absolute local filesystem paths, remote fetch results, Java/system dependency output, certification, compliance guarantees, authority acceptance, legal validity, Peppol certification, or EN 16931 certification.",
         required: [
           "diagnosticKind",
           "workerSchematronOrchestratorVersion",
@@ -4610,12 +4604,13 @@ const openApiDocument = {
               "failed",
               "partial",
               "unsafe_input",
-              "unsupported"
+              "unsupported",
+              "error"
             ]
           },
           mode: {
             type: "string",
-            enum: ["disabled", "preflight_only", "internal_test_only"]
+            enum: ["disabled", "preflight_only", "execute", "internal_test_only"]
           },
           requested: {
             type: "boolean"
@@ -4623,16 +4618,15 @@ const openApiDocument = {
           validationExecutionEnabled: {
             type: "boolean",
             description:
-              "False for normal public API/worker job behavior. True can only appear in explicit local worker internal_test_only tests."
+              "True only when guarded local Schematron execution is explicitly enabled for a real Schematron check and the worker selected an executable layer."
           },
           validationExecuted: {
             type: "boolean",
             description:
-              "False for normal public API/worker job behavior. True can only appear in explicit local worker internal_test_only tests."
+              "True only after guarded local Schematron execution actually starts and selected layers are fully evaluated."
           },
           markedValid: {
-            type: "boolean",
-            const: false
+            type: "boolean"
           },
           findingCount: {
             type: "integer"
@@ -4659,9 +4653,19 @@ const openApiDocument = {
               "schematron_execution_orchestrator_preflight_ready_for_future_execution",
               "schematron_execution_orchestrator_preflight_partial",
               "schematron_execution_orchestrator_preflight_unsupported",
+              "schematron_execution_orchestrator_preflight_error",
               "schematron_execution_orchestrator_internal_test_executed",
               "schematron_execution_orchestrator_internal_test_failed",
               "schematron_execution_orchestrator_internal_test_partial",
+              "schematron_execution_orchestrator_execute_executed",
+              "schematron_execution_orchestrator_execute_failed",
+              "schematron_execution_orchestrator_execute_partial",
+              "schematron_execution_orchestrator_execute_not_configured",
+              "schematron_execution_orchestrator_execute_artifact_unreadable",
+              "schematron_execution_orchestrator_execute_engine_unavailable",
+              "schematron_execution_orchestrator_execute_unsafe_input",
+              "schematron_execution_orchestrator_execute_unsupported",
+              "schematron_execution_orchestrator_execute_error",
               "XML_DOCTYPE_BLOCKED",
               "XML_ENTITY_BLOCKED",
               "XML_EXTERNAL_IDENTIFIER_BLOCKED",
@@ -4788,7 +4792,7 @@ const openApiDocument = {
       XmlValidationJobFinding: {
         type: "object",
         description:
-          "Structured technical sandbox finding. xsd_ubl findings are mapped from local XSD validator messages and may include sanitized technical detail, but never raw XML. schematron_peppol_placeholder findings use the schematron_contract_v1 foundation for future rule results while Schematron execution is still disabled for normal jobs. Step 53's internal schematron_local_execution_prototype_v1 can produce sanitized contract findings only through package-level internal test-only calls, not through public job responses. Step 54's schematron_result_mapper_v1 can map sanitized SVRL-style failed assertions and successful reports for future execution integration, but normal public API and worker XML validation jobs do not call it as a public check. Step 55's peppol_bis_execution_path_v1 can prove Peppol-layer mapped findings only through package-level/internal test-only calls and is not exposed as a public API or worker check. Step 56's en16931_execution_path_v1 can prove EN 16931-layer mapped findings only through package-level/internal test-only calls and is also not exposed as a public API or worker check. Step 57's schematron_execution_orchestrator_v1 can merge Peppol and EN 16931 findings; Step 58's worker bridge may call it for disabled/preflight-safe metadata summaries, while normal public jobs still do not execute production Schematron. Optional Schematron fields are sanitized and never contain raw XML, Schematron file contents, full absolute local paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance.",
+          "Structured technical sandbox finding. xsd_ubl findings are mapped from local XSD validator messages and may include sanitized technical detail, but never raw XML. schematron_peppol and schematron_en16931 findings are mapped from guarded local Schematron execution through schematron_result_mapper_v1 when explicit execute policy, xpath_engine, reviewed local artifacts, safe XML, and supported constructs all pass. schematron_peppol_placeholder remains a safe deprecated preflight alias. Optional Schematron fields are sanitized and never contain raw XML, Schematron file contents, full absolute local paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance.",
         required: [
           "code",
           "severity",
@@ -4814,7 +4818,9 @@ const openApiDocument = {
             enum: [
               "worker_readiness",
               "xsd_ubl",
-              "schematron_peppol_placeholder"
+              "schematron_peppol_placeholder",
+              "schematron_peppol",
+              "schematron_en16931"
             ]
           },
           field: {
@@ -4835,6 +4841,10 @@ const openApiDocument = {
               "completed",
               "not_configured",
               "not_implemented",
+              "unsupported",
+              "unsafe_input",
+              "disabled",
+              "preflight_only",
               "error"
             ]
           },
@@ -4955,7 +4965,9 @@ const openApiDocument = {
               enum: [
                 "worker_readiness",
                 "xsd_ubl",
-                "schematron_peppol_placeholder"
+                "schematron_peppol_placeholder",
+                "schematron_peppol",
+                "schematron_en16931"
               ]
             }
           },
@@ -4966,7 +4978,9 @@ const openApiDocument = {
               enum: [
                 "worker_readiness",
                 "xsd_ubl",
-                "schematron_peppol_placeholder"
+                "schematron_peppol_placeholder",
+                "schematron_peppol",
+                "schematron_en16931"
               ]
             }
           },
@@ -4977,7 +4991,9 @@ const openApiDocument = {
               enum: [
                 "worker_readiness",
                 "xsd_ubl",
-                "schematron_peppol_placeholder"
+                "schematron_peppol_placeholder",
+                "schematron_peppol",
+                "schematron_en16931"
               ]
             }
           },
@@ -5013,7 +5029,9 @@ const openApiDocument = {
               checkStatuses: {
                 worker_readiness: "completed",
                 xsd_ubl: "not_configured",
-                schematron_peppol_placeholder: "not_implemented"
+                schematron_peppol_placeholder: "not_implemented",
+                schematron_peppol: "not_configured",
+                schematron_en16931: "not_configured"
               },
               xsdUbl: {
                 requested: true,
@@ -5338,7 +5356,7 @@ const openApiDocument = {
                     fullAbsolutePathsReturned: false
                   },
                   disclaimer:
-                    "These are technical configuration diagnostics for local Schematron artefacts in Invoice Lantern. They do not execute Schematron validation."
+                    "These are technical configuration diagnostics for local Schematron artefacts in Invoice Lantern. Guarded local execution requires explicit execute policy, xpath_engine, reviewed local artefacts, safe XML, and supported constructs."
                 }
               }
             }

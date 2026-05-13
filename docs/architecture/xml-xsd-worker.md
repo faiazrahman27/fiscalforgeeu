@@ -97,6 +97,20 @@ the existing workspace role/RBAC checks.
 
 ## Schematron Boundary
 
-`schematron_peppol_placeholder` remains metadata-only in this step. Real
-Schematron execution, EN 16931/Peppol business-rule execution, certification
-claims, and compliance conclusions remain for a later locked step.
+XML worker jobs can also request `schematron_peppol` and
+`schematron_en16931`. Those checks use the shared guarded local Schematron
+execution path from `packages/ubl` only when execution is explicitly configured
+with reviewed local artefacts, `SCHEMATRON_EXECUTION_MODE=execute`,
+`SCHEMATRON_ENGINE=xpath_engine`, and
+`SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION=true` or another true-like value.
+
+Blank/default configuration remains disabled or preflight-only:
+`validationExecuted` is `false` and `markedValid` is `false`. Missing,
+unreadable, out-of-root, remote, unsupported, unsafe, timeout, and error cases
+fail safely and are not marked valid.
+
+The deprecated `schematron_peppol_placeholder` request remains a safe
+preflight/metadata alias. The Step 8 executor is not the Step 9 EN
+16931/Peppol-style rule catalog or business-rule intelligence layer, and it
+does not provide certification, legal/tax/accounting conclusions, official
+filing, authority acceptance, or a compliance guarantee.

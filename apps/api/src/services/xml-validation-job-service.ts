@@ -8,6 +8,7 @@ import {
   buildSchematronExecutionDisabledFinding,
   buildSafeSchematronArtifactDiagnostics,
   inspectSchematronEngineCandidate,
+  runSchematronExecutionOrchestrator,
   validateUblXsd,
   type SchematronExecutionMode,
   type SchematronEngineCandidateInfo,
@@ -16,6 +17,10 @@ import {
   type SchematronExecutionPreflightResult,
   type SchematronLayer,
   type SchematronArtifactConfigInput,
+  type SchematronCheckType,
+  type SchematronContractFinding,
+  type SchematronExecutionOrchestratorResult,
+  type SchematronExecutionOrchestratorStatus,
   type SchematronSafeArtifactDiagnostics,
   type UblXsdArtifactConfigInput,
   type UblXsdArtifactInfo,
@@ -38,6 +43,8 @@ export const XML_VALIDATION_JOB_QUEUE_MAX_ATTEMPTS = 3;
 export const XML_VALIDATION_JOB_CHECKS = [
   "worker_readiness",
   "xsd_ubl",
+  "schematron_peppol",
+  "schematron_en16931",
   "schematron_peppol_placeholder"
 ] as const;
 
@@ -50,6 +57,12 @@ export type XmlValidationJobCheckStatus =
   | "completed"
   | "not_configured"
   | "not_implemented"
+  | "unsupported"
+  | "unsafe_input"
+  | "artifact_unreadable"
+  | "engine_unavailable"
+  | "disabled"
+  | "preflight_only"
   | "error";
 
 export type XmlValidationJobQueueMode = "inline" | "async_worker";
@@ -541,6 +554,182 @@ async function buildSchematronPlaceholderResult(input: {
   };
 }
 
+function schematronModeForPolicy(policy: SchematronExecutionPolicy) {
+  if (policy.mode === "execute" && policy.executionPermitted) {
+    return "execute" as const;
+  }
+
+  if (policy.mode === "disabled") {
+    return "disabled" as const;
+  }
+
+  return "preflight_only" as const;
+}
+
+function layerForSchematronCheck(
+  check: Extract<XmlValidationJobCheck, "schematron_peppol" | "schematron_en16931">
+) {
+  return check === "schematron_en16931"
+    ? "en16931_tc434"
+    : "peppol_bis_billing";
+}
+
+function checkTypeForSchematronCheck(
+  check: Extract<XmlValidationJobCheck, "schematron_peppol" | "schematron_en16931">
+): SchematronCheckType {
+  return check;
+}
+
+function mapSchematronOrchestratorStatus(
+  status: SchematronExecutionOrchestratorStatus,
+  markedValid: boolean,
+  policyMode: SchematronExecutionPolicy["mode"]
+): XmlValidationJobCheckStatus {
+  if (policyMode === "preflight_only" && status !== "not_configured") {
+    return "preflight_only";
+  }
+
+  if (status === "executed") {
+    return markedValid ? "passed" : "warning";
+  }
+
+  if (status === "failed") {
+    return "failed";
+  }
+
+  if (status === "not_configured") {
+    return "not_configured";
+  }
+
+  if (status === "unsupported") {
+    return "unsupported";
+  }
+
+  if (status === "unsafe_input") {
+    return "unsafe_input";
+  }
+
+  if (status === "artifact_unreadable") {
+    return "artifact_unreadable";
+  }
+
+  if (status === "engine_unavailable") {
+    return "engine_unavailable";
+  }
+
+  if (status === "disabled") {
+    return "disabled";
+  }
+
+  return "error";
+}
+
+function buildSchematronFinding(
+  finding: SchematronContractFinding,
+  checkType: SchematronCheckType
+): XmlValidationJobFinding {
+  return {
+    ...finding,
+    checkType
+  };
+}
+
+function buildSchematronExecutionSummary(input: {
+  checkType: SchematronCheckType;
+  diagnostics: SchematronSafeArtifactDiagnostics;
+  policy: SchematronExecutionPolicy;
+  engineCandidate: SchematronEngineCandidateInfo;
+  orchestration: SchematronExecutionOrchestratorResult;
+}) {
+  return {
+    implemented: true,
+    checkType: input.checkType,
+    executionPolicy: input.policy.safeSummary,
+    engineCandidate: input.engineCandidate.safeSummary,
+    schematronOrchestration: input.orchestration.safeSummary,
+    policyVersion: input.policy.policyVersion,
+    policyMode: input.policy.mode,
+    policyReason: input.policy.reason,
+    engineId: input.policy.engineId,
+    engineCandidateVersion: input.engineCandidate.engineCandidateVersion,
+    engineAvailabilityStatus: input.engineCandidate.availabilityStatus,
+    engineExecutionSupported: input.engineCandidate.executionSupported,
+    executionPermitted: input.policy.executionPermitted,
+    validationExecutionEnabled: input.orchestration.validationExecutionEnabled,
+    validationExecuted: input.orchestration.validationExecuted,
+    markedValid: input.orchestration.markedValid,
+    status: mapSchematronOrchestratorStatus(
+      input.orchestration.status,
+      input.orchestration.markedValid,
+      input.policy.mode
+    ),
+    orchestrationStatus: input.orchestration.status,
+    orchestrationReason: input.orchestration.reason,
+    findingContractVersion: SCHEMATRON_FINDING_CONTRACT_VERSION,
+    supportedFutureFindingCodes: [...SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES],
+    configured: input.diagnostics.configured,
+    usable: input.diagnostics.usable,
+    readyArtifactCount: input.diagnostics.readyArtifactCount,
+    requiredArtifactCount: input.diagnostics.requiredArtifactCount,
+    allRequiredArtifactsReadable: input.diagnostics.allRequiredArtifactsReadable,
+    artifactVersion: input.diagnostics.artifactVersion,
+    validatorName: input.diagnostics.validatorName,
+    validatorAvailable: input.diagnostics.validatorAvailable,
+    checkedAt: input.diagnostics.checkedAt,
+    artifactDiagnostics: input.diagnostics,
+    disclaimer:
+      "Guarded local Schematron execution is a technical check only. It is not official validation, does not certify Peppol or EN 16931 status, and is not legal, tax, accounting, filing, or authority acceptance advice."
+  };
+}
+
+async function buildSchematronExecutionResult(input: {
+  xml: string;
+  check: Extract<XmlValidationJobCheck, "schematron_peppol" | "schematron_en16931">;
+  artifactConfig?: SchematronArtifactConfigInput;
+  schematronExecutionPolicyInput?: SchematronExecutionPolicyInput;
+}): Promise<XmlValidationJobCheckResult> {
+  const checkType = checkTypeForSchematronCheck(input.check);
+  const policy = buildSchematronExecutionPolicy({
+    ...getDefaultSchematronExecutionPolicyInput(),
+    ...(input.schematronExecutionPolicyInput ?? {})
+  });
+  const diagnostics = await buildSafeSchematronArtifactDiagnostics(
+    input.artifactConfig ?? getDefaultSchematronArtifactConfig()
+  );
+  const engineCandidate = await inspectSchematronEngineCandidate({
+    engineId: policy.engineId
+  });
+  const orchestration = await runSchematronExecutionOrchestrator({
+    xml: input.xml,
+    mode: schematronModeForPolicy(policy),
+    layers: layerForSchematronCheck(input.check),
+    policy,
+    engineCandidate,
+    artifactDiagnostics: diagnostics,
+    artifactConfig: input.artifactConfig ?? getDefaultSchematronArtifactConfig()
+  });
+  const status = mapSchematronOrchestratorStatus(
+    orchestration.status,
+    orchestration.markedValid,
+    policy.mode
+  );
+
+  return {
+    checkType: input.check,
+    status,
+    findings: orchestration.findings.map((finding) =>
+      buildSchematronFinding(finding, checkType)
+    ),
+    summary: buildSchematronExecutionSummary({
+      checkType,
+      diagnostics,
+      policy,
+      engineCandidate,
+      orchestration
+    })
+  };
+}
+
 function summarizeCheckStatuses(
   checkResults: readonly XmlValidationJobCheckResult[]
 ) {
@@ -635,8 +824,25 @@ function getXsdUblResult(checkResults: readonly XmlValidationJobCheckResult[]) {
 function getSchematronPeppolResult(
   checkResults: readonly XmlValidationJobCheckResult[]
 ) {
-  return checkResults.find(
-    (result) => result.checkType === "schematron_peppol_placeholder"
+  return (
+    checkResults.find((result) => result.checkType === "schematron_peppol") ??
+    checkResults.find(
+      (result) => result.checkType === "schematron_peppol_placeholder"
+    )
+  );
+}
+
+function getSchematronEn16931Result(
+  checkResults: readonly XmlValidationJobCheckResult[]
+) {
+  return checkResults.find((result) => result.checkType === "schematron_en16931");
+}
+
+function isSchematronValidationExecuted(
+  summaries: Array<Record<string, unknown> | undefined>
+) {
+  return summaries.some((summary) =>
+    getBooleanSummaryValue(summary, "validationExecuted")
   );
 }
 
@@ -736,7 +942,16 @@ export function buildXmlValidationJobQueueFailureCompletion(input: {
         markedValid: false
       },
       schematronPeppol: {
-        requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
+        requested:
+          input.requestedChecks.includes("schematron_peppol") ||
+          input.requestedChecks.includes("schematron_peppol_placeholder"),
+        implemented: false,
+        validationExecutionEnabled: false,
+        validationExecuted: false,
+        markedValid: false
+      },
+      schematronEn16931: {
+        requested: input.requestedChecks.includes("schematron_en16931"),
         implemented: false,
         validationExecutionEnabled: false,
         validationExecuted: false,
@@ -819,6 +1034,32 @@ export async function buildXmlValidationJobCompletion(input: {
       failedChecks.push(check);
       checkResults.push(result);
       findings.push(...result.findings);
+      continue;
+    }
+
+    if (check === "schematron_peppol" || check === "schematron_en16931") {
+      const result = await buildSchematronExecutionResult({
+        xml: input.xml,
+        check,
+        ...(input.schematronArtifactConfig
+          ? { artifactConfig: input.schematronArtifactConfig }
+          : {}),
+        ...(input.schematronExecutionPolicyInput
+          ? {
+              schematronExecutionPolicyInput:
+                input.schematronExecutionPolicyInput
+            }
+          : {})
+      });
+
+      if (isCompletedCheckResult(result) || result.status === "not_configured") {
+        completedChecks.push(check);
+      } else {
+        failedChecks.push(check);
+      }
+
+      checkResults.push(result);
+      findings.push(...result.findings);
     }
   }
 
@@ -826,6 +1067,8 @@ export async function buildXmlValidationJobCompletion(input: {
   const xsdUblSummary = xsdUblResult?.summary;
   const schematronPeppolResult = getSchematronPeppolResult(checkResults);
   const schematronPeppolSummary = schematronPeppolResult?.summary;
+  const schematronEn16931Result = getSchematronEn16931Result(checkResults);
+  const schematronEn16931Summary = schematronEn16931Result?.summary;
   const queueLifecycle = buildCompletedXmlValidationJobLifecycle({
     mode: input.queueMode ?? "inline",
     ...(input.queueAttempt !== undefined ? { attempt: input.queueAttempt } : {}),
@@ -859,8 +1102,14 @@ export async function buildXmlValidationJobCompletion(input: {
       checkStatuses: summarizeCheckStatuses(checkResults),
       activeValidation: {
         xsd: getBooleanSummaryValue(xsdUblSummary, "validationExecuted"),
-        schematron: false,
-        peppolArtifacts: false,
+        schematron: isSchematronValidationExecuted([
+          schematronPeppolSummary,
+          schematronEn16931Summary
+        ]),
+        peppolArtifacts: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "configured"
+        ),
         en16931Certification: false
       },
       xsdUbl: {
@@ -880,8 +1129,13 @@ export async function buildXmlValidationJobCompletion(input: {
           : {})
       },
       schematronPeppol: {
-        requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
-        implemented: false,
+        requested:
+          input.requestedChecks.includes("schematron_peppol") ||
+          input.requestedChecks.includes("schematron_peppol_placeholder"),
+        implemented: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "implemented"
+        ),
         adapterVersion:
           schematronPeppolSummary?.adapterVersion ?? undefined,
         executionPreflight:
@@ -908,10 +1162,22 @@ export async function buildXmlValidationJobCompletion(input: {
           schematronPeppolSummary?.engineAvailabilityStatus ?? undefined,
         engineExecutionSupported:
           schematronPeppolSummary?.engineExecutionSupported ?? undefined,
-        executionPermitted: false,
-        validationExecutionEnabled: false,
-        validationExecuted: false,
-        markedValid: false,
+        executionPermitted: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "executionPermitted"
+        ),
+        validationExecutionEnabled: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "validationExecutionEnabled"
+        ),
+        validationExecuted: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "validationExecuted"
+        ),
+        markedValid: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "markedValid"
+        ),
         findingContractVersion:
           schematronPeppolSummary?.findingContractVersion ?? undefined,
         supportedFutureFindingCodes:
@@ -934,6 +1200,71 @@ export async function buildXmlValidationJobCompletion(input: {
           ? {
               artifactDiagnostics:
                 schematronPeppolSummary.artifactDiagnostics
+            }
+          : {})
+      },
+      schematronEn16931: {
+        requested: input.requestedChecks.includes("schematron_en16931"),
+        implemented: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "implemented"
+        ),
+        executionPolicy:
+          schematronEn16931Summary?.executionPolicy ?? undefined,
+        engineCandidate:
+          schematronEn16931Summary?.engineCandidate ?? undefined,
+        policyVersion:
+          schematronEn16931Summary?.policyVersion ?? undefined,
+        policyMode:
+          schematronEn16931Summary?.policyMode ?? undefined,
+        policyReason:
+          schematronEn16931Summary?.policyReason ?? undefined,
+        engineId:
+          schematronEn16931Summary?.engineId ?? undefined,
+        engineCandidateVersion:
+          schematronEn16931Summary?.engineCandidateVersion ?? undefined,
+        engineAvailabilityStatus:
+          schematronEn16931Summary?.engineAvailabilityStatus ?? undefined,
+        engineExecutionSupported:
+          schematronEn16931Summary?.engineExecutionSupported ?? undefined,
+        executionPermitted: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "executionPermitted"
+        ),
+        validationExecutionEnabled: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "validationExecutionEnabled"
+        ),
+        validationExecuted: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "validationExecuted"
+        ),
+        markedValid: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "markedValid"
+        ),
+        findingContractVersion:
+          schematronEn16931Summary?.findingContractVersion ?? undefined,
+        supportedFutureFindingCodes:
+          schematronEn16931Summary?.supportedFutureFindingCodes ?? undefined,
+        configured: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "configured"
+        ),
+        usable: getBooleanSummaryValue(schematronEn16931Summary, "usable"),
+        readyArtifactCount:
+          schematronEn16931Summary?.readyArtifactCount ?? undefined,
+        requiredArtifactCount:
+          schematronEn16931Summary?.requiredArtifactCount ?? undefined,
+        artifactVersion:
+          schematronEn16931Summary?.artifactVersion ?? undefined,
+        ...(schematronEn16931Result
+          ? { status: schematronEn16931Result.status }
+          : {}),
+        ...(schematronEn16931Summary?.artifactDiagnostics
+          ? {
+              artifactDiagnostics:
+                schematronEn16931Summary.artifactDiagnostics
             }
           : {})
       }

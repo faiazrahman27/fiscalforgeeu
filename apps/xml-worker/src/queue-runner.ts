@@ -892,7 +892,16 @@ function buildQueueFailureResult(input: {
         markedValid: false
       },
       schematronPeppol: {
-        requested: requestedChecks.includes("schematron_peppol_placeholder"),
+        requested:
+          requestedChecks.includes("schematron_peppol") ||
+          requestedChecks.includes("schematron_peppol_placeholder"),
+        implemented: false,
+        validationExecutionEnabled: false,
+        validationExecuted: false,
+        markedValid: false
+      },
+      schematronEn16931: {
+        requested: requestedChecks.includes("schematron_en16931"),
         implemented: false,
         validationExecutionEnabled: false,
         validationExecuted: false,

@@ -18,7 +18,10 @@ import {
   type PeppolBisExecutionResult
 } from "./schematron-peppol-bis-execution.js";
 import type { SchematronSvrlInputResult } from "./schematron-result-mapper.js";
-import type { SchematronSafeArtifactDiagnostics } from "./xsd-artifact-registry.js";
+import type {
+  SchematronArtifactConfigInput,
+  SchematronSafeArtifactDiagnostics
+} from "./xsd-artifact-registry.js";
 
 export const SCHEMATRON_EXECUTION_ORCHESTRATOR_VERSION =
   "schematron_execution_orchestrator_v1";
@@ -26,6 +29,7 @@ export const SCHEMATRON_EXECUTION_ORCHESTRATOR_VERSION =
 export type SchematronExecutionOrchestratorMode =
   | "disabled"
   | "preflight_only"
+  | "execute"
   | "internal_test_only";
 
 export type SchematronExecutionOrchestratorStatus =
@@ -39,7 +43,8 @@ export type SchematronExecutionOrchestratorStatus =
   | "failed"
   | "partial"
   | "unsafe_input"
-  | "unsupported";
+  | "unsupported"
+  | "error";
 
 export type SchematronExecutionLayerSelection =
   | "peppol_bis_billing"
@@ -53,6 +58,7 @@ export type SchematronExecutionOrchestratorInput = {
   policy?: SchematronExecutionPolicy;
   engineCandidate?: SchematronEngineCandidateInfo;
   artifactDiagnostics?: SchematronSafeArtifactDiagnostics;
+  artifactConfig?: SchematronArtifactConfigInput;
   peppolPrototypeRules?: SchematronLocalPrototypeRule[];
   en16931PrototypeRules?: SchematronLocalPrototypeRule[];
   peppolSvrlResults?: SchematronSvrlInputResult[];
@@ -69,7 +75,7 @@ export type SchematronLayerExecutionSummary = {
   status: string;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   findingCount: number;
   fatalCount: number;
   warningCount: number;
@@ -86,7 +92,7 @@ export type SchematronExecutionOrchestratorSummary = {
   selectedLayers: Array<"peppol_bis_billing" | "en16931_tc434">;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   findingCount: number;
   fatalCount: number;
   warningCount: number;
@@ -103,7 +109,7 @@ export type SchematronExecutionOrchestratorResult = {
   selectedLayers: Array<"peppol_bis_billing" | "en16931_tc434">;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   reason: string;
   findings: SchematronContractFinding[];
   layerSummaries: SchematronLayerExecutionSummary[];
@@ -302,6 +308,7 @@ function layerSummary(input: {
   status: string;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
+  markedValid?: boolean;
   reason: string;
   findings: readonly SchematronContractFinding[];
   internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
@@ -313,7 +320,7 @@ function layerSummary(input: {
     status: sanitizeOrchestratorText(input.status, 80) || "failed",
     validationExecutionEnabled: input.validationExecutionEnabled,
     validationExecuted: input.validationExecuted,
-    markedValid: false,
+    markedValid: input.markedValid ?? false,
     ...counts,
     reason: sanitizeOrchestratorText(input.reason, 160) || "schematron_failed",
     ...(input.internalAssertionFixtureSummary
@@ -328,6 +335,7 @@ function buildResult(input: {
   selectedLayers: SelectedLayer[];
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
+  markedValid?: boolean;
   reason: string;
   findings: SchematronContractFinding[];
   layerSummaries: SchematronLayerExecutionSummary[];
@@ -344,7 +352,7 @@ function buildResult(input: {
     selectedLayers: input.selectedLayers,
     validationExecutionEnabled: input.validationExecutionEnabled,
     validationExecuted: input.validationExecuted,
-    markedValid: false,
+    markedValid: input.markedValid ?? false,
     reason,
     ...counts,
     layerSummaries: input.layerSummaries
@@ -362,7 +370,7 @@ function buildResult(input: {
     selectedLayers: base.selectedLayers,
     validationExecutionEnabled: base.validationExecutionEnabled,
     validationExecuted: base.validationExecuted,
-    markedValid: false,
+    markedValid: base.markedValid,
     reason: base.reason,
     findings: input.findings,
     layerSummaries: base.layerSummaries,
@@ -395,6 +403,9 @@ function runLayer(input: {
       : {}),
     ...(input.orchestratorInput.artifactDiagnostics
       ? { artifactDiagnostics: input.orchestratorInput.artifactDiagnostics }
+      : {}),
+    ...(input.orchestratorInput.artifactConfig
+      ? { artifactConfig: input.orchestratorInput.artifactConfig }
       : {}),
     ...(input.orchestratorInput.maxXmlBytes !== undefined
       ? { maxXmlBytes: input.orchestratorInput.maxXmlBytes }
@@ -467,6 +478,7 @@ async function collectLayerResults(input: {
           status: result.status,
           validationExecutionEnabled: result.validationExecutionEnabled,
           validationExecuted: result.validationExecuted,
+          markedValid: result.markedValid,
           reason: result.reason,
           findings,
           summary: layerSummary({
@@ -474,6 +486,7 @@ async function collectLayerResults(input: {
             status: result.status,
             validationExecutionEnabled: result.validationExecutionEnabled,
             validationExecuted: result.validationExecuted,
+            markedValid: result.markedValid,
             reason: result.reason,
             findings,
             ...(result.internalAssertionFixtureSummary
@@ -589,6 +602,47 @@ function aggregateInternalStatus(input: {
   return "partial";
 }
 
+function aggregateExecutionStatus(input: {
+  summaries: readonly SchematronLayerExecutionSummary[];
+  fatalCount: number;
+}): SchematronExecutionOrchestratorStatus {
+  const statuses = input.summaries.map((summary) => summary.status);
+
+  if (statuses.some((status) => status === "unsafe_input")) {
+    return "unsafe_input";
+  }
+
+  if (statuses.some((status) => status === "artifact_unreadable")) {
+    return "artifact_unreadable";
+  }
+
+  if (statuses.some((status) => status === "engine_unavailable")) {
+    return "engine_unavailable";
+  }
+
+  if (statuses.every((status) => status === "not_configured")) {
+    return "not_configured";
+  }
+
+  if (statuses.every((status) => status === "unsupported")) {
+    return "unsupported";
+  }
+
+  if (statuses.some((status) => status === "error")) {
+    return "error";
+  }
+
+  if (input.fatalCount > 0 || statuses.some((status) => status === "failed")) {
+    return "failed";
+  }
+
+  if (statuses.every((status) => status === "executed")) {
+    return "executed";
+  }
+
+  return "partial";
+}
+
 function aggregateInternalAssertionFixtureSummary(
   layerSummaries: readonly SchematronLayerExecutionSummary[]
 ): SchematronInternalAssertionFixtureSummary | undefined {
@@ -645,13 +699,21 @@ function reasonForStatus(input: {
     return `schematron_execution_orchestrator_internal_test_${input.status}`;
   }
 
+  if (input.mode === "execute") {
+    return `schematron_execution_orchestrator_execute_${input.status}`;
+  }
+
   return "schematron_execution_orchestrator_disabled";
 }
 
 export function normalizeSchematronExecutionOrchestratorMode(
   value: unknown
 ): SchematronExecutionOrchestratorMode {
-  if (value === "preflight_only" || value === "internal_test_only") {
+  if (
+    value === "preflight_only" ||
+    value === "internal_test_only" ||
+    value === "execute"
+  ) {
     return value;
   }
 
@@ -720,17 +782,26 @@ export async function runSchematronExecutionOrchestrator(
   const status =
     mode === "preflight_only"
       ? aggregatePreflightStatus(layerSummaries)
-      : aggregateInternalStatus({
-          summaries: layerSummaries,
-          fatalCount: counts.fatalCount
-        });
+      : mode === "execute"
+        ? aggregateExecutionStatus({
+            summaries: layerSummaries,
+            fatalCount: counts.fatalCount
+          })
+        : aggregateInternalStatus({
+            summaries: layerSummaries,
+            fatalCount: counts.fatalCount
+          });
   const validationExecutionEnabled =
-    mode === "internal_test_only" &&
+    (mode === "internal_test_only" || mode === "execute") &&
     layerSummaries.some((summary) => summary.validationExecutionEnabled);
   const validationExecuted =
-    mode === "internal_test_only" &&
+    (mode === "internal_test_only" || mode === "execute") &&
     layerSummaries.length > 0 &&
     layerSummaries.every((summary) => summary.validationExecuted);
+  const markedValid =
+    mode === "execute" &&
+    validationExecuted &&
+    layerSummaries.every((summary) => summary.markedValid);
   const internalAssertionFixtureSummary =
     aggregateInternalAssertionFixtureSummary(layerSummaries);
 
@@ -740,6 +811,7 @@ export async function runSchematronExecutionOrchestrator(
     selectedLayers,
     validationExecutionEnabled,
     validationExecuted,
+    markedValid,
     reason: reasonForStatus({ mode, status }),
     findings,
     layerSummaries,

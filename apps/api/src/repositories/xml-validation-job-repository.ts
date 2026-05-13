@@ -272,6 +272,14 @@ function normalizeCheck(value: unknown): XmlValidationJobCheck | null {
     return "xsd_ubl";
   }
 
+  if (value === "schematron_peppol") {
+    return "schematron_peppol";
+  }
+
+  if (value === "schematron_en16931") {
+    return "schematron_en16931";
+  }
+
   if (value === "schematron_peppol_placeholder") {
     return "schematron_peppol_placeholder";
   }

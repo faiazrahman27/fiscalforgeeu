@@ -169,6 +169,7 @@ test("mode normalization defaults unknown values to disabled", () => {
     normalizePeppolBisExecutionMode("internal_test_only"),
     "internal_test_only"
   );
+  assert.equal(normalizePeppolBisExecutionMode("execute"), "execute");
   assert.equal(normalizePeppolBisExecutionMode("enabled"), "disabled");
 });
 

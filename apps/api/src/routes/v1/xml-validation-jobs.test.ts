@@ -129,6 +129,50 @@ async function writeTestOnlyInvoiceXsdFixture(tempRoot: string) {
   return invoiceXsdPath;
 }
 
+async function writeTestOnlySchematronFixture(input: {
+  tempRoot: string;
+  peppol?: string;
+  en16931?: string;
+}) {
+  const peppolPath = join(input.tempRoot, "schematron", "peppol.sch");
+  const en16931Path = join(input.tempRoot, "schematron", "en16931.sch");
+
+  await mkdir(dirname(peppolPath), {
+    recursive: true
+  });
+  await writeFile(
+    peppolPath,
+    input.peppol ??
+      `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+  <pattern id="api-peppol">
+    <rule context="/ubl:Invoice">
+      <assert id="PEPPOL-API-PASS" test="normalize-space(cbc:ID) = 'INV-XML-JOB-001'">Peppol-style API assertion passed.</assert>
+    </rule>
+  </pattern>
+</schema>`,
+    "utf8"
+  );
+  await writeFile(
+    en16931Path,
+    input.en16931 ??
+      `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+  <pattern id="api-en16931">
+    <rule context="/ubl:Invoice">
+      <assert id="EN16931-API-PASS" test="normalize-space(cbc:ID) = 'INV-XML-JOB-001'">EN 16931-style API assertion passed.</assert>
+    </rule>
+  </pattern>
+</schema>`,
+    "utf8"
+  );
+
+  return {
+    peppolPath,
+    en16931Path
+  };
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -813,6 +857,153 @@ test("XML validation job completion builds inline queue lifecycle metadata", asy
   assert.match(String(queue.completedAt), /^\d{4}-\d{2}-\d{2}T/);
   assert.equal(JSON.stringify(completion).includes(simpleUblInvoiceXml), false);
   assert.equal(JSON.stringify(completion).includes("<Invoice"), false);
+});
+
+test("XML validation job completion executes configured Schematron checks safely", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-api-sch-"));
+
+  try {
+    const fixture = await writeTestOnlySchematronFixture({
+      tempRoot
+    });
+    const rootElement = detectXmlRootElement(simpleUblInvoiceXml);
+    const documentType = detectXmlDocumentType(rootElement);
+    const completion = await buildXmlValidationJobCompletion({
+      xml: simpleUblInvoiceXml,
+      xmlSha256: sha256(simpleUblInvoiceXml),
+      xmlSizeBytes: Buffer.byteLength(simpleUblInvoiceXml, "utf8"),
+      requestedChecks: ["schematron_peppol", "schematron_en16931"],
+      safety: inspectXmlSafety(simpleUblInvoiceXml),
+      rootElement,
+      documentType,
+      schematronArtifactConfig: {
+        rootDir: tempRoot,
+        peppolBisSchematronPath: fixture.peppolPath,
+        en16931SchematronPath: fixture.en16931Path,
+        artifactVersion: "api-step-8-test"
+      },
+      schematronExecutionPolicyInput: {
+        requestedMode: "execute",
+        requestedEngine: "xpath_engine",
+        allowExperimentalExecution: true
+      }
+    });
+    const checkStatuses = readObject(
+      completion.resultSummary.checkStatuses,
+      "completion.checkStatuses"
+    );
+    const schematronPeppol = readObject(
+      completion.resultSummary.schematronPeppol,
+      "completion.schematronPeppol"
+    );
+    const schematronEn16931 = readObject(
+      completion.resultSummary.schematronEn16931,
+      "completion.schematronEn16931"
+    );
+    const serialized = JSON.stringify(completion);
+
+    assert.deepEqual(completion.completedChecks, [
+      "schematron_peppol",
+      "schematron_en16931"
+    ]);
+    assert.deepEqual(completion.failedChecks, []);
+    assert.equal(checkStatuses.schematron_peppol, "passed");
+    assert.equal(checkStatuses.schematron_en16931, "passed");
+    assert.equal(schematronPeppol.implemented, true);
+    assert.equal(schematronPeppol.policyMode, "execute");
+    assert.equal(schematronPeppol.engineId, "xpath_engine");
+    assert.equal(schematronPeppol.validationExecuted, true);
+    assert.equal(schematronPeppol.markedValid, true);
+    assert.equal(schematronEn16931.implemented, true);
+    assert.equal(schematronEn16931.validationExecuted, true);
+    assert.equal(schematronEn16931.markedValid, true);
+    assert.equal(serialized.includes(simpleUblInvoiceXml), false);
+    assert.equal(serialized.includes("<Invoice"), false);
+    assert.equal(serialized.includes(fixture.peppolPath), false);
+    assert.equal(serialized.includes(fixture.en16931Path), false);
+    assert.equal(serialized.includes(basename(tempRoot)), false);
+    assertNoUnsafeXmlValidationResponseContent(serialized);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("XML validation job completion keeps unsupported Schematron non-valid", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-api-sch-"));
+
+  try {
+    const fixture = await writeTestOnlySchematronFixture({
+      tempRoot,
+      peppol: `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+  <let name="unsupported" value="true()"/>
+  <pattern id="api-unsupported">
+    <rule context="/ubl:Invoice">
+      <assert id="PEPPOL-API-UNSUPPORTED" test="true()">Unsupported construct should block execution.</assert>
+    </rule>
+  </pattern>
+</schema>`
+    });
+    const rootElement = detectXmlRootElement(simpleUblInvoiceXml);
+    const documentType = detectXmlDocumentType(rootElement);
+    const completion = await buildXmlValidationJobCompletion({
+      xml: simpleUblInvoiceXml,
+      xmlSha256: sha256(simpleUblInvoiceXml),
+      xmlSizeBytes: Buffer.byteLength(simpleUblInvoiceXml, "utf8"),
+      requestedChecks: ["schematron_peppol"],
+      safety: inspectXmlSafety(simpleUblInvoiceXml),
+      rootElement,
+      documentType,
+      schematronArtifactConfig: {
+        rootDir: tempRoot,
+        peppolBisSchematronPath: fixture.peppolPath,
+        en16931SchematronPath: fixture.en16931Path,
+        artifactVersion: "api-step-8-test"
+      },
+      schematronExecutionPolicyInput: {
+        requestedMode: "execute",
+        requestedEngine: "xpath_engine",
+        allowExperimentalExecution: true
+      }
+    });
+    const checkStatuses = readObject(
+      completion.resultSummary.checkStatuses,
+      "completion.checkStatuses"
+    );
+    const schematronPeppol = readObject(
+      completion.resultSummary.schematronPeppol,
+      "completion.schematronPeppol"
+    );
+    const serialized = JSON.stringify(completion);
+
+    assert.deepEqual(completion.completedChecks, []);
+    assert.deepEqual(completion.failedChecks, ["schematron_peppol"]);
+    assert.equal(checkStatuses.schematron_peppol, "unsupported");
+    assert.equal(schematronPeppol.implemented, true);
+    assert.equal(schematronPeppol.validationExecuted, false);
+    assert.equal(schematronPeppol.markedValid, false);
+    assert.equal(schematronPeppol.status, "unsupported");
+    assert.equal(
+      completion.findings.some(
+        (finding) =>
+          finding.checkType === "schematron_peppol" &&
+          finding.status === "unsupported"
+      ),
+      true
+    );
+    assert.equal(serialized.includes(simpleUblInvoiceXml), false);
+    assert.equal(serialized.includes(fixture.peppolPath), false);
+    assert.equal(serialized.includes(basename(tempRoot)), false);
+    assertNoUnsafeXmlValidationResponseContent(serialized);
+  } finally {
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
 });
 
 test("XML validation job marks UBL XSD as not configured without pretending it passed", async () => {

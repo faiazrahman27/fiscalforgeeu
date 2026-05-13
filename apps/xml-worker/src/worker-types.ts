@@ -3,6 +3,8 @@ import type { SchematronLayer, UblXsdArtifactInfo } from "@invoice-lantern/ubl";
 export type XmlWorkerCheck =
   | "worker_readiness"
   | "xsd_ubl"
+  | "schematron_peppol"
+  | "schematron_en16931"
   | "schematron_peppol_placeholder";
 
 export type XmlWorkerCheckStatus =
@@ -12,6 +14,12 @@ export type XmlWorkerCheckStatus =
   | "completed"
   | "not_configured"
   | "not_implemented"
+  | "unsupported"
+  | "unsafe_input"
+  | "artifact_unreadable"
+  | "engine_unavailable"
+  | "disabled"
+  | "preflight_only"
   | "error";
 
 export type XmlWorkerFindingSeverity = "info" | "warning" | "fatal";

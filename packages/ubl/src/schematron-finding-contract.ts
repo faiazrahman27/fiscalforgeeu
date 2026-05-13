@@ -17,12 +17,21 @@ export type SchematronLayer =
   | "en16931_tc434"
   | "unknown";
 
+export type SchematronCheckType =
+  | "schematron_peppol_placeholder"
+  | "schematron_peppol"
+  | "schematron_en16931";
+
 export type SchematronFindingStatus =
   | "not_configured"
   | "not_implemented"
   | "failed"
   | "warning"
   | "passed"
+  | "unsupported"
+  | "unsafe_input"
+  | "disabled"
+  | "preflight_only"
   | "error";
 
 export type SchematronFindingSeverity = "info" | "warning" | "fatal";
@@ -37,7 +46,7 @@ export type SchematronFindingCode =
 export type SchematronContractFinding = {
   code: SchematronFindingCode;
   severity: SchematronFindingSeverity;
-  checkType: "schematron_peppol_placeholder";
+  checkType: SchematronCheckType;
   field: string;
   message: string;
   status: SchematronFindingStatus;
@@ -75,6 +84,7 @@ export type BuildSchematronFutureRuleFindingInput = {
   technicalMessage?: unknown;
   technicalCode?: unknown;
   xmlLine?: unknown;
+  checkType?: unknown;
 };
 
 const DEFAULT_TEXT_MAX_LENGTH = 700;
@@ -152,6 +162,18 @@ function optionalXmlLine(value: unknown) {
   return typeof value === "number" && Number.isInteger(value) && value > 0
     ? value
     : undefined;
+}
+
+function normalizeSchematronCheckType(value: unknown): SchematronCheckType {
+  if (
+    value === "schematron_peppol" ||
+    value === "schematron_en16931" ||
+    value === "schematron_peppol_placeholder"
+  ) {
+    return value;
+  }
+
+  return "schematron_peppol_placeholder";
 }
 
 function sanitizeSourceLabels(value: unknown): string[] | undefined {
@@ -296,7 +318,7 @@ export function buildSchematronFutureRuleFinding(
   const finding: SchematronContractFinding = {
     code,
     severity,
-    checkType: "schematron_peppol_placeholder",
+    checkType: normalizeSchematronCheckType(input.checkType),
     field,
     message,
     status,

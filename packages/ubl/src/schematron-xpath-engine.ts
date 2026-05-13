@@ -6,11 +6,16 @@ import {
   buildSchematronFutureRuleFinding,
   normalizeSchematronLayer,
   sanitizeSchematronText,
+  type SchematronCheckType,
   type SchematronContractFinding,
-  type SchematronFindingCode,
   type SchematronFindingSeverity,
   type SchematronLayer
 } from "./schematron-finding-contract.js";
+import {
+  mapSchematronSvrlResultsToFindings,
+  type SchematronSvrlInputResult,
+  type SchematronSvrlResultKind
+} from "./schematron-result-mapper.js";
 
 export const SCHEMATRON_XPATH_ENGINE_VERSION =
   "schematron_xpath_engine_v1";
@@ -18,7 +23,8 @@ export const SCHEMATRON_XPATH_ENGINE_ID = "xpath_engine";
 
 export type SchematronXPathEngineMode =
   | "disabled"
-  | "internal_test_only";
+  | "internal_test_only"
+  | "execute";
 
 export type SchematronXPathEngineStatus =
   | "disabled"
@@ -29,6 +35,7 @@ export type SchematronXPathEngineStatus =
   | "error";
 
 export type SchematronXPathAssertionInput = {
+  kind?: "assert" | "report";
   ruleId: string;
   businessRuleId?: string;
   schematronLayer?: SchematronLayer;
@@ -37,6 +44,8 @@ export type SchematronXPathAssertionInput = {
   testExpression: string;
   assertionText: string;
   severity?: SchematronFindingSeverity;
+  flag?: string;
+  role?: string;
   diagnosticReference?: string;
   sourceLabels?: readonly string[];
 };
@@ -46,9 +55,13 @@ export type SchematronXPathEngineInput = {
   assertions: SchematronXPathAssertionInput[];
   mode?: SchematronXPathEngineMode;
   allowInternalXPathExecution?: boolean;
+  allowXPathExecution?: boolean;
+  checkType?: SchematronCheckType;
+  namespaceMappings?: Record<string, string>;
   maxXmlBytes?: number;
   maxAssertions?: number;
   maxContextNodesPerAssertion?: number;
+  maxResults?: number;
 };
 
 export type SchematronXPathEngineSafetyMetadata = {
@@ -110,10 +123,13 @@ type NormalizedAssertion = {
   ruleId: string;
   businessRuleId?: string;
   schematronLayer: SchematronLayer;
+  kind: "assert" | "report";
   contextXPath: string;
   testExpression: string;
   assertionText: string;
   severity: SchematronFindingSeverity;
+  flag?: string;
+  role?: string;
   diagnosticReference?: string;
   sourceLabels?: string[];
 };
@@ -134,8 +150,10 @@ const fontoxpath = fontoxpathRuntime as typeof FontoXPath;
 const DEFAULT_MAX_XML_BYTES = 256 * 1024;
 const DEFAULT_MAX_ASSERTIONS = 100;
 const DEFAULT_MAX_CONTEXT_NODES = 250;
+const DEFAULT_MAX_RESULTS = 500;
 const MAX_ASSERTION_LIMIT = 500;
 const MAX_CONTEXT_NODE_LIMIT = 1000;
+const MAX_RESULT_LIMIT = 5000;
 
 const XPATH_FUNCTION_NAMESPACE = "http://www.w3.org/2005/xpath-functions";
 const UBL_INVOICE_NAMESPACE =
@@ -416,6 +434,8 @@ function normalizeAssertion(
     assertion.businessRuleId,
     120
   );
+  const flag = optionalSanitizedText(assertion.flag ?? assertion.severity, 80);
+  const role = optionalSanitizedText(assertion.role, 160);
   const diagnosticReference = optionalSanitizedText(
     assertion.diagnosticReference,
     240
@@ -436,10 +456,13 @@ function normalizeAssertion(
       {
         ruleId,
         schematronLayer: layer,
+        kind: assertion.kind === "report" ? "report" : "assert",
         contextXPath,
         testExpression,
         assertionText,
         severity: assertion.severity ?? "fatal",
+        ...(flag ? { flag } : {}),
+        ...(role ? { role } : {}),
         ...(businessRuleId ? { businessRuleId } : {}),
         ...(diagnosticReference ? { diagnosticReference } : {}),
         ...(sourceLabels.length > 0 ? { sourceLabels } : {})
@@ -526,18 +549,28 @@ function inspectXmlSafety(input: { xml: string; maxXmlBytes: number }) {
   };
 }
 
-function namespaceResolver(prefix: string | null) {
-  if (!prefix) {
-    return null;
-  }
+function namespaceResolverFor(
+  namespaceMappings: Record<string, string> | undefined
+) {
+  const mergedNamespaces = {
+    ...NAMESPACE_BY_PREFIX,
+    ...(namespaceMappings ?? {})
+  };
 
-  return NAMESPACE_BY_PREFIX[prefix] ?? null;
+  return (prefix: string | null) => {
+    if (!prefix) {
+      return null;
+    }
+
+    return mergedNamespaces[prefix] ?? null;
+  };
 }
 
 function evaluateContextNodes(input: {
   assertion: NormalizedAssertion;
   documentNode: SlimdomNode;
   maxContextNodesPerAssertion: number;
+  namespaceMappings?: Record<string, string>;
 }) {
   const nodes = fontoxpath.evaluateXPathToNodes<SlimdomNode>(
     input.assertion.contextXPath,
@@ -548,7 +581,7 @@ function evaluateContextNodes(input: {
       defaultFunctionNamespaceURI: XPATH_FUNCTION_NAMESPACE,
       language: fontoxpath.evaluateXPath.XPATH_3_1_LANGUAGE,
       moduleImports: {},
-      namespaceResolver
+      namespaceResolver: namespaceResolverFor(input.namespaceMappings)
     }
   );
 
@@ -558,6 +591,7 @@ function evaluateContextNodes(input: {
 function evaluateAssertion(input: {
   assertion: NormalizedAssertion;
   contextNode: SlimdomNode;
+  namespaceMappings?: Record<string, string>;
 }) {
   return fontoxpath.evaluateXPathToBoolean(
     input.assertion.testExpression,
@@ -568,49 +602,9 @@ function evaluateAssertion(input: {
       defaultFunctionNamespaceURI: XPATH_FUNCTION_NAMESPACE,
       language: fontoxpath.evaluateXPath.XPATH_3_1_LANGUAGE,
       moduleImports: {},
-      namespaceResolver
+      namespaceResolver: namespaceResolverFor(input.namespaceMappings)
     }
   );
-}
-
-function findingCodeForLayer(layer: SchematronLayer): SchematronFindingCode {
-  if (layer === "peppol_bis_billing") {
-    return "PEPPOL_SCHEMATRON_RULE_FAILED";
-  }
-
-  if (layer === "en16931_tc434") {
-    return "EN16931_SCHEMATRON_RULE_FAILED";
-  }
-
-  return "SCHEMATRON_ASSERTION_FAILED";
-}
-
-function buildAssertionFailedFinding(
-  assertion: NormalizedAssertion
-): SchematronContractFinding {
-  return buildSchematronFutureRuleFinding({
-    layer: assertion.schematronLayer,
-    code: findingCodeForLayer(assertion.schematronLayer),
-    ruleId: assertion.ruleId,
-    businessRuleId: assertion.businessRuleId,
-    severity: assertion.severity,
-    status: assertion.severity === "fatal" ? "failed" : "warning",
-    field: "xml.schematron.xpath",
-    message: assertion.assertionText,
-    ruleLocation: assertion.contextXPath,
-    testExpression: assertion.testExpression,
-    assertionText: assertion.assertionText,
-    diagnosticReference: assertion.diagnosticReference,
-    sourceLabels: [
-      "Schematron XPath engine",
-      SCHEMATRON_XPATH_ENGINE_VERSION,
-      assertion.ruleId,
-      ...(assertion.businessRuleId ? [assertion.businessRuleId] : []),
-      ...(assertion.sourceLabels ?? [])
-    ],
-    technicalCode: findingCodeForLayer(assertion.schematronLayer),
-    technicalMessage: "schematron_xpath_assertion_failed"
-  });
 }
 
 function parseXmlDocument(xml: string): SlimdomNode | null {
@@ -623,10 +617,42 @@ function parseXmlDocument(xml: string): SlimdomNode | null {
   return documentNode.documentElement ? documentNode : null;
 }
 
+function svrlKindForAssertion(
+  assertion: NormalizedAssertion
+): SchematronSvrlResultKind {
+  return assertion.kind === "report" ? "successful_report" : "failed_assert";
+}
+
+function svrlResultForAssertion(
+  assertion: NormalizedAssertion
+): SchematronSvrlInputResult {
+  return {
+    kind: svrlKindForAssertion(assertion),
+    id: assertion.ruleId,
+    flag: assertion.flag ?? assertion.severity,
+    location: assertion.contextXPath,
+    test: assertion.testExpression,
+    text: assertion.assertionText,
+    layer: assertion.schematronLayer,
+    ...(assertion.role ? { role: assertion.role } : {}),
+    ...(assertion.businessRuleId
+      ? { businessRuleId: assertion.businessRuleId }
+      : {}),
+    ...(assertion.diagnosticReference
+      ? { diagnosticReference: assertion.diagnosticReference }
+      : {}),
+    ...(assertion.sourceLabels ? { sourceLabels: assertion.sourceLabels } : {})
+  };
+}
+
 export function normalizeSchematronXPathEngineMode(
   value: unknown
 ): SchematronXPathEngineMode {
-  return value === "internal_test_only" ? "internal_test_only" : "disabled";
+  if (value === "internal_test_only" || value === "execute") {
+    return value;
+  }
+
+  return "disabled";
 }
 
 export async function runSchematronXPathEngine(
@@ -637,7 +663,12 @@ export async function runSchematronXPathEngine(
     ? input.assertions.length
     : 0;
 
-  if (mode !== "internal_test_only" || input.allowInternalXPathExecution !== true) {
+  const executionAllowed =
+    (mode === "internal_test_only" &&
+      input.allowInternalXPathExecution === true) ||
+    (mode === "execute" && input.allowXPathExecution === true);
+
+  if (!executionAllowed) {
     return buildResult({
       status: "disabled",
       validationExecutionEnabled: false,
@@ -646,7 +677,7 @@ export async function runSchematronXPathEngine(
       executedAssertionCount: 0,
       evaluatedContextNodeCount: 0,
       reason:
-        mode === "internal_test_only"
+        mode === "internal_test_only" || mode === "execute"
           ? "schematron_xpath_engine_internal_execution_not_allowed"
           : "schematron_xpath_engine_disabled",
       findings: []
@@ -729,7 +760,12 @@ export async function runSchematronXPathEngine(
     fallback: DEFAULT_MAX_CONTEXT_NODES,
     max: MAX_CONTEXT_NODE_LIMIT
   });
-  const findings: SchematronContractFinding[] = [];
+  const maxResults = normalizePositiveInteger({
+    value: input.maxResults,
+    fallback: DEFAULT_MAX_RESULTS,
+    max: MAX_RESULT_LIMIT
+  });
+  const svrlResults: SchematronSvrlInputResult[] = [];
   let executedAssertionCount = 0;
   let evaluatedContextNodeCount = 0;
 
@@ -738,7 +774,10 @@ export async function runSchematronXPathEngine(
       const contextNodes = evaluateContextNodes({
         assertion,
         documentNode,
-        maxContextNodesPerAssertion
+        maxContextNodesPerAssertion,
+        ...(input.namespaceMappings
+          ? { namespaceMappings: input.namespaceMappings }
+          : {})
       });
 
       executedAssertionCount += 1;
@@ -747,11 +786,19 @@ export async function runSchematronXPathEngine(
       for (const contextNode of contextNodes) {
         const passed = evaluateAssertion({
           assertion,
-          contextNode
+          contextNode,
+          ...(input.namespaceMappings
+            ? { namespaceMappings: input.namespaceMappings }
+            : {})
         });
 
-        if (!passed) {
-          findings.push(buildAssertionFailedFinding(assertion));
+        if (
+          (assertion.kind === "assert" && !passed) ||
+          (assertion.kind === "report" && passed)
+        ) {
+          if (svrlResults.length < maxResults) {
+            svrlResults.push(svrlResultForAssertion(assertion));
+          }
         }
       }
     }
@@ -774,15 +821,26 @@ export async function runSchematronXPathEngine(
     });
   }
 
+  const mapped = mapSchematronSvrlResultsToFindings({
+    layer: "unknown",
+    results: svrlResults,
+    maxResults,
+    ...(input.checkType ? { checkType: input.checkType } : {})
+  });
+  const findings = mapped.findings;
+  const hasFailedAssertions = findings.some(
+    (finding) => finding.status === "failed" || finding.severity === "fatal"
+  );
+
   return buildResult({
-    status: findings.length > 0 ? "failed" : "executed",
+    status: hasFailedAssertions ? "failed" : "executed",
     validationExecutionEnabled: true,
     validationExecuted: true,
     assertionCount,
     executedAssertionCount,
     evaluatedContextNodeCount,
     reason:
-      findings.length > 0
+      hasFailedAssertions
         ? "schematron_xpath_engine_assertions_failed"
         : "schematron_xpath_engine_executed",
     findings

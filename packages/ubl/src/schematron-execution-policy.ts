@@ -5,6 +5,7 @@ export const SCHEMATRON_EXECUTION_POLICY_VERSION = "schematron_policy_v1";
 export type SchematronExecutionPolicyMode =
   | "disabled"
   | "preflight_only"
+  | "execute"
   | "blocked_requested_execution";
 
 export type SchematronEngineId =
@@ -26,8 +27,8 @@ export type SchematronExecutionPolicy = {
   policyVersion: typeof SCHEMATRON_EXECUTION_POLICY_VERSION;
   mode: SchematronExecutionPolicyMode;
   engineId: SchematronEngineId;
-  executionPermitted: false;
-  validationExecutionEnabled: false;
+  executionPermitted: boolean;
+  validationExecutionEnabled: boolean;
   reason: string;
   requestedMode: string | null;
   requestedEngine: string | null;
@@ -37,8 +38,8 @@ export type SchematronExecutionPolicy = {
     policyVersion: string;
     mode: SchematronExecutionPolicyMode;
     engineId: SchematronEngineId;
-    executionPermitted: false;
-    validationExecutionEnabled: false;
+    executionPermitted: boolean;
+    validationExecutionEnabled: boolean;
     reason: string;
     requestedMode: string | null;
     requestedEngine: string | null;
@@ -49,7 +50,6 @@ export type SchematronExecutionPolicy = {
 const EXECUTION_LIKE_MODE_VALUES = new Set([
   "enable",
   "enabled",
-  "execute",
   "execution",
   "real",
   "run",
@@ -66,6 +66,7 @@ const EXECUTION_LIKE_MODE_VALUES = new Set([
 const SAFE_MODE_ECHO_VALUES = new Set([
   "disabled",
   "preflight_only",
+  "execute",
   ...EXECUTION_LIKE_MODE_VALUES
 ]);
 
@@ -116,6 +117,10 @@ export function normalizeSchematronExecutionPolicyMode(
     return "preflight_only";
   }
 
+  if (token === "execute") {
+    return "execute";
+  }
+
   if (EXECUTION_LIKE_MODE_VALUES.has(token)) {
     return "blocked_requested_execution";
   }
@@ -161,18 +166,27 @@ export function normalizeSchematronEngineId(
 
 function getPolicyReason(input: {
   mode: SchematronExecutionPolicyMode;
+  engineId: SchematronEngineId;
   allowExperimentalExecution: boolean;
 }) {
-  if (input.allowExperimentalExecution) {
-    return "schematron_experimental_execution_not_available";
-  }
-
   if (input.mode === "disabled") {
     return "schematron_execution_disabled_by_policy";
   }
 
   if (input.mode === "blocked_requested_execution") {
     return "schematron_execution_requested_but_blocked";
+  }
+
+  if (input.mode === "execute") {
+    if (input.engineId !== "xpath_engine") {
+      return "schematron_execution_requires_xpath_engine";
+    }
+
+    if (!input.allowExperimentalExecution) {
+      return "schematron_execution_requires_explicit_experimental_allow";
+    }
+
+    return "schematron_execution_explicitly_permitted";
   }
 
   return "schematron_execution_preflight_only";
@@ -185,14 +199,19 @@ export function buildSchematronExecutionPolicy(
   const engineId = normalizeSchematronEngineId(input.requestedEngine);
   const allowExperimentalExecution =
     input.allowExperimentalExecution === true;
+  const executionPermitted =
+    mode === "execute" &&
+    engineId === "xpath_engine" &&
+    allowExperimentalExecution;
   const base = {
     policyVersion: SCHEMATRON_EXECUTION_POLICY_VERSION,
     mode,
     engineId,
-    executionPermitted: false,
-    validationExecutionEnabled: false,
+    executionPermitted,
+    validationExecutionEnabled: executionPermitted,
     reason: getPolicyReason({
       mode,
+      engineId,
       allowExperimentalExecution
     }),
     requestedMode: safeEchoValue(input.requestedMode, SAFE_MODE_ECHO_VALUES),

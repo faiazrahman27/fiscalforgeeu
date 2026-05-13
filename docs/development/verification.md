@@ -35,8 +35,11 @@ npm --prefix apps/web ci
 ## Verification Commands
 
 ```powershell
+npm --prefix packages/ubl run test
+npm --prefix packages/invoice-core run test
 npm run check
 npm --prefix apps/xml-worker run test
+npm --prefix apps/api run check
 npm --prefix apps/api run test
 npm run test
 npm run build
@@ -46,10 +49,15 @@ git status --short
 
 What they cover:
 
+- `npm --prefix packages/ubl run test`: UBL generation, parsing, XSD, and
+  guarded Schematron execution package tests.
+- `npm --prefix packages/invoice-core run test`: Canonical invoice model and
+  invoice lifecycle tests.
 - `npm run check`: TypeScript checks for packages, API, XML worker, plus web
   typecheck and Next.js build through the web `check` script.
 - `npm --prefix apps/xml-worker run test`: XML worker queue, transient payload,
-  XSD diagnostics, and Schematron placeholder/orchestration safety tests.
+  XSD diagnostics, and guarded Schematron worker/orchestration safety tests.
+- `npm --prefix apps/api run check`: API TypeScript and contract checks.
 - `npm --prefix apps/api run test`: API route and service tests, including
   deterministic JSON-backed authorization, API-key, validation, workspace, and
   privacy/retention/deletion coverage.
@@ -87,8 +95,9 @@ that blocks local `.data` storage in production or Supabase-backed environments.
 
 These are intentionally not completed in Step 1:
 
-- Real production Schematron execution.
-- Full Peppol BIS Billing 3.0-style and EN 16931-style execution coverage.
+- Step 9 Peppol BIS Billing-style and EN 16931-style rule catalog expansion,
+  richer business-rule intelligence, source-linked rule explanations, and
+  validation finding enrichment.
 - Real VIES evidence checks.
 - CII generation and parsing.
 - Reviewed source-rich country packs for all target jurisdictions.

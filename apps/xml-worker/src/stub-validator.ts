@@ -16,6 +16,7 @@ import {
   type SchematronExecutionPolicy,
   type SchematronExecutionPolicyInput,
   type SchematronExecutionPreflightResult,
+  type SchematronContractFinding,
   type SchematronSafeArtifactDiagnostics,
   type UblXsdValidationFinding
 } from "@invoice-lantern/ubl";
@@ -192,6 +193,75 @@ function getAdapterModeForPolicy(
   return "preflight_only";
 }
 
+function getWorkerSchematronModeForPolicy(policy: SchematronExecutionPolicy) {
+  if (policy.mode === "execute" && policy.executionPermitted) {
+    return "execute" as const;
+  }
+
+  if (policy.mode === "disabled") {
+    return "disabled" as const;
+  }
+
+  return "preflight_only" as const;
+}
+
+function mapSchematronWorkerStatus(input: {
+  status: XmlWorkerSchematronResult["status"];
+  markedValid: boolean;
+  policyMode: SchematronExecutionPolicy["mode"];
+}): XmlWorkerCheckResult["status"] {
+  if (
+    input.policyMode === "preflight_only" &&
+    input.status !== "not_configured"
+  ) {
+    return "preflight_only";
+  }
+
+  if (input.status === "executed") {
+    return input.markedValid ? "passed" : "warning";
+  }
+
+  if (input.status === "failed") {
+    return "failed";
+  }
+
+  if (input.status === "not_configured") {
+    return "not_configured";
+  }
+
+  if (input.status === "unsupported") {
+    return "unsupported";
+  }
+
+  if (input.status === "unsafe_input") {
+    return "unsafe_input";
+  }
+
+  if (input.status === "artifact_unreadable") {
+    return "artifact_unreadable";
+  }
+
+  if (input.status === "engine_unavailable") {
+    return "engine_unavailable";
+  }
+
+  if (input.status === "disabled") {
+    return "disabled";
+  }
+
+  return "error";
+}
+
+function buildSchematronWorkerFinding(
+  finding: SchematronContractFinding,
+  checkType: "schematron_peppol" | "schematron_en16931"
+): XmlWorkerFinding {
+  return {
+    ...finding,
+    checkType
+  };
+}
+
 async function buildSchematronPlaceholderResult(input: {
   xml: string;
 }): Promise<XmlWorkerCheckResult> {
@@ -228,6 +298,71 @@ async function buildSchematronPlaceholderResult(input: {
       engineCandidate,
       orchestration
     )
+  };
+}
+
+async function buildSchematronExecutionWorkerResult(input: {
+  xml: string;
+  checkType: "schematron_peppol" | "schematron_en16931";
+}): Promise<XmlWorkerCheckResult> {
+  const policy = buildSchematronExecutionPolicy(
+    readSchematronExecutionPolicyInputFromEnv()
+  );
+  const diagnostics = await buildSafeSchematronArtifactDiagnostics(
+    readSchematronArtifactConfigFromEnv()
+  );
+  const engineCandidate = await inspectSchematronEngineCandidate({
+    engineId: policy.engineId
+  });
+  const orchestration = await runXmlWorkerSchematronOrchestration({
+    xml: input.xml,
+    requestedChecks: [input.checkType],
+    mode: getWorkerSchematronModeForPolicy(policy)
+  });
+  const status = mapSchematronWorkerStatus({
+    status: orchestration.status,
+    markedValid: orchestration.markedValid,
+    policyMode: policy.mode
+  });
+
+  return {
+    checkType: input.checkType,
+    status,
+    findings: orchestration.findings.map((finding) =>
+      buildSchematronWorkerFinding(finding, input.checkType)
+    ),
+    summary: {
+      implemented: true,
+      checkType: input.checkType,
+      executionPolicy: policy.safeSummary,
+      engineCandidate: engineCandidate.safeSummary,
+      workerSchematronOrchestratorVersion:
+        orchestration.workerSchematronOrchestratorVersion,
+      schematronOrchestration: orchestration.safeSummary,
+      orchestrationMode: orchestration.mode,
+      orchestrationStatus: orchestration.status,
+      orchestrationReason: orchestration.reason,
+      policyVersion: policy.policyVersion,
+      policyMode: policy.mode,
+      policyReason: policy.reason,
+      engineId: policy.engineId,
+      engineCandidateVersion: engineCandidate.engineCandidateVersion,
+      engineAvailabilityStatus: engineCandidate.availabilityStatus,
+      engineExecutionSupported: engineCandidate.executionSupported,
+      executionPermitted: policy.executionPermitted,
+      validationExecutionEnabled: orchestration.validationExecutionEnabled,
+      validationExecuted: orchestration.validationExecuted,
+      markedValid: orchestration.markedValid,
+      status,
+      configured: diagnostics.configured,
+      usable: diagnostics.usable,
+      readyArtifactCount: diagnostics.readyArtifactCount,
+      requiredArtifactCount: diagnostics.requiredArtifactCount,
+      artifactVersion: diagnostics.artifactVersion,
+      artifactDiagnostics: diagnostics,
+      findingContractVersion: SCHEMATRON_FINDING_CONTRACT_VERSION,
+      supportedFutureFindingCodes: [...SCHEMATRON_SUPPORTED_FUTURE_FINDING_CODES]
+    }
   };
 }
 
@@ -294,9 +429,18 @@ function getXsdUblResult(checkResults: readonly XmlWorkerCheckResult[]) {
 function getSchematronPeppolResult(
   checkResults: readonly XmlWorkerCheckResult[]
 ) {
-  return checkResults.find(
-    (result) => result.checkType === "schematron_peppol_placeholder"
+  return (
+    checkResults.find((result) => result.checkType === "schematron_peppol") ??
+    checkResults.find(
+      (result) => result.checkType === "schematron_peppol_placeholder"
+    )
   );
+}
+
+function getSchematronEn16931Result(
+  checkResults: readonly XmlWorkerCheckResult[]
+) {
+  return checkResults.find((result) => result.checkType === "schematron_en16931");
 }
 
 function getBooleanSummaryValue(
@@ -313,6 +457,16 @@ function getStringSummaryValue(
   const value = summary?.[key];
 
   return typeof value === "string" ? value : undefined;
+}
+
+function getImplementedSummaryValue(
+  summary: Record<string, unknown> | undefined
+) {
+  return summary?.implemented === true;
+}
+
+function isSchematronCheckCompleted(result: XmlWorkerCheckResult) {
+  return result.status === "passed" || result.status === "not_configured";
 }
 
 export async function runStubXmlValidator(
@@ -365,6 +519,23 @@ export async function runStubXmlValidator(
       failedChecks.push(check);
       checkResults.push(result);
       findings.push(...result.findings);
+      continue;
+    }
+
+    if (check === "schematron_peppol" || check === "schematron_en16931") {
+      const result = await buildSchematronExecutionWorkerResult({
+        xml: request.xml,
+        checkType: check
+      });
+
+      if (isSchematronCheckCompleted(result)) {
+        completedChecks.push(check);
+      } else {
+        failedChecks.push(check);
+      }
+
+      checkResults.push(result);
+      findings.push(...result.findings);
     }
   }
 
@@ -372,6 +543,8 @@ export async function runStubXmlValidator(
   const xsdUblSummary = xsdUblResult?.summary;
   const schematronPeppolResult = getSchematronPeppolResult(checkResults);
   const schematronPeppolSummary = schematronPeppolResult?.summary;
+  const schematronEn16931Result = getSchematronEn16931Result(checkResults);
+  const schematronEn16931Summary = schematronEn16931Result?.summary;
 
   return {
     status: "completed",
@@ -394,8 +567,19 @@ export async function runStubXmlValidator(
       checkStatuses: summarizeCheckStatuses(checkResults),
       activeValidation: {
         xsd: getBooleanSummaryValue(xsdUblSummary, "validationExecuted"),
-        schematron: false,
-        peppolArtifacts: false,
+        schematron:
+          getBooleanSummaryValue(
+            schematronPeppolSummary,
+            "validationExecuted"
+          ) ||
+          getBooleanSummaryValue(
+            schematronEn16931Summary,
+            "validationExecuted"
+          ),
+        peppolArtifacts: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "configured"
+        ),
         en16931Certification: false
       },
       xsdUbl: {
@@ -415,8 +599,10 @@ export async function runStubXmlValidator(
           : {})
       },
       schematronPeppol: {
-        requested: requestedChecks.includes("schematron_peppol_placeholder"),
-        implemented: false,
+        requested:
+          requestedChecks.includes("schematron_peppol") ||
+          requestedChecks.includes("schematron_peppol_placeholder"),
+        implemented: getImplementedSummaryValue(schematronPeppolSummary),
         adapterVersion:
           schematronPeppolSummary?.adapterVersion ?? undefined,
         executionPreflight:
@@ -454,10 +640,22 @@ export async function runStubXmlValidator(
           schematronPeppolSummary?.orchestrationStatus ?? undefined,
         orchestrationReason:
           schematronPeppolSummary?.orchestrationReason ?? undefined,
-        executionPermitted: false,
-        validationExecutionEnabled: false,
-        validationExecuted: false,
-        markedValid: false,
+        executionPermitted: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "executionPermitted"
+        ),
+        validationExecutionEnabled: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "validationExecutionEnabled"
+        ),
+        validationExecuted: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "validationExecuted"
+        ),
+        markedValid: getBooleanSummaryValue(
+          schematronPeppolSummary,
+          "markedValid"
+        ),
         findingContractVersion:
           schematronPeppolSummary?.findingContractVersion ?? undefined,
         supportedFutureFindingCodes:
@@ -480,6 +678,79 @@ export async function runStubXmlValidator(
           ? {
               artifactDiagnostics:
                 schematronPeppolSummary.artifactDiagnostics
+            }
+          : {})
+      },
+      schematronEn16931: {
+        requested: requestedChecks.includes("schematron_en16931"),
+        implemented: getImplementedSummaryValue(schematronEn16931Summary),
+        executionPolicy:
+          schematronEn16931Summary?.executionPolicy ?? undefined,
+        engineCandidate:
+          schematronEn16931Summary?.engineCandidate ?? undefined,
+        policyVersion:
+          schematronEn16931Summary?.policyVersion ?? undefined,
+        policyMode:
+          schematronEn16931Summary?.policyMode ?? undefined,
+        policyReason:
+          schematronEn16931Summary?.policyReason ?? undefined,
+        engineId:
+          schematronEn16931Summary?.engineId ?? undefined,
+        engineCandidateVersion:
+          schematronEn16931Summary?.engineCandidateVersion ?? undefined,
+        engineAvailabilityStatus:
+          schematronEn16931Summary?.engineAvailabilityStatus ?? undefined,
+        engineExecutionSupported:
+          schematronEn16931Summary?.engineExecutionSupported ?? undefined,
+        schematronOrchestration:
+          schematronEn16931Summary?.schematronOrchestration ?? undefined,
+        workerSchematronOrchestratorVersion:
+          schematronEn16931Summary?.workerSchematronOrchestratorVersion ??
+          undefined,
+        orchestrationMode:
+          schematronEn16931Summary?.orchestrationMode ?? undefined,
+        orchestrationStatus:
+          schematronEn16931Summary?.orchestrationStatus ?? undefined,
+        orchestrationReason:
+          schematronEn16931Summary?.orchestrationReason ?? undefined,
+        executionPermitted: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "executionPermitted"
+        ),
+        validationExecutionEnabled: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "validationExecutionEnabled"
+        ),
+        validationExecuted: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "validationExecuted"
+        ),
+        markedValid: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "markedValid"
+        ),
+        findingContractVersion:
+          schematronEn16931Summary?.findingContractVersion ?? undefined,
+        supportedFutureFindingCodes:
+          schematronEn16931Summary?.supportedFutureFindingCodes ?? undefined,
+        configured: getBooleanSummaryValue(
+          schematronEn16931Summary,
+          "configured"
+        ),
+        usable: getBooleanSummaryValue(schematronEn16931Summary, "usable"),
+        readyArtifactCount:
+          schematronEn16931Summary?.readyArtifactCount ?? undefined,
+        requiredArtifactCount:
+          schematronEn16931Summary?.requiredArtifactCount ?? undefined,
+        artifactVersion:
+          schematronEn16931Summary?.artifactVersion ?? undefined,
+        ...(schematronEn16931Result
+          ? { status: schematronEn16931Result.status }
+          : {}),
+        ...(schematronEn16931Summary?.artifactDiagnostics
+          ? {
+              artifactDiagnostics:
+                schematronEn16931Summary.artifactDiagnostics
             }
           : {})
       }

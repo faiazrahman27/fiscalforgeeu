@@ -207,7 +207,10 @@ test("worker Schematron internal test-only mode can map safe test SVRL data", as
   await withCleanSchematronEnv(async () => {
     const result = await runXmlWorkerSchematronOrchestration({
       xml: tinyXml,
-      requestedChecks: ["schematron_peppol_placeholder"],
+      requestedChecks: [
+        "schematron_peppol_placeholder",
+        "schematron_en16931"
+      ],
       mode: "internal_test_only",
       allowInternalTestExecution: true,
       peppolSvrlResults: [

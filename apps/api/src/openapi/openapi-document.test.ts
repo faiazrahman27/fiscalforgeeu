@@ -518,114 +518,36 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(serializedPost, /not_configured/i);
   assert.match(
     serializedPost,
-    /passed or failed only after a real local XSD validation operation executes/i
+    /passed or failed only after real local XSD validation executes/i
   );
   assert.match(
     serializedPost,
-    /error for controlled validator\/runtime or schema dependency failures/i
+    /fatal\/error findings/i
   );
-  assert.match(serializedPost, /local UBL XSD artefacts/i);
-  assert.match(serializedPost, /mapped Invoice Lantern findings/i);
-  assert.match(serializedPost, /UBL_XSD_ELEMENT_INVALID/);
-  assert.match(serializedPost, /UBL_XSD_REQUIRED_ELEMENT_MISSING/);
-  assert.match(serializedPost, /UBL_XSD_VALUE_INVALID/);
-  assert.match(serializedPost, /UBL_XSD_ROOT_DIR/);
-  assert.match(serializedPost, /UBL_INVOICE_XSD_PATH/);
-  assert.match(serializedPost, /UBL_CREDIT_NOTE_XSD_PATH/);
-  assert.match(serializedPost, /UBL_XSD_ARTIFACT_VERSION/);
-  assert.match(serializedPost, /Schematron artifact diagnostics/i);
-  assert.match(serializedPost, /schematron_adapter_preflight_v1/);
-  assert.match(serializedPost, /executionPreflight/);
-  assert.match(serializedPost, /executionPolicy/);
-  assert.match(serializedPost, /engineCandidate/);
-  assert.match(serializedPost, /schematron_policy_v1/);
-  assert.match(serializedPost, /schematron_engine_candidate_v1/);
-  assert.match(serializedPost, /schematron_xpath_engine_v1/);
-  assert.match(serializedPost, /xpath_engine/);
-  assert.match(serializedPost, /schematron_local_execution_prototype_v1/);
-  assert.match(serializedPost, /internal test-only/);
-  assert.match(
-    serializedPost,
-    /not exposed as a public XML validation job check/
-  );
-  assert.match(serializedPost, /schematron_result_mapper_v1/);
-  assert.match(serializedPost, /peppol_bis_execution_path_v1/);
-  assert.match(serializedPost, /en16931_execution_path_v1/);
-  assert.match(serializedPost, /schematron_execution_orchestrator_v1/);
-  assert.match(serializedPost, /xml_worker_schematron_orchestrator_v1/);
-  assert.match(serializedPost, /schematron_artifact_source_register_v1/);
-  assert.match(serializedPost, /schematron_artifact_manifest_v1/);
-  assert.match(serializedPost, /artifactProvenance/);
-  assert.match(serializedPost, /manifestVerification/);
-  assert.match(serializedPost, /manifestHashStatus/);
-  assert.match(serializedPost, /expectedSha256Recorded/);
-  assert.match(serializedPost, /sourceRegisterVersion/);
-  assert.match(serializedPost, /artifactManifestVersion/);
-  assert.match(serializedPost, /reviewStatus/);
-  assert.match(serializedPost, /hash match is not validation success/i);
-  assert.match(serializedPost, /workerSchematronOrchestratorVersion/);
-  assert.match(serializedPost, /schematronOrchestration/);
-  assert.match(serializedPost, /package-level\/internal test-only/i);
-  assert.match(
-    serializedPost,
-    /Normal public API and worker XML validation jobs still do not execute production Schematron/i
-  );
-  assert.match(
-    serializedPost,
-    /do not call peppol_bis_execution_path_v1 or en16931_execution_path_v1 as public checks/
-  );
-  assert.match(
-    serializedPost,
-    /xml_worker_schematron_orchestrator_v1 inside the XML worker as a default-safe bridge/
-  );
-  assert.match(serializedPost, /Step 59 exposes worker orchestration fields/);
-  assert.match(serializedPost, /not official validation/);
-  assert.match(serializedPost, /orchestrationMode/);
-  assert.match(serializedPost, /selectedLayers/);
-  assert.match(serializedPost, /layerSummaries/);
-  assert.match(
-    serializedPost,
-    /future mapping layer for sanitized SVRL-style failed assertions and successful reports/
-  );
-  assert.match(
-    serializedPost,
-    /do not produce real mapped Schematron findings from production execution/
-  );
-  assert.match(
-    serializedPost,
-    /Normal public API and worker XML validation jobs still do not execute production Schematron/i
-  );
-  assert.match(serializedPost, /SCHEMATRON_EXECUTION_MODE/);
-  assert.match(serializedPost, /SCHEMATRON_ENGINE/);
+  assert.match(serializedPost, /local XSD artifacts/i);
+  assert.match(serializedPost, /guarded local Schematron execution/i);
+  assert.match(serializedPost, /schematron_peppol/);
+  assert.match(serializedPost, /schematron_en16931/);
+  assert.match(serializedPost, /SCHEMATRON_EXECUTION_MODE=execute/);
+  assert.match(serializedPost, /SCHEMATRON_ENGINE=xpath_engine/);
   assert.match(serializedPost, /SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION/);
-  assert.match(serializedPost, /blocked_requested_execution/);
-  assert.match(serializedPost, /schematron_execution_requested_but_blocked/);
-  assert.match(serializedPost, /executionPermitted/);
-  assert.match(serializedPost, /engineCandidateVersion/);
-  assert.match(serializedPost, /engineAvailabilityStatus/);
-  assert.match(serializedPost, /engineExecutionSupported/);
-  assert.match(serializedPost, /placeholder_only/);
-  assert.match(serializedPost, /not_selected/);
-  assert.match(serializedPost, /unavailable/);
-  assert.match(serializedPost, /policy metadata/);
-  assert.match(
-    serializedPost,
-    /Engine candidate metadata does not enable validation/
-  );
-  assert.match(serializedPost, /ready_for_future_execution/);
-  assert.match(serializedPost, /schematron_execution_disabled/);
-  assert.match(serializedPost, /schematron_execution_engine_not_implemented/);
-  assert.match(serializedPost, /validationExecutionEnabled/);
+  assert.match(serializedPost, /reviewed local artifacts/i);
   assert.match(serializedPost, /PEPPOL_SCHEMATRON_ROOT_DIR/);
   assert.match(serializedPost, /PEPPOL_BIS_SCHEMATRON_PATH/);
   assert.match(serializedPost, /EN16931_SCHEMATRON_PATH/);
   assert.match(serializedPost, /SCHEMATRON_ARTIFACT_VERSION/);
-  assert.match(serializedPost, /Schematron execution is not implemented/i);
-  assert.match(serializedPost, /no certification/i);
-  assert.match(serializedPost, /no authority acceptance/i);
+  assert.match(serializedPost, /performs no remote fetching/i);
+  assert.match(serializedPost, /unsupported Schematron\/XPath constructs/i);
+  assert.match(serializedPost, /sanitized findings/i);
   assert.match(
     serializedPost,
-    /no legal\/tax\/accounting compliance validation/i
+    /markedValid=true means only the configured technical Schematron check/i
+  );
+  assert.match(serializedPost, /certification/i);
+  assert.match(serializedPost, /authority acceptance/i);
+  assert.match(
+    serializedPost,
+    /legal\/tax\/accounting guarantees/i
   );
   assert.match(createRequest, /"xsd_ubl"/);
   assert.doesNotMatch(createRequest, /xsd_ubl_placeholder/);
@@ -725,6 +647,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronPolicySchema, /schematron_policy_v1/);
   assert.match(schematronPolicySchema, /disabled/);
   assert.match(schematronPolicySchema, /preflight_only/);
+  assert.match(schematronPolicySchema, /execute/);
   assert.match(schematronPolicySchema, /blocked_requested_execution/);
   assert.match(schematronPolicySchema, /none/);
   assert.match(schematronPolicySchema, /placeholder/);
@@ -748,16 +671,26 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     schematronPolicySchema,
     /schematron_experimental_execution_not_available/
   );
+  assert.match(
+    schematronPolicySchema,
+    /schematron_execution_requires_xpath_engine/
+  );
+  assert.match(
+    schematronPolicySchema,
+    /schematron_execution_requires_explicit_experimental_allow/
+  );
+  assert.match(
+    schematronPolicySchema,
+    /schematron_execution_explicitly_permitted/
+  );
   assert.match(schematronPolicySchema, /SCHEMATRON_EXECUTION_MODE/);
   assert.match(schematronPolicySchema, /SCHEMATRON_ENGINE/);
   assert.match(
     schematronPolicySchema,
     /SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION/
   );
-  assert.match(schematronPolicySchema, /does not enable validation/);
-  assert.match(schematronPolicySchema, /Execution-like values are blocked/i);
-  assert.match(schematronPolicySchema, /schematron_local_execution_prototype_v1/);
-  assert.match(schematronPolicySchema, /not a public policy mode/);
+  assert.match(schematronPolicySchema, /reviewed local artifacts/);
+  assert.match(schematronPolicySchema, /supported constructs/);
   assert.match(schematronEngineCandidateSchema, /schematron_engine_candidate/);
   assert.match(schematronEngineCandidateSchema, /schematron_engine_candidate_v1/);
   assert.match(schematronEngineCandidateSchema, /engineCandidateVersion/);
@@ -805,28 +738,16 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   );
   assert.match(schematronEngineCandidateSchema, /xml_dom_execution/);
   assert.match(schematronEngineCandidateSchema, /xpath_assertion_execution/);
-  assert.match(
-    schematronEngineCandidateSchema,
-    /schematron_local_execution_prototype_v1/
-  );
   assert.match(schematronEngineCandidateSchema, /schematron_xpath_engine_v1/);
-  assert.match(schematronEngineCandidateSchema, /internal test-only execution/);
-  assert.match(
-    schematronEngineCandidateSchema,
-    /does not enable normal API or worker XML validation jobs/
-  );
+  assert.match(schematronEngineCandidateSchema, /xpath_assertion_execution/);
   assert.match(schematronXPathEngineSchema, /schematron_xpath_engine_v1/);
   assert.match(schematronXPathEngineSchema, /xpath_engine/);
-  assert.match(schematronXPathEngineSchema, /internal\/test-only foundation/);
+  assert.match(schematronXPathEngineSchema, /guarded local technical execution/);
   assert.match(
     schematronXPathEngineSchema,
-    /explicitly provided, sanitized XPath assertion definitions/
+    /supported XPath gates/
   );
-  assert.match(schematronXPathEngineSchema, /guarded package-level calls only/);
-  assert.match(
-    schematronXPathEngineSchema,
-    /normal public API or XML worker validation jobs/
-  );
+  assert.match(schematronXPathEngineSchema, /guarded API\/worker artifact executor/);
   assert.match(schematronXPathEngineSchema, /not official validation/);
   assert.match(schematronXPathEngineSchema, /no Peppol certification/);
   assert.match(schematronXPathEngineSchema, /no EN 16931 compliance guarantee/);
@@ -862,7 +783,7 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(schematronResultMapperSchema, /remoteFetching/);
   assert.match(
     schematronResultMapperSchema,
-    /Normal API and worker XML validation jobs do not call this mapper/
+    /guarded local Schematron execution/
   );
   assert.match(peppolBisExecutionPathSchema, /peppol_bis_execution_path_v1/);
   assert.match(peppolBisExecutionPathSchema, /peppol_bis_billing/);
@@ -966,8 +887,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
     /schematron_execution_orchestrator_v1/
   );
   assert.match(xmlWorkerSchematronOrchestrationSchema, /preflight_only/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /execute/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /internal_test_only/);
-  assert.match(xmlWorkerSchematronOrchestrationSchema, /not public\/default/);
+  assert.match(xmlWorkerSchematronOrchestrationSchema, /guarded local execution/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /unsafe_input/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /engine_unavailable/);
   assert.match(xmlWorkerSchematronOrchestrationSchema, /findingCount/);
@@ -1002,6 +924,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(findingSchema, /failed/);
   assert.match(findingSchema, /error/);
   assert.match(findingSchema, /not_implemented/);
+  assert.match(findingSchema, /unsupported/);
+  assert.match(findingSchema, /unsafe_input/);
+  assert.match(findingSchema, /preflight_only/);
   assert.match(findingSchema, /technicalMessage/);
   assert.match(findingSchema, /technicalCode/);
   assert.match(findingSchema, /xmlLine/);
@@ -1017,13 +942,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(findingSchema, /SCHEMATRON_REPORT_WARNING/);
   assert.match(findingSchema, /PEPPOL_SCHEMATRON_RULE_FAILED/);
   assert.match(findingSchema, /EN16931_SCHEMATRON_RULE_FAILED/);
-  assert.match(findingSchema, /schematron_local_execution_prototype_v1/);
   assert.match(findingSchema, /schematron_result_mapper_v1/);
-  assert.match(findingSchema, /peppol_bis_execution_path_v1/);
-  assert.match(findingSchema, /en16931_execution_path_v1/);
-  assert.match(findingSchema, /schematron_execution_orchestrator_v1/);
-  assert.match(findingSchema, /package-level internal test-only calls/);
-  assert.match(findingSchema, /never raw XML/);
+  assert.match(findingSchema, /guarded local Schematron execution/);
+  assert.match(findingSchema, /never contain raw XML/);
   assert.match(findingSchema, /PEPPOL_SCHEMATRON_VALIDATION_NOT_ENABLED/);
   assert.match(jobSchema, /xsd_ubl/);
   assert.match(jobSchema, /artifactInfo/);
@@ -1056,10 +977,9 @@ test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated"
   assert.match(jobSchema, /findingContractVersion/);
   assert.match(jobSchema, /schematron_contract_v1/);
   assert.match(jobSchema, /supportedFutureFindingCodes/);
-  assert.match(serializedPost, /findingContractVersion/);
-  assert.match(serializedPost, /schematronLayer/);
-  assert.match(serializedPost, /ruleId/);
-  assert.match(serializedPost, /businessRuleId/);
+  assert.match(findingSchema, /schematronLayer/);
+  assert.match(findingSchema, /ruleId/);
+  assert.match(findingSchema, /businessRuleId/);
   assert.doesNotMatch(jobSchema, /xsd_ubl_placeholder/);
   assert.doesNotMatch(
     serializedPost,
@@ -1098,7 +1018,7 @@ test("OpenAPI includes common errors and rate-limit headers", () => {
   assert.match(serialized, /RATE_LIMIT_EXCEEDED/);
   assert.match(serialized, /INSUFFICIENT_SCOPE/);
   assert.match(serialized, /xml:validation_jobs/);
-  assert.match(serialized, /UBL XSD checks are configuration-gated/);
+  assert.match(serialized, /configuration-gated local UBL XSD validation/);
   assert.match(serialized, /not_configured/);
   assert.match(
     serialized,

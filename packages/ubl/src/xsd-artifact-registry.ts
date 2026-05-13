@@ -286,6 +286,18 @@ function normalizeConfiguredPath(value: string | undefined) {
   return cleaned ? resolve(cleaned) : undefined;
 }
 
+function normalizeConfiguredSchematronPath(value: string | undefined) {
+  return cleanOptionalValue(value);
+}
+
+function isBlockedSchematronConfiguredPath(value: string) {
+  if (/^[A-Za-z]:[\\/]/.test(value)) {
+    return false;
+  }
+
+  return /^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith("//");
+}
+
 function getDerivableUblVersion(artifactVersion: string | undefined) {
   if (!artifactVersion) {
     return "2.1";
@@ -369,12 +381,16 @@ export function resolveUblXsdArtifactConfig(
 export function resolveSchematronArtifactConfig(
   input: SchematronArtifactConfigInput | undefined
 ): ResolvedSchematronArtifactConfig {
-  const rootPath = normalizeConfiguredPath(input?.rootDir);
+  const rawRootPath = cleanOptionalValue(input?.rootDir);
+  const rootPath =
+    rawRootPath && !isBlockedSchematronConfiguredPath(rawRootPath)
+      ? resolve(rawRootPath)
+      : undefined;
   const artifactVersion = cleanOptionalValue(input?.artifactVersion);
-  const peppolBisSchematronPath = normalizeConfiguredPath(
+  const peppolBisSchematronPath = normalizeConfiguredSchematronPath(
     input?.peppolBisSchematronPath
   );
-  const en16931SchematronPath = normalizeConfiguredPath(
+  const en16931SchematronPath = normalizeConfiguredSchematronPath(
     input?.en16931SchematronPath
   );
 
@@ -497,6 +513,19 @@ async function inspectSchematronArtifact(input: {
 }): Promise<SchematronArtifactFileInfo> {
   if (!input.artifactPath) {
     return notConfiguredSchematronArtifact(input.artifactKind);
+  }
+
+  if (isBlockedSchematronConfiguredPath(input.artifactPath)) {
+    return {
+      artifactKind: input.artifactKind,
+      configured: true,
+      readable: false,
+      usable: false,
+      path: null,
+      sha256: null,
+      status: "unreadable",
+      reason: "local_schematron_artifact_remote_path_blocked"
+    };
   }
 
   const artifactPath = resolve(input.artifactPath);

@@ -169,6 +169,7 @@ test("mode normalization defaults unknown values to disabled", () => {
     normalizeEn16931ExecutionMode("internal_test_only"),
     "internal_test_only"
   );
+  assert.equal(normalizeEn16931ExecutionMode("execute"), "execute");
   assert.equal(normalizeEn16931ExecutionMode("enabled"), "disabled");
 });
 

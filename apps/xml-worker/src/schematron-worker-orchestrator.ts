@@ -18,6 +18,7 @@ export const XML_WORKER_SCHEMATRON_ORCHESTRATOR_VERSION =
 export type XmlWorkerSchematronMode =
   | "disabled"
   | "preflight_only"
+  | "execute"
   | "internal_test_only";
 
 export type XmlWorkerSchematronStatus =
@@ -31,7 +32,8 @@ export type XmlWorkerSchematronStatus =
   | "failed"
   | "partial"
   | "unsafe_input"
-  | "unsupported";
+  | "unsupported"
+  | "error";
 
 export type XmlWorkerSchematronInput = {
   xml: string;
@@ -52,7 +54,7 @@ export type XmlWorkerSchematronSummary = {
   requested: boolean;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   findingCount: number;
   fatalCount: number;
   warningCount: number;
@@ -68,7 +70,7 @@ export type XmlWorkerSchematronResult = {
   requested: boolean;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   reason: string;
   findings: SchematronContractFinding[];
   safeSummary: XmlWorkerSchematronSummary;
@@ -93,7 +95,36 @@ function readSchematronExecutionPolicyInputFromEnv(): SchematronExecutionPolicyI
 }
 
 function hasSchematronRequest(requestedChecks: readonly string[]) {
-  return requestedChecks.includes("schematron_peppol_placeholder");
+  return requestedChecks.some((check) =>
+    [
+      "schematron_peppol_placeholder",
+      "schematron_peppol",
+      "schematron_en16931"
+    ].includes(check)
+  );
+}
+
+function hasRealSchematronRequest(requestedChecks: readonly string[]) {
+  return requestedChecks.some((check) =>
+    ["schematron_peppol", "schematron_en16931"].includes(check)
+  );
+}
+
+function layerSelectionForRequest(requestedChecks: readonly string[]) {
+  const wantsPeppol =
+    requestedChecks.includes("schematron_peppol") ||
+    requestedChecks.includes("schematron_peppol_placeholder");
+  const wantsEn16931 = requestedChecks.includes("schematron_en16931");
+
+  if (wantsPeppol && wantsEn16931) {
+    return "both" as const;
+  }
+
+  if (wantsEn16931) {
+    return "en16931_tc434" as const;
+  }
+
+  return "peppol_bis_billing" as const;
 }
 
 function countFindings(findings: readonly SchematronContractFinding[]) {
@@ -136,6 +167,7 @@ function buildResult(input: {
   requested: boolean;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
+  markedValid?: boolean;
   reason: string;
   findings?: SchematronContractFinding[];
   orchestrator?: unknown;
@@ -151,7 +183,7 @@ function buildResult(input: {
     requested: input.requested,
     validationExecutionEnabled: input.validationExecutionEnabled,
     validationExecuted: input.validationExecuted,
-    markedValid: false,
+    markedValid: input.markedValid ?? false,
     ...counts,
     reason: input.reason,
     ...(input.orchestrator ? { orchestrator: input.orchestrator } : {})
@@ -165,7 +197,7 @@ function buildResult(input: {
     requested: input.requested,
     validationExecutionEnabled: input.validationExecutionEnabled,
     validationExecuted: input.validationExecuted,
-    markedValid: false,
+    markedValid: input.markedValid ?? false,
     reason: input.reason,
     findings,
     safeSummary
@@ -175,7 +207,11 @@ function buildResult(input: {
 export function normalizeXmlWorkerSchematronMode(
   value: unknown
 ): XmlWorkerSchematronMode {
-  if (value === "preflight_only" || value === "internal_test_only") {
+  if (
+    value === "preflight_only" ||
+    value === "internal_test_only" ||
+    value === "execute"
+  ) {
     return value;
   }
 
@@ -238,6 +274,10 @@ export async function runXmlWorkerSchematronOrchestration(
     const policy = buildSchematronExecutionPolicy(
       readSchematronExecutionPolicyInputFromEnv()
     );
+    const orchestratorMode =
+      mode === "execute" && !hasRealSchematronRequest(input.requestedChecks)
+        ? "preflight_only"
+        : mode;
     const [artifactDiagnostics, engineCandidate] = await Promise.all([
       buildSafeSchematronArtifactDiagnostics(
         readSchematronArtifactConfigFromEnv()
@@ -248,11 +288,12 @@ export async function runXmlWorkerSchematronOrchestration(
     ]);
     const orchestrator = await runSchematronExecutionOrchestrator({
       xml: input.xml,
-      mode,
-      layers: "both",
+      mode: orchestratorMode,
+      layers: layerSelectionForRequest(input.requestedChecks),
       policy,
       engineCandidate,
       artifactDiagnostics,
+      artifactConfig: readSchematronArtifactConfigFromEnv(),
       ...(input.peppolPrototypeRules
         ? { peppolPrototypeRules: input.peppolPrototypeRules }
         : {}),
@@ -273,6 +314,7 @@ export async function runXmlWorkerSchematronOrchestration(
       requested: true,
       validationExecutionEnabled: orchestrator.validationExecutionEnabled,
       validationExecuted: orchestrator.validationExecuted,
+      markedValid: orchestrator.markedValid,
       reason: orchestrator.reason,
       findings: orchestrator.findings,
       orchestrator: orchestrator.safeSummary

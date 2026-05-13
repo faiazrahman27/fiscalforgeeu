@@ -119,6 +119,8 @@ function normalizeCheck(value: unknown): XmlWorkerCheck | null {
   if (
     value === "worker_readiness" ||
     value === "xsd_ubl" ||
+    value === "schematron_peppol" ||
+    value === "schematron_en16931" ||
     value === "schematron_peppol_placeholder"
   ) {
     return value;

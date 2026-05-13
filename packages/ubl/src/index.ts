@@ -27,6 +27,7 @@ export * from "./schematron-artifact-manifest-update-plan.js";
 export * from "./schematron-local-execution-prototype.js";
 export * from "./schematron-result-mapper.js";
 export * from "./schematron-xpath-engine.js";
+export * from "./schematron-artifact-executor.js";
 export * from "./schematron-internal-assertion-fixtures.js";
 export * from "./schematron-peppol-bis-execution.js";
 export * from "./schematron-en16931-execution.js";

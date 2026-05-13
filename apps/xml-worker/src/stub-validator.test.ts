@@ -53,6 +53,77 @@ function captureUblXsdEnv() {
   };
 }
 
+function captureSchematronEnv() {
+  return {
+    PEPPOL_SCHEMATRON_ROOT_DIR: process.env.PEPPOL_SCHEMATRON_ROOT_DIR,
+    PEPPOL_BIS_SCHEMATRON_PATH: process.env.PEPPOL_BIS_SCHEMATRON_PATH,
+    EN16931_SCHEMATRON_PATH: process.env.EN16931_SCHEMATRON_PATH,
+    SCHEMATRON_ARTIFACT_VERSION: process.env.SCHEMATRON_ARTIFACT_VERSION,
+    SCHEMATRON_EXECUTION_MODE: process.env.SCHEMATRON_EXECUTION_MODE,
+    SCHEMATRON_ENGINE: process.env.SCHEMATRON_ENGINE,
+    SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION:
+      process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION
+  };
+}
+
+async function writeTestOnlySchematronFixture(input: {
+  tempRoot: string;
+  peppol?: string;
+  en16931?: string;
+}) {
+  const peppolPath = join(input.tempRoot, "schematron", "peppol.sch");
+  const en16931Path = join(input.tempRoot, "schematron", "en16931.sch");
+
+  await mkdir(dirname(peppolPath), {
+    recursive: true
+  });
+  await writeFile(
+    peppolPath,
+    input.peppol ??
+      `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+  <pattern id="worker-peppol">
+    <rule context="/Invoice" id="worker-peppol-rule">
+      <assert id="PEPPOL-WORKER-PASS" test="normalize-space(ID) = 'WORKER-SCHEMATRON-STEP-48'">Peppol-style worker assertion passed.</assert>
+    </rule>
+  </pattern>
+</schema>`,
+    "utf8"
+  );
+  await writeFile(
+    en16931Path,
+    input.en16931 ??
+      `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+  <pattern id="worker-en16931">
+    <rule context="/Invoice" id="worker-en16931-rule">
+      <assert id="EN16931-WORKER-PASS" test="normalize-space(ID) = 'WORKER-SCHEMATRON-STEP-48'">EN 16931-style worker assertion passed.</assert>
+    </rule>
+  </pattern>
+</schema>`,
+    "utf8"
+  );
+
+  return {
+    peppolPath,
+    en16931Path
+  };
+}
+
+function configureSchematronExecutionEnv(input: {
+  tempRoot: string;
+  peppolPath: string;
+  en16931Path: string;
+}) {
+  process.env.PEPPOL_SCHEMATRON_ROOT_DIR = input.tempRoot;
+  process.env.PEPPOL_BIS_SCHEMATRON_PATH = input.peppolPath;
+  process.env.EN16931_SCHEMATRON_PATH = input.en16931Path;
+  process.env.SCHEMATRON_ARTIFACT_VERSION = "worker-step-8-test";
+  process.env.SCHEMATRON_EXECUTION_MODE = "execute";
+  process.env.SCHEMATRON_ENGINE = "xpath_engine";
+  process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION = "true";
+}
+
 function restoreEnv(snapshot: Record<string, string | undefined>) {
   for (const [key, value] of Object.entries(snapshot)) {
     if (value === undefined) {
@@ -635,5 +706,159 @@ test("stub validator blocks execution-like Schematron policy env without executi
         process.env[key] = value;
       }
     }
+  }
+});
+
+test("stub validator executes configured Peppol Schematron through the worker path", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-worker-sch-"));
+  const originalEnv = captureSchematronEnv();
+
+  try {
+    const fixture = await writeTestOnlySchematronFixture({
+      tempRoot
+    });
+
+    configureSchematronExecutionEnv({
+      tempRoot,
+      peppolPath: fixture.peppolPath,
+      en16931Path: fixture.en16931Path
+    });
+
+    const result = await runStubXmlValidator({
+      xml: simpleXml,
+      requestedChecks: ["schematron_peppol"]
+    });
+    const schematronPeppol = readObject(
+      result.resultSummary.schematronPeppol,
+      "resultSummary.schematronPeppol"
+    );
+    const checkResult = result.checkResults.find(
+      (item) => item.checkType === "schematron_peppol"
+    );
+    const serialized = JSON.stringify(result);
+
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.completedChecks, ["schematron_peppol"]);
+    assert.deepEqual(result.failedChecks, []);
+    assert.equal(checkResult?.status, "passed");
+    assert.equal(schematronPeppol.requested, true);
+    assert.equal(schematronPeppol.implemented, true);
+    assert.equal(schematronPeppol.policyMode, "execute");
+    assert.equal(schematronPeppol.engineId, "xpath_engine");
+    assert.equal(schematronPeppol.executionPermitted, true);
+    assert.equal(schematronPeppol.validationExecutionEnabled, true);
+    assert.equal(schematronPeppol.validationExecuted, true);
+    assert.equal(schematronPeppol.markedValid, true);
+    assert.equal(schematronPeppol.status, "passed");
+    assert.equal(serialized.includes(simpleXml), false);
+    assert.equal(serialized.includes("<Invoice"), false);
+    assert.equal(serialized.includes(fixture.peppolPath), false);
+    assert.equal(serialized.includes(fixture.en16931Path), false);
+    assert.equal(serialized.includes(basename(tempRoot)), false);
+    assert.doesNotMatch(
+      serialized,
+      /\bPeppol certified\b|\bEN 16931 compliant\b|\baccepted by authority\b|\blegally valid\b|\bPeppol passed\b|\bEN 16931 passed\b/i
+    );
+  } finally {
+    restoreEnv(originalEnv);
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("stub validator returns not_configured for real Schematron without marking valid", async () => {
+  const originalEnv = captureSchematronEnv();
+
+  try {
+    delete process.env.PEPPOL_SCHEMATRON_ROOT_DIR;
+    delete process.env.PEPPOL_BIS_SCHEMATRON_PATH;
+    delete process.env.EN16931_SCHEMATRON_PATH;
+    process.env.SCHEMATRON_EXECUTION_MODE = "execute";
+    process.env.SCHEMATRON_ENGINE = "xpath_engine";
+    process.env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION = "true";
+
+    const result = await runStubXmlValidator({
+      xml: simpleXml,
+      requestedChecks: ["schematron_peppol"]
+    });
+    const schematronPeppol = readObject(
+      result.resultSummary.schematronPeppol,
+      "resultSummary.schematronPeppol"
+    );
+    const checkResult = result.checkResults.find(
+      (item) => item.checkType === "schematron_peppol"
+    );
+
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.completedChecks, ["schematron_peppol"]);
+    assert.deepEqual(result.failedChecks, []);
+    assert.equal(checkResult?.status, "not_configured");
+    assert.equal(schematronPeppol.implemented, true);
+    assert.equal(schematronPeppol.configured, false);
+    assert.equal(schematronPeppol.validationExecuted, false);
+    assert.equal(schematronPeppol.markedValid, false);
+    assert.equal(schematronPeppol.status, "not_configured");
+    assert.equal(JSON.stringify(result).includes(simpleXml), false);
+  } finally {
+    restoreEnv(originalEnv);
+  }
+});
+
+test("stub validator reports unsupported EN 16931 Schematron artifacts safely", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-worker-sch-"));
+  const originalEnv = captureSchematronEnv();
+
+  try {
+    const fixture = await writeTestOnlySchematronFixture({
+      tempRoot,
+      en16931: `<?xml version="1.0" encoding="UTF-8"?>
+<schema xmlns="http://purl.oclc.org/dsdl/schematron" queryBinding="xpath3">
+  <let name="unsupported" value="true()"/>
+  <pattern id="unsupported-en16931">
+    <rule context="/Invoice">
+      <assert id="EN16931-UNSUPPORTED" test="true()">Unsupported construct should block execution.</assert>
+    </rule>
+  </pattern>
+</schema>`
+    });
+
+    configureSchematronExecutionEnv({
+      tempRoot,
+      peppolPath: fixture.peppolPath,
+      en16931Path: fixture.en16931Path
+    });
+
+    const result = await runStubXmlValidator({
+      xml: simpleXml,
+      requestedChecks: ["schematron_en16931"]
+    });
+    const schematronEn16931 = readObject(
+      result.resultSummary.schematronEn16931,
+      "resultSummary.schematronEn16931"
+    );
+    const checkResult = result.checkResults.find(
+      (item) => item.checkType === "schematron_en16931"
+    );
+    const serialized = JSON.stringify(result);
+
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.completedChecks, []);
+    assert.deepEqual(result.failedChecks, ["schematron_en16931"]);
+    assert.equal(checkResult?.status, "unsupported");
+    assert.equal(schematronEn16931.implemented, true);
+    assert.equal(schematronEn16931.validationExecuted, false);
+    assert.equal(schematronEn16931.markedValid, false);
+    assert.equal(schematronEn16931.status, "unsupported");
+    assert.equal(serialized.includes(simpleXml), false);
+    assert.equal(serialized.includes(fixture.en16931Path), false);
+    assert.equal(serialized.includes(basename(tempRoot)), false);
+  } finally {
+    restoreEnv(originalEnv);
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
   }
 });

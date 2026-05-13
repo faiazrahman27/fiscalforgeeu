@@ -30,16 +30,24 @@ import {
   type SchematronInternalAssertionFixtureSummary
 } from "./schematron-internal-assertion-fixtures.js";
 import {
+  runSchematronArtifactExecutor,
+  type SchematronArtifactExecutorSummary
+} from "./schematron-artifact-executor.js";
+import {
   SCHEMATRON_XPATH_ENGINE_ID,
   runSchematronXPathEngine
 } from "./schematron-xpath-engine.js";
-import type { SchematronSafeArtifactDiagnostics } from "./xsd-artifact-registry.js";
+import type {
+  SchematronArtifactConfigInput,
+  SchematronSafeArtifactDiagnostics
+} from "./xsd-artifact-registry.js";
 
 export const EN16931_EXECUTION_PATH_VERSION = "en16931_execution_path_v1";
 
 export type En16931ExecutionMode =
   | "disabled"
   | "preflight_only"
+  | "execute"
   | "internal_test_only";
 
 export type En16931ExecutionStatus =
@@ -52,7 +60,8 @@ export type En16931ExecutionStatus =
   | "executed"
   | "failed"
   | "unsafe_input"
-  | "unsupported";
+  | "unsupported"
+  | "error";
 
 export type En16931ExecutionInput = {
   xml: string;
@@ -60,6 +69,7 @@ export type En16931ExecutionInput = {
   policy?: SchematronExecutionPolicy;
   engineCandidate?: SchematronEngineCandidateInfo;
   artifactDiagnostics?: SchematronSafeArtifactDiagnostics;
+  artifactConfig?: SchematronArtifactConfigInput;
   prototypeRules?: SchematronLocalPrototypeRule[];
   svrlResults?: SchematronSvrlInputResult[];
   allowInternalXPathExecution?: boolean;
@@ -77,13 +87,14 @@ export type En16931ExecutionSummary = {
   schematronLayer: "en16931_tc434";
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   findingCount: number;
   fatalCount: number;
   warningCount: number;
   infoCount: number;
   reason: string;
   internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
+  artifactExecution?: SchematronArtifactExecutorSummary;
 };
 
 export type En16931ExecutionResult = {
@@ -93,10 +104,11 @@ export type En16931ExecutionResult = {
   schematronLayer: "en16931_tc434";
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
-  markedValid: false;
+  markedValid: boolean;
   reason: string;
   findings: SchematronContractFinding[];
   internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
+  artifactExecution?: SchematronArtifactExecutorSummary;
   safeSummary: En16931ExecutionSummary;
 };
 
@@ -145,9 +157,11 @@ function buildResult(input: {
   status: En16931ExecutionStatus;
   validationExecutionEnabled: boolean;
   validationExecuted: boolean;
+  markedValid?: boolean;
   reason: string;
   findings: SchematronContractFinding[];
   internalAssertionFixtureSummary?: SchematronInternalAssertionFixtureSummary;
+  artifactExecution?: SchematronArtifactExecutorSummary;
 }): En16931ExecutionResult {
   const counts = countFindings(input.findings);
   const base = {
@@ -157,7 +171,7 @@ function buildResult(input: {
     schematronLayer: "en16931_tc434",
     validationExecutionEnabled: input.validationExecutionEnabled,
     validationExecuted: input.validationExecuted,
-    markedValid: false,
+    markedValid: input.markedValid ?? false,
     reason: sanitizeReason(input.reason),
     ...counts
   } satisfies Omit<
@@ -166,6 +180,7 @@ function buildResult(input: {
   >;
   const internalAssertionFixtureSummary =
     input.internalAssertionFixtureSummary;
+  const artifactExecution = input.artifactExecution;
 
   return {
     executionPathVersion: EN16931_EXECUTION_PATH_VERSION,
@@ -174,18 +189,20 @@ function buildResult(input: {
     schematronLayer: base.schematronLayer,
     validationExecutionEnabled: base.validationExecutionEnabled,
     validationExecuted: base.validationExecuted,
-    markedValid: false,
+    markedValid: base.markedValid,
     reason: base.reason,
     findings: input.findings,
     ...(internalAssertionFixtureSummary
       ? { internalAssertionFixtureSummary }
       : {}),
+    ...(artifactExecution ? { artifactExecution } : {}),
     safeSummary: {
       diagnosticKind: "en16931_execution_path",
       ...base,
       ...(internalAssertionFixtureSummary
         ? { internalAssertionFixtureSummary }
-        : {})
+        : {}),
+      ...(artifactExecution ? { artifactExecution } : {})
     }
   };
 }
@@ -400,11 +417,57 @@ function mapXPathStatusToEn16931Status(
 export function normalizeEn16931ExecutionMode(
   value: unknown
 ): En16931ExecutionMode {
-  if (value === "preflight_only" || value === "internal_test_only") {
+  if (
+    value === "preflight_only" ||
+    value === "internal_test_only" ||
+    value === "execute"
+  ) {
     return value;
   }
 
   return "disabled";
+}
+
+function mapArtifactStatusToEn16931Status(
+  status: Awaited<ReturnType<typeof runSchematronArtifactExecutor>>["status"]
+): En16931ExecutionStatus {
+  if (status === "executed") {
+    return "executed";
+  }
+
+  if (status === "failed") {
+    return "failed";
+  }
+
+  if (status === "not_configured") {
+    return "not_configured";
+  }
+
+  if (status === "artifact_unreadable") {
+    return "artifact_unreadable";
+  }
+
+  if (status === "engine_unavailable") {
+    return "engine_unavailable";
+  }
+
+  if (status === "unsafe_input") {
+    return "unsafe_input";
+  }
+
+  if (status === "unsupported") {
+    return "unsupported";
+  }
+
+  if (status === "disabled") {
+    return "disabled";
+  }
+
+  if (status === "preflight_only" || status === "blocked_by_policy") {
+    return "blocked_by_policy";
+  }
+
+  return "error";
 }
 
 async function resolvePolicyAndEngine(input: {
@@ -744,6 +807,37 @@ async function runInternalTestOnly(input: En16931ExecutionInput) {
   }
 }
 
+async function runArtifactExecution(input: En16931ExecutionInput) {
+  const mode: En16931ExecutionMode = "execute";
+  const { policy, engineCandidate } = await resolvePolicyAndEngine({
+    ...(input.policy ? { policy: input.policy } : {}),
+    ...(input.engineCandidate ? { engineCandidate: input.engineCandidate } : {})
+  });
+  const artifactExecution = await runSchematronArtifactExecutor({
+    xml: input.xml,
+    layer: "en16931_tc434",
+    policy,
+    engineCandidate,
+    ...(input.artifactConfig ? { artifactConfig: input.artifactConfig } : {}),
+    ...(input.artifactDiagnostics
+      ? { artifactDiagnostics: input.artifactDiagnostics }
+      : {}),
+    ...(input.maxXmlBytes !== undefined ? { maxXmlBytes: input.maxXmlBytes } : {}),
+    ...(input.maxRules !== undefined ? { maxResults: input.maxRules } : {})
+  });
+
+  return buildResult({
+    mode,
+    status: mapArtifactStatusToEn16931Status(artifactExecution.status),
+    validationExecutionEnabled: artifactExecution.validationExecutionEnabled,
+    validationExecuted: artifactExecution.validationExecuted,
+    markedValid: artifactExecution.markedValid,
+    reason: artifactExecution.reason,
+    findings: artifactExecution.findings,
+    artifactExecution: artifactExecution.safeSummary
+  });
+}
+
 export async function runEn16931ExecutionPath(
   input: En16931ExecutionInput
 ): Promise<En16931ExecutionResult> {
@@ -769,6 +863,10 @@ export async function runEn16931ExecutionPath(
         ? { artifactDiagnostics: input.artifactDiagnostics }
         : {})
     });
+  }
+
+  if (mode === "execute") {
+    return runArtifactExecution(input);
   }
 
   return runInternalTestOnly(input);

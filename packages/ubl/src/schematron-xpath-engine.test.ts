@@ -89,6 +89,7 @@ test("XPath engine mode normalization keeps normal paths disabled", () => {
     normalizeSchematronXPathEngineMode("internal_test_only"),
     "internal_test_only"
   );
+  assert.equal(normalizeSchematronXPathEngineMode("execute"), "execute");
   assert.equal(normalizeSchematronXPathEngineMode("production"), "disabled");
 });
 

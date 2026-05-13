@@ -3,6 +3,7 @@ import {
   normalizeSchematronLayer,
   sanitizeSchematronText,
   type SchematronContractFinding,
+  type SchematronCheckType,
   type SchematronFindingCode,
   type SchematronFindingSeverity,
   type SchematronFindingStatus,
@@ -36,10 +37,12 @@ export type SchematronSvrlInputResult = {
   see?: string;
   layer?: SchematronLayer;
   businessRuleId?: string;
+  sourceLabels?: readonly string[];
 };
 
 export type SchematronResultMappingInput = {
   layer?: SchematronLayer;
+  checkType?: SchematronCheckType;
   results: SchematronSvrlInputResult[];
   maxResults?: number;
 };
@@ -232,19 +235,22 @@ function sourceLabelsForResult(input: {
   code: SchematronFindingCode;
   ruleId?: string | undefined;
   businessRuleId?: string | undefined;
+  sourceLabels?: readonly string[] | undefined;
 }) {
   return [
     "Schematron result mapper",
     SCHEMATRON_RESULT_MAPPER_VERSION,
     input.code,
     ...(input.ruleId ? [input.ruleId] : []),
-    ...(input.businessRuleId ? [input.businessRuleId] : [])
+    ...(input.businessRuleId ? [input.businessRuleId] : []),
+    ...(input.sourceLabels ?? [])
   ].map((label) => sanitizeMapperText(label, 120));
 }
 
 function mapResultToFinding(input: {
   result: SchematronSvrlInputResult;
   defaultLayer: SchematronLayer;
+  checkType?: SchematronCheckType;
 }) {
   const layer = normalizeSchematronLayer(
     input.result.layer ?? input.defaultLayer
@@ -273,6 +279,7 @@ function mapResultToFinding(input: {
     status: statusForResult({
       kind: input.result.kind
     }),
+    checkType: input.checkType,
     legalConfidence: "technical",
     field: fieldFromLocation(input.result.location),
     message: messageForResult({
@@ -286,7 +293,8 @@ function mapResultToFinding(input: {
     sourceLabels: sourceLabelsForResult({
       code,
       ruleId,
-      businessRuleId
+      businessRuleId,
+      sourceLabels: input.result.sourceLabels
     }),
     technicalCode: code
   });
@@ -302,7 +310,8 @@ export function mapSchematronSvrlResultsToFindings(
   const findings = mappedResults.map((result) =>
     mapResultToFinding({
       result,
-      defaultLayer: layer
+      defaultLayer: layer,
+      ...(input.checkType ? { checkType: input.checkType } : {})
     })
   );
   const summary = findings.reduce<SchematronResultMappingSummary>(

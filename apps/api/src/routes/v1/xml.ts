@@ -95,6 +95,8 @@ const xmlValidationJobSourceTypeSchema = z.enum([
 const xmlValidationJobCheckSchema = z.enum([
   "worker_readiness",
   "xsd_ubl",
+  "schematron_peppol",
+  "schematron_en16931",
   "schematron_peppol_placeholder"
 ]);
 
@@ -109,7 +111,7 @@ const xmlValidationJobBodySchema = z
     filename: z.string().trim().max(180).optional(),
     sourceType: xmlValidationJobSourceTypeSchema.optional(),
     processingMode: xmlValidationJobProcessingModeSchema.optional(),
-    requestedChecks: z.array(xmlValidationJobCheckSchema).max(3).optional(),
+    requestedChecks: z.array(xmlValidationJobCheckSchema).max(5).optional(),
     xmlReadinessReportId: z.string().uuid().nullable().optional(),
     invoiceDraftId: z.string().uuid().nullable().optional(),
     validationRunId: z.string().uuid().nullable().optional()
@@ -291,7 +293,16 @@ function buildAsyncXmlValidationJobResultSummary(input: {
       markedValid: false
     },
     schematronPeppol: {
-      requested: input.requestedChecks.includes("schematron_peppol_placeholder"),
+      requested:
+        input.requestedChecks.includes("schematron_peppol") ||
+        input.requestedChecks.includes("schematron_peppol_placeholder"),
+      implemented: false,
+      validationExecutionEnabled: false,
+      validationExecuted: false,
+      markedValid: false
+    },
+    schematronEn16931: {
+      requested: input.requestedChecks.includes("schematron_en16931"),
       implemented: false,
       validationExecutionEnabled: false,
       validationExecuted: false,

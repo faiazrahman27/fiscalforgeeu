@@ -2,7 +2,7 @@
 
 Invoice Lantern keeps a local Schematron artifact manifest as metadata for reviewed artifact preparation. It records the expected local artifact slots for Peppol BIS Billing-style and EN 16931 / TC434-style layers, the environment variables that configure them, the expected artifact version label when one has been reviewed, and the expected SHA-256 value when one has been deliberately recorded.
 
-The manifest is not an execution layer. It does not parse Schematron rules, evaluate XPath, submit anything to an authority, or certify compliance. It is independent technical sandbox infrastructure for auditability, reproducibility, and future professional review.
+The manifest itself is not the execution layer. It does not parse Schematron rules, evaluate XPath, submit anything to an authority, or certify compliance. Step 8 adds a separate guarded local execution path that may execute configured local artifacts only when policy, engine, artifact, and XML safety gates all pass. The manifest remains independent technical sandbox infrastructure for auditability, reproducibility, and professional review.
 
 ## Local Artifact Slots
 
@@ -18,7 +18,7 @@ Each slot records:
 - The expected artifact version label, if reviewed.
 - The expected SHA-256 value, if reviewed and recorded.
 - Review status such as `expected_hash_missing`, `local_hash_matched`, `local_hash_mismatched`, `deprecated`, or `blocked`.
-- Safety flags that remain false for raw XML return, file-content return, full local path return, remote fetching, artifact downloading, and artifact execution.
+- Safety flags that remain false for raw XML return, file-content return, full local path return, remote fetching, and artifact downloading. Execution is controlled separately by the guarded Step 8 policy and local artifact executor.
 
 ## Hash Verification
 
@@ -50,8 +50,7 @@ The manifest and verifier do not:
 - Return full absolute local filesystem paths.
 - Fetch remote resources.
 - Download artifacts.
-- Execute Schematron.
-- Add public API options for artifact execution or manifest mutation.
-- Enable normal XML worker jobs to execute Schematron.
+- Execute Schematron itself.
+- Add public API options for manifest mutation.
 
-This preserves the platform boundary: Invoice Lantern is an independent, non-official technical sandbox. Manifest verification is hash verification metadata and reviewed artifact preparation only; professional review remains required before any future production execution path is considered.
+This preserves the platform boundary: Invoice Lantern is an independent, non-official technical sandbox. Manifest verification is hash verification metadata and reviewed artifact preparation only. A local Schematron execution result is technical only and is not official validation, Peppol certification, EN 16931 certification, legal/tax/accounting advice, official filing, authority acceptance, or a compliance guarantee.
