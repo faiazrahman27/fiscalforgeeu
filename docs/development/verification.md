@@ -37,8 +37,10 @@ npm --prefix apps/web ci
 ```powershell
 npm run check
 npm --prefix apps/xml-worker run test
+npm --prefix apps/api run test
 npm run test
 npm run build
+git diff --check
 git status --short
 ```
 
@@ -48,10 +50,14 @@ What they cover:
   typecheck and Next.js build through the web `check` script.
 - `npm --prefix apps/xml-worker run test`: XML worker queue, transient payload,
   XSD diagnostics, and Schematron placeholder/orchestration safety tests.
+- `npm --prefix apps/api run test`: API route and service tests, including
+  deterministic JSON-backed authorization, API-key, validation, workspace, and
+  privacy/retention/deletion coverage.
 - `npm run test`: Package tests and API tests, including OpenAPI, validation,
   UBL parse/export/import, VAT local-format checks, API keys, XML job routes,
   ViDA simulation, and report generation.
 - `npm run build`: Full package, API, XML worker, and web production build.
+- `git diff --check`: Whitespace and conflict-marker scan for local changes.
 - `git status --short`: Local change inventory after verification.
 
 Useful targeted commands:

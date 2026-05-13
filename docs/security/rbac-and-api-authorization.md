@@ -80,6 +80,7 @@ paths, require signed-in Supabase users.
 | XML validation jobs | Signed-in user or scoped API key | Validation/report roles or `xml:validation_jobs`; uploaded XML history remains signed-user only. |
 | Workspace activity | Signed-in user | `owner`, `admin`, or `developer`. |
 | Workspace settings, privacy, retention, deletion, export packages | Signed-in user | `owner` or `admin`. |
+| Workspace member and invitation management | Signed-in user | `owner` or `admin`; organization API keys are rejected; last-owner protection and invite-token hashing are enforced. |
 | Country packs and validation rules | Public or scoped technical catalog reads as implemented | No tenant-owned object data is returned. |
 
 ## Database Backstop
@@ -101,6 +102,9 @@ new migrations only.
 ## Response Shaping
 
 - API-key list/revoke responses return metadata only.
+- Workspace invitation list responses return invite metadata only. Raw invite
+  tokens are returned only once when created, and `token_hash` is never returned
+  through API responses or authenticated table selects.
 - API request logs return method, path, status, timing, safe IP/user-agent
   metadata, and safe key prefix/name metadata only.
 - Validation/export/report endpoints return technical sandbox results and
@@ -110,7 +114,8 @@ new migrations only.
 
 ## Future Work
 
-This document covers Step 2 authorization hardening only. Later prompts may add
-business profiles, contacts, final invoices, CII, VIES, webhooks, expanded
-country packs, admin/source consoles, monitoring, legal-document workflows, and
+This document covers the Step 2 authorization hardening and Step 4 workspace
+member/invitation management rules. Later prompts may add the canonical invoice
+lifecycle, full editor/studio fields, CII, VIES, webhooks, expanded country
+packs, admin/source consoles, monitoring, legal-document workflows, and
 PWA/offline capabilities. Those are not implemented or claimed complete here.

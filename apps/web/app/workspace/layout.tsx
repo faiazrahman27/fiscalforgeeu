@@ -15,7 +15,8 @@ import {
   LockKeyhole,
   LogIn,
   LogOut,
-  ShieldCheck
+  ShieldCheck,
+  UsersRound
 } from "lucide-react";
 import { createSupabaseServerClient } from "../../lib/supabase/server";
 import "./workspace.css";
@@ -49,6 +50,11 @@ const workspaceNav = [
     href: "/workspace/activity",
     label: "Activity",
     icon: <Activity size={18} />
+  },
+  {
+    href: "/workspace/members",
+    label: "Members",
+    icon: <UsersRound size={18} />
   },
   {
     href: "/workspace/invoices",
