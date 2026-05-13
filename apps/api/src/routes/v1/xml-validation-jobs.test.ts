@@ -13,12 +13,16 @@ import {
   detectXmlDocumentType,
   detectXmlRootElement
 } from "../../services/xml-validation-job-service.js";
-import { completeJob } from "../../repositories/xml-validation-job-repository.js";
+import {
+  completeJob,
+  createXmlValidationJob as createStoredXmlValidationJob
+} from "../../repositories/xml-validation-job-repository.js";
 import {
   deleteTransientXmlPayload,
   inspectTransientXmlPayloadMetadata,
   type TransientXmlPayloadReference
 } from "../../services/transient-xml-payload-store.js";
+import { API_KEY_SCOPES } from "../../services/api-key-service.js";
 
 const xmlValidationJobDataPath = join(
   process.cwd(),
@@ -349,6 +353,35 @@ test("XML validation job rejects unsafe XML before storage", async (t) => {
   assert.equal(response.statusCode, 400);
   assert.match(response.body, /XML_DOCTYPE_BLOCKED/);
   assert.equal(await readOptionalFile(xmlValidationJobDataPath), beforeData);
+});
+
+test("XML validation job creation requires the XML validation job API scope", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/xml/validation-jobs",
+    headers: {
+      "content-type": "application/json"
+    },
+    payload: {
+      xml: simpleUblInvoiceXml,
+      filename: "missing-key.xml",
+      sourceType: "api_payload",
+      requestedChecks: ["xsd_ubl"]
+    }
+  });
+
+  assert.equal(response.statusCode, 401);
+  assert.equal(
+    (API_KEY_SCOPES as readonly string[]).includes("xml:validation_jobs"),
+    true
+  );
+  assert.doesNotMatch(response.body, /UBL_XSD_VALIDATION_PASSED/);
 });
 
 test("XML validation job stores metadata, SHA-256, queue lifecycle, and completed worker-readiness result", async () => {
@@ -862,6 +895,7 @@ test("XML validation job marks UBL XSD as not configured without pretending it p
   assert.equal(xsdUbl.validationExecuted, false);
   assert.equal(xsdUbl.markedValid, false);
   assert.equal(xsdUbl.status, "not_configured");
+  assert.match(String(xsdUbl.disclaimer), /not official validation/i);
   assert.equal(schematronPeppol.requested, true);
   assert.equal(schematronPeppol.implemented, false);
   assert.equal(schematronPeppol.validationExecutionEnabled, false);
@@ -1298,6 +1332,7 @@ test("configured readable UBL Invoice XSD artefact metadata is returned safely",
     assert.equal(xsdUbl.configured, true);
     assert.equal(xsdUbl.validationExecuted, true);
     assert.equal(xsdUbl.markedValid, true);
+    assert.match(String(xsdUbl.disclaimer), /technical schema check only/i);
     assert.equal(artifactInfo.configured, true);
     assert.equal(artifactInfo.validatorName, "xmllint-wasm");
     assert.equal(artifactInfo.validatorAvailable, true);
@@ -1363,6 +1398,7 @@ test("configured readable UBL Invoice XSD failure returns mapped findings safely
     assert.equal(xsdUbl.configured, true);
     assert.equal(xsdUbl.validationExecuted, true);
     assert.equal(xsdUbl.markedValid, false);
+    assert.match(String(xsdUbl.disclaimer), /technical schema check only/i);
     assert.equal(isPlainObject(xsdCheckResult.artifactInfo), true);
     assert.equal(mappedFinding.code, "UBL_XSD_ELEMENT_INVALID");
     assert.equal(mappedFinding.severity, "fatal");
@@ -1732,6 +1768,56 @@ test("legacy XSD placeholder check is rejected by schema instead of silently acc
   assert.match(response.body, /schematron_peppol_placeholder/);
   assert.doesNotMatch(response.body, /UBL_XSD_NOT_CONFIGURED/);
   assert.doesNotMatch(response.body, /XML_VALIDATION_WORKER_READY/);
+});
+
+test("XML validation job reads are tenant scoped", async (t) => {
+  const otherOrgJob = await createStoredXmlValidationJob({
+    organizationId: "00000000-0000-4000-8000-00000000f007",
+    sourceType: "api_payload",
+    documentType: "invoice",
+    filename: "other-org.xml",
+    xmlSha256: "7".repeat(64),
+    xmlSizeBytes: 42,
+    requestedChecks: ["xsd_ubl"],
+    resultSummary: {
+      crossOrgSentinel: "OTHER-ORG-XML-JOB-SHOULD-NOT-LEAK"
+    },
+    disclaimer:
+      "This XML validation job is a technical sandbox worker-readiness and configured-check result. It does not certify legal, tax, accounting, Peppol, EN 16931, or authority acceptance."
+  });
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const readResponse = await app.inject({
+    method: "GET",
+    url: `/api/v1/xml/validation-jobs/${encodeURIComponent(otherOrgJob.id)}`,
+    headers: {
+      "x-api-key": env.DEV_API_KEY
+    }
+  });
+  const listResponse = await app.inject({
+    method: "GET",
+    url: "/api/v1/xml/validation-jobs?limit=100",
+    headers: {
+      "x-api-key": env.DEV_API_KEY
+    }
+  });
+
+  assert.equal(readResponse.statusCode, 404);
+  assert.equal(readResponse.body.includes(otherOrgJob.id), false);
+  assert.equal(
+    readResponse.body.includes("OTHER-ORG-XML-JOB-SHOULD-NOT-LEAK"),
+    false
+  );
+  assert.equal(listResponse.statusCode, 200);
+  assert.equal(listResponse.body.includes(otherOrgJob.id), false);
+  assert.equal(
+    listResponse.body.includes("OTHER-ORG-XML-JOB-SHOULD-NOT-LEAK"),
+    false
+  );
 });
 
 test("XML validation job list and read endpoints return metadata and queue state only", async (t) => {

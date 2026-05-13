@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -26,7 +26,8 @@ import {
   inspectTransientXmlPayloadMetadata,
   XML_TRANSIENT_PAYLOAD_EXPIRED_CODE,
   XML_TRANSIENT_PAYLOAD_HASH_MISMATCH_CODE,
-  XML_TRANSIENT_PAYLOAD_MISSING_CODE
+  XML_TRANSIENT_PAYLOAD_MISSING_CODE,
+  XML_TRANSIENT_PAYLOAD_SIZE_MISMATCH_CODE
 } from "./transient-xml-payload-store.js";
 
 const fixedNow = new Date("2026-05-07T10:30:00.000Z");
@@ -35,6 +36,62 @@ const startedAt = "2026-05-07T10:15:00.000Z";
 
 function sha256(value: string) {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+async function writeTestOnlyInvoiceXsdFixture(tempRoot: string) {
+  const maindocPath = join(tempRoot, "xsd", "maindoc");
+  const commonPath = join(tempRoot, "xsd", "common");
+  const invoiceXsdPath = join(maindocPath, "UBL-Invoice-2.1.xsd");
+  const baseXsdPath = join(commonPath, "Invoice-Test-Only-Base.xsd");
+
+  await mkdir(maindocPath, {
+    recursive: true
+  });
+  await mkdir(commonPath, {
+    recursive: true
+  });
+  await writeFile(
+    invoiceXsdPath,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:include schemaLocation="../common/Invoice-Test-Only-Base.xsd"/>
+  <xs:element name="Invoice" type="InvoiceType"/>
+</xs:schema>`,
+    "utf8"
+  );
+  await writeFile(
+    baseXsdPath,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="InvoiceType">
+    <xs:sequence>
+      <xs:element name="ID" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>`,
+    "utf8"
+  );
+
+  return invoiceXsdPath;
+}
+
+function captureUblXsdEnv() {
+  return {
+    UBL_XSD_ROOT_DIR: process.env.UBL_XSD_ROOT_DIR,
+    UBL_INVOICE_XSD_PATH: process.env.UBL_INVOICE_XSD_PATH,
+    UBL_CREDIT_NOTE_XSD_PATH: process.env.UBL_CREDIT_NOTE_XSD_PATH,
+    UBL_XSD_ARTIFACT_VERSION: process.env.UBL_XSD_ARTIFACT_VERSION
+  };
+}
+
+function restoreEnv(snapshot: Record<string, string | undefined>) {
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
 }
 
 function createClaimedJob(input: {
@@ -518,6 +575,33 @@ test("queue runner fails mismatched transient XML without validation output", as
   assert.equal(JSON.stringify(failInput).includes("MISMATCHED-XML-STEP-43"), false);
 });
 
+test("queue runner fails size-mismatched transient XML without validation output", async () => {
+  const rawXml = "<Invoice><ID>SIZE-MISMATCHED-XML-STEP-7</ID></Invoice>";
+  const job = createClaimedJob({
+    xmlSha256: sha256(rawXml),
+    xmlSizeBytes: Buffer.byteLength(rawXml, "utf8") + 1,
+    requestedChecks: ["xsd_ubl"]
+  });
+  const fake = createFakeRepository(job);
+  const result = await runXmlValidationQueueOnce({
+    repository: fake.repository,
+    loadTransientXml: async () => rawXml,
+    now: () => fixedNow
+  });
+  const failInput = fake.getFailInput();
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.errorCode, XML_TRANSIENT_PAYLOAD_SIZE_MISMATCH_CODE);
+  assert.equal(fake.getCompleteInput(), null);
+  assert.ok(failInput);
+  assert.deepEqual(failInput.failedChecks, ["xsd_ubl"]);
+  assert.equal(JSON.stringify(failInput).includes(rawXml), false);
+  assert.equal(
+    JSON.stringify(failInput).includes("SIZE-MISMATCHED-XML-STEP-7"),
+    false
+  );
+});
+
 test("queue runner completes from transient payload reference and deletes payload", async () => {
   const rootDir = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-"));
   const rawXml = "<Invoice><ID>TRANSIENT-RUNNER-STEP-44</ID></Invoice>";
@@ -573,6 +657,95 @@ test("queue runner completes from transient payload reference and deletes payloa
     );
   } finally {
     await rm(rootDir, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("queue runner persists real configured XSD completion from transient XML", async () => {
+  const rootDir = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-"));
+  const xsdRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-runner-xsd-"));
+  const originalEnv = captureUblXsdEnv();
+  const rawXml = "<Invoice><ID>TRANSIENT-RUNNER-XSD-REAL</ID></Invoice>";
+
+  try {
+    const invoiceXsdPath = await writeTestOnlyInvoiceXsdFixture(xsdRoot);
+    const reference = await createTransientXmlPayload({
+      xml: rawXml,
+      rootDir,
+      now: fixedNow,
+      ttlSeconds: 600
+    });
+
+    process.env.UBL_XSD_ROOT_DIR = xsdRoot;
+    process.env.UBL_INVOICE_XSD_PATH = invoiceXsdPath;
+    delete process.env.UBL_CREDIT_NOTE_XSD_PATH;
+    process.env.UBL_XSD_ARTIFACT_VERSION = "runner-test-only";
+
+    const job = createClaimedJob({
+      xmlSha256: sha256(rawXml),
+      xmlSizeBytes: Buffer.byteLength(rawXml, "utf8"),
+      requestedChecks: ["xsd_ubl"],
+      resultSummary: {
+        queue: buildRunningQueueLifecycleFromSummary({
+          existingSummary: {
+            queue: {
+              queuedAt
+            }
+          },
+          now: startedAt,
+          claimedBy: XML_VALIDATION_JOB_WORKER_NAME
+        }),
+        transientPayload: reference
+      }
+    });
+    const fake = createFakeRepository(job);
+    const result = await runXmlValidationQueueOnce({
+      repository: fake.repository,
+      transientPayloadStore: {
+        rootDir,
+        maxBytes: 2 * 1024 * 1024,
+        now: () => fixedNow
+      },
+      now: () => fixedNow
+    });
+    const completeInput = fake.getCompleteInput();
+    const metadata = await inspectTransientXmlPayloadMetadata({
+      payloadId: reference.payloadId,
+      rootDir
+    });
+
+    assert.equal(result.status, "completed");
+    assert.ok(completeInput);
+    assert.deepEqual(completeInput.completedChecks, ["xsd_ubl"]);
+    assert.deepEqual(completeInput.failedChecks, []);
+    assert.equal(metadata.exists, false);
+
+    const xsdUbl = completeInput.resultSummary.xsdUbl as Record<string, unknown>;
+    const checkStatuses = completeInput.resultSummary.checkStatuses as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(checkStatuses.xsd_ubl, "passed");
+    assert.equal(xsdUbl.configured, true);
+    assert.equal(xsdUbl.validationExecuted, true);
+    assert.equal(xsdUbl.markedValid, true);
+    assert.equal(xsdUbl.status, "passed");
+    assert.match(String(xsdUbl.disclaimer), /technical schema check only/i);
+    assert.equal(JSON.stringify(completeInput).includes(rawXml), false);
+    assert.equal(
+      JSON.stringify(completeInput).includes("TRANSIENT-RUNNER-XSD-REAL"),
+      false
+    );
+  } finally {
+    restoreEnv(originalEnv);
+    await rm(rootDir, {
+      force: true,
+      recursive: true
+    });
+    await rm(xsdRoot, {
       force: true,
       recursive: true
     });

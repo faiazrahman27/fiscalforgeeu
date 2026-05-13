@@ -7,6 +7,62 @@ import { runStubXmlValidator } from "./stub-validator.js";
 
 const simpleXml = "<Invoice><ID>WORKER-SCHEMATRON-STEP-48</ID></Invoice>";
 
+async function writeTestOnlyInvoiceXsdFixture(tempRoot: string) {
+  const maindocPath = join(tempRoot, "xsd", "maindoc");
+  const commonPath = join(tempRoot, "xsd", "common");
+  const invoiceXsdPath = join(maindocPath, "UBL-Invoice-2.1.xsd");
+  const baseXsdPath = join(commonPath, "Invoice-Test-Only-Base.xsd");
+
+  await mkdir(maindocPath, {
+    recursive: true
+  });
+  await mkdir(commonPath, {
+    recursive: true
+  });
+  await writeFile(
+    invoiceXsdPath,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:include schemaLocation="../common/Invoice-Test-Only-Base.xsd"/>
+  <xs:element name="Invoice" type="InvoiceType"/>
+</xs:schema>`,
+    "utf8"
+  );
+  await writeFile(
+    baseXsdPath,
+    `<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="InvoiceType">
+    <xs:sequence>
+      <xs:element name="ID" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>`,
+    "utf8"
+  );
+
+  return invoiceXsdPath;
+}
+
+function captureUblXsdEnv() {
+  return {
+    UBL_XSD_ROOT_DIR: process.env.UBL_XSD_ROOT_DIR,
+    UBL_INVOICE_XSD_PATH: process.env.UBL_INVOICE_XSD_PATH,
+    UBL_CREDIT_NOTE_XSD_PATH: process.env.UBL_CREDIT_NOTE_XSD_PATH,
+    UBL_XSD_ARTIFACT_VERSION: process.env.UBL_XSD_ARTIFACT_VERSION
+  };
+}
+
+function restoreEnv(snapshot: Record<string, string | undefined>) {
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
 function readObject(value: unknown, label: string): Record<string, unknown> {
   assert.equal(
     typeof value === "object" && value !== null && !Array.isArray(value),
@@ -56,6 +112,122 @@ function assertSchematronEngineCandidate(input: {
 
   return engineCandidate;
 }
+
+test("worker executes real local UBL XSD validation when configured", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-worker-xsd-"));
+  const originalEnv = captureUblXsdEnv();
+  const rawXml = "<Invoice><ID>WORKER-XSD-VALID-001</ID></Invoice>";
+
+  try {
+    const invoiceXsdPath = await writeTestOnlyInvoiceXsdFixture(tempRoot);
+
+    process.env.UBL_XSD_ROOT_DIR = tempRoot;
+    process.env.UBL_INVOICE_XSD_PATH = invoiceXsdPath;
+    delete process.env.UBL_CREDIT_NOTE_XSD_PATH;
+    process.env.UBL_XSD_ARTIFACT_VERSION = "worker-test-only";
+
+    const result = await runStubXmlValidator({
+      xml: rawXml,
+      requestedChecks: ["xsd_ubl"]
+    });
+    const xsdUbl = readObject(result.resultSummary.xsdUbl, "xsdUbl");
+    const checkResult = result.checkResults.find(
+      (item) => item.checkType === "xsd_ubl"
+    );
+
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.completedChecks, ["xsd_ubl"]);
+    assert.deepEqual(result.failedChecks, []);
+    assert.equal(checkResult?.status, "passed");
+    assert.equal(xsdUbl.configured, true);
+    assert.equal(xsdUbl.validationExecuted, true);
+    assert.equal(xsdUbl.markedValid, true);
+    assert.equal(xsdUbl.status, "passed");
+    assert.match(String(xsdUbl.disclaimer), /technical schema check only/i);
+    assert.equal(JSON.stringify(result).includes(rawXml), false);
+    assert.equal(JSON.stringify(result).includes("WORKER-XSD-VALID-001"), false);
+  } finally {
+    restoreEnv(originalEnv);
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
+
+test("worker reports not_configured XSD without marking XML valid", async () => {
+  const originalEnv = captureUblXsdEnv();
+
+  try {
+    delete process.env.UBL_XSD_ROOT_DIR;
+    delete process.env.UBL_INVOICE_XSD_PATH;
+    delete process.env.UBL_CREDIT_NOTE_XSD_PATH;
+    delete process.env.UBL_XSD_ARTIFACT_VERSION;
+
+    const result = await runStubXmlValidator({
+      xml: "<Invoice><ID>WORKER-XSD-NOT-CONFIGURED</ID></Invoice>",
+      requestedChecks: ["xsd_ubl"]
+    });
+    const xsdUbl = readObject(result.resultSummary.xsdUbl, "xsdUbl");
+    const checkResult = result.checkResults.find(
+      (item) => item.checkType === "xsd_ubl"
+    );
+
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.completedChecks, ["xsd_ubl"]);
+    assert.deepEqual(result.failedChecks, []);
+    assert.equal(checkResult?.status, "not_configured");
+    assert.equal(xsdUbl.configured, false);
+    assert.equal(xsdUbl.validationExecuted, false);
+    assert.equal(xsdUbl.markedValid, false);
+    assert.equal(xsdUbl.status, "not_configured");
+    assert.match(String(xsdUbl.disclaimer), /not official validation/i);
+  } finally {
+    restoreEnv(originalEnv);
+  }
+});
+
+test("worker rejects unsafe XML before configured XSD validation", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-worker-xsd-"));
+  const originalEnv = captureUblXsdEnv();
+  const unsafeXml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Invoice [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>
+<Invoice><ID>&xxe;</ID></Invoice>`;
+
+  try {
+    const invoiceXsdPath = await writeTestOnlyInvoiceXsdFixture(tempRoot);
+
+    process.env.UBL_XSD_ROOT_DIR = tempRoot;
+    process.env.UBL_INVOICE_XSD_PATH = invoiceXsdPath;
+    delete process.env.UBL_CREDIT_NOTE_XSD_PATH;
+    process.env.UBL_XSD_ARTIFACT_VERSION = "worker-test-only";
+
+    const result = await runStubXmlValidator({
+      xml: unsafeXml,
+      requestedChecks: ["xsd_ubl"]
+    });
+    const xsdUbl = readObject(result.resultSummary.xsdUbl, "xsdUbl");
+    const checkResult = result.checkResults.find(
+      (item) => item.checkType === "xsd_ubl"
+    );
+
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.completedChecks, []);
+    assert.deepEqual(result.failedChecks, ["xsd_ubl"]);
+    assert.equal(checkResult?.status, "error");
+    assert.equal(xsdUbl.validationExecuted, false);
+    assert.equal(xsdUbl.markedValid, false);
+    assert.equal(result.findings[0]?.code, "XML_DOCTYPE_BLOCKED");
+    assert.equal(JSON.stringify(result).includes("<!DOCTYPE"), false);
+    assert.equal(JSON.stringify(result).includes("file:///etc/passwd"), false);
+  } finally {
+    restoreEnv(originalEnv);
+    await rm(tempRoot, {
+      force: true,
+      recursive: true
+    });
+  }
+});
 
 test("stub validator returns safe metadata-only Schematron placeholder diagnostics", async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), "invoice-lantern-worker-sch-"));

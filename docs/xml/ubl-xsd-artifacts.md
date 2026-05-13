@@ -8,6 +8,17 @@ The UBL XSD diagnostics help developers and operators verify that the local XSD
 validator can find and read configured schema files before XML validation jobs
 are run.
 
+Step 7 wires the `xsd_ubl` XML validation job check to the real local
+`xmllint-wasm` UBL XSD adapter when local artefacts are configured. Validation
+is local/offline only: Invoice Lantern does not download artefacts, fetch remote
+schemas, follow absolute external schema references, or fetch network resources.
+If required XSD paths are missing or unreadable, `xsd_ubl` returns
+`not_configured`, `validationExecuted: false`, and `markedValid: false`.
+`not_configured` is not success. A passed XSD check means technical schema
+validation passed only; it is not official validation, Peppol certification, EN
+16931 certification, legal/tax/accounting advice, official filing, authority
+acceptance, or a compliance guarantee.
+
 The Schematron diagnostics added in Step 47 are registry diagnostics only. They
 confirm whether local Schematron files are configured and readable. They do not
 execute Schematron validation yet.
@@ -291,6 +302,8 @@ This setup does not add or provide:
 - Production XPath assertion execution in normal XML validation jobs.
 - Public/default `internal_test_only` worker execution.
 - Public API inline execution through `schematron_execution_orchestrator_v1`.
+- Remote UBL XSD download or remote schema fetching during validation.
+- Treating `not_configured` as a passed XSD validation result.
 - Peppol certification.
 - EN 16931 certification or business-rule certification.
 - Official EU, tax authority, or filing validation.

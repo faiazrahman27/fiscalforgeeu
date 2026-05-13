@@ -12,6 +12,7 @@ import type {
 } from "xmllint-wasm";
 import {
   UBL_XSD_VALIDATOR_NAME,
+  buildUblXsdArtifactInfo,
   inspectUblSchemaDependencyGraph,
   isPathInside,
   resolveUblSchemaForDocumentType,
@@ -35,8 +36,12 @@ import {
 const XSD_CHECK_TYPE = UBL_XSD_CHECK_TYPE;
 const VALIDATOR_XML_FILE_NAME = "document.xml";
 const MAX_SCHEMA_DEPENDENCY_FILES = 500;
+const DEFAULT_MAX_XML_DEPTH = 150;
 const SCHEMA_LOCATION_ATTRIBUTE_PATTERN =
   /\bschemaLocation\s*=\s*(["'])([^"']+)\1/gi;
+
+export const UBL_XSD_VALIDATION_DISCLAIMER =
+  "Local UBL XSD validation in Invoice Lantern is an independent technical schema check only. It is not official validation, Peppol certification, EN 16931 certification, legal, tax, or accounting advice, official filing, authority acceptance, or a compliance guarantee.";
 
 export type UblXsdValidationStatus =
   | "passed"
@@ -61,6 +66,25 @@ export type UblXsdValidationInput = {
   rootElement: string;
   documentType: string;
   artifactConfig?: UblXsdArtifactConfigInput;
+  maxBytes?: number;
+  maxDepth?: number;
+};
+
+type XsdXmlSafetyIssueCode =
+  | "XML_BODY_TOO_LARGE"
+  | "XML_DOCTYPE_BLOCKED"
+  | "XML_ENTITY_BLOCKED"
+  | "XML_EXTERNAL_IDENTIFIER_BLOCKED"
+  | "XML_STYLESHEET_BLOCKED"
+  | "XML_NESTING_TOO_DEEP";
+
+type XsdXmlSafetyInspection = {
+  safe: boolean;
+  message: string;
+  byteLength: number;
+  code?: XsdXmlSafetyIssueCode;
+  maxBytes?: number;
+  maxDepth?: number;
 };
 
 type ReadableFileInspection = {
@@ -97,6 +121,118 @@ class UblXsdControlledError extends Error {
     this.reason = input.reason;
     this.validationExecuted = input.validationExecuted ?? false;
   }
+}
+
+function getUtf8ByteLength(value: string) {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function getApproximateXmlDepth(xml: string) {
+  const tagPattern = /<\s*(\/?)([A-Za-z_][\w:.-]*)(?:\s[^<>]*)?>/g;
+  let depth = 0;
+  let maxDepth = 0;
+
+  for (const match of xml.matchAll(tagPattern)) {
+    const fullTag = match[0] ?? "";
+    const isClosingTag = match[1] === "/";
+    const isSelfClosingTag = /\/\s*>$/.test(fullTag);
+
+    if (fullTag.startsWith("<?") || fullTag.startsWith("<!")) {
+      continue;
+    }
+
+    if (isClosingTag) {
+      depth = Math.max(depth - 1, 0);
+      continue;
+    }
+
+    depth += 1;
+    maxDepth = Math.max(maxDepth, depth);
+
+    if (isSelfClosingTag) {
+      depth = Math.max(depth - 1, 0);
+    }
+  }
+
+  return maxDepth;
+}
+
+function inspectXmlSafetyForXsd(
+  xml: string,
+  options: { maxBytes?: number; maxDepth?: number } = {}
+): XsdXmlSafetyInspection {
+  const byteLength = getUtf8ByteLength(xml);
+  const maxDepth = options.maxDepth ?? DEFAULT_MAX_XML_DEPTH;
+
+  if (options.maxBytes !== undefined && byteLength > options.maxBytes) {
+    return {
+      safe: false,
+      code: "XML_BODY_TOO_LARGE",
+      message: "XML payload is larger than the configured validation limit.",
+      byteLength,
+      maxBytes: options.maxBytes,
+      maxDepth
+    };
+  }
+
+  if (/<!DOCTYPE\b/i.test(xml)) {
+    return {
+      safe: false,
+      code: "XML_DOCTYPE_BLOCKED",
+      message: "XML DOCTYPE declarations are blocked before XSD validation.",
+      byteLength,
+      maxDepth
+    };
+  }
+
+  if (/<!ENTITY\b/i.test(xml)) {
+    return {
+      safe: false,
+      code: "XML_ENTITY_BLOCKED",
+      message: "XML entity declarations are blocked before XSD validation.",
+      byteLength,
+      maxDepth
+    };
+  }
+
+  if (/\b(?:SYSTEM|PUBLIC)\s+["']/i.test(xml)) {
+    return {
+      safe: false,
+      code: "XML_EXTERNAL_IDENTIFIER_BLOCKED",
+      message: "XML external identifiers are blocked before XSD validation.",
+      byteLength,
+      maxDepth
+    };
+  }
+
+  if (/<\?xml-stylesheet\b/i.test(xml)) {
+    return {
+      safe: false,
+      code: "XML_STYLESHEET_BLOCKED",
+      message: "XML stylesheet processing instructions are blocked before XSD validation.",
+      byteLength,
+      maxDepth
+    };
+  }
+
+  const observedDepth = getApproximateXmlDepth(xml);
+
+  if (observedDepth > maxDepth) {
+    return {
+      safe: false,
+      code: "XML_NESTING_TOO_DEEP",
+      message: "XML payload nesting exceeds the configured validation limit.",
+      byteLength,
+      maxDepth
+    };
+  }
+
+  return {
+    safe: true,
+    message: "XML payload passed pre-validation safety checks.",
+    byteLength,
+    maxDepth
+  };
 }
 
 function inspectReadableFile(path: string): ReadableFileInspection {
@@ -157,6 +293,7 @@ function buildCommonSummary(input: {
     validatorAvailable: input.validatorAvailable,
     validatorName: UBL_XSD_VALIDATOR_NAME,
     findingMappingVersion: UBL_XSD_ERROR_MAPPING_VERSION,
+    disclaimer: UBL_XSD_VALIDATION_DISCLAIMER,
     documentType: input.documentType,
     rootElement: input.rootElement,
     ...(input.selectedDocumentType
@@ -195,6 +332,63 @@ function buildCommonSummary(input: {
     ...(input.dependencyGraphStatus
       ? { dependencyGraphStatus: input.dependencyGraphStatus }
       : {})
+  };
+}
+
+function unsafeXmlResult(input: {
+  artifactInfo: UblXsdArtifactInfo;
+  inspection: XsdXmlSafetyInspection;
+  documentType: string;
+  rootElement: string;
+}): UblXsdValidationResult {
+  const code = input.inspection.code ?? "XML_UNSAFE_PAYLOAD";
+  const technicalCode = code.toLowerCase();
+  const finding: UblXsdValidationFinding = {
+    code,
+    severity: "fatal",
+    checkType: XSD_CHECK_TYPE,
+    field: "xml",
+    message: input.inspection.message,
+    status: "error",
+    legalConfidence: "technical",
+    fixSuggestion:
+      "Remove unsafe XML constructs and rerun the independent technical XSD check.",
+    sourceLabels: [...UBL_XSD_SOURCE_LABELS, "Invoice Lantern XML safety gate"],
+    technicalCode
+  };
+
+  return {
+    checkType: XSD_CHECK_TYPE,
+    status: "error",
+    artifactInfo: input.artifactInfo,
+    validationExecuted: false,
+    markedValid: false,
+    findings: [finding],
+    summary: {
+      ...buildCommonSummary({
+        configured: input.artifactInfo.configured,
+        validationExecuted: false,
+        markedValid: false,
+        validatorAvailable: input.artifactInfo.validatorAvailable,
+        documentType: input.documentType,
+        rootElement: input.rootElement,
+        reason: technicalCode,
+        artifactVersion: input.artifactInfo.artifactVersion,
+        artifactCheckedAt: input.artifactInfo.checkedAt,
+        dependencyGraphStatus: input.artifactInfo.dependencyGraph.status
+      }),
+      xmlSafety: {
+        safe: false,
+        code,
+        byteLength: input.inspection.byteLength,
+        ...(input.inspection.maxBytes !== undefined
+          ? { maxBytes: input.inspection.maxBytes }
+          : {}),
+        ...(input.inspection.maxDepth !== undefined
+          ? { maxDepth: input.inspection.maxDepth }
+          : {})
+      }
+    }
   };
 }
 
@@ -786,6 +980,20 @@ function getDependencyGraphReason(graph: UblXsdDependencyGraphInfo) {
 export async function validateUblXsd(
   input: UblXsdValidationInput
 ): Promise<UblXsdValidationResult> {
+  const xmlSafety = inspectXmlSafetyForXsd(input.xml, {
+    ...(input.maxBytes !== undefined ? { maxBytes: input.maxBytes } : {}),
+    ...(input.maxDepth !== undefined ? { maxDepth: input.maxDepth } : {})
+  });
+
+  if (!xmlSafety.safe) {
+    return unsafeXmlResult({
+      artifactInfo: await buildUblXsdArtifactInfo(input.artifactConfig),
+      inspection: xmlSafety,
+      documentType: input.documentType,
+      rootElement: input.rootElement
+    });
+  }
+
   const selected = await resolveUblSchemaForDocumentType(
     input.artifactConfig,
     input.documentType,

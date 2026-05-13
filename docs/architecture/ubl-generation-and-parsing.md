@@ -24,10 +24,13 @@ Generation currently maps:
 - invoice or credit note lines, quantities, unit codes, unit prices, line
   discounts, line charges, item names, VAT categories, and VAT rates;
 - document-level allowances and charges;
-- VAT breakdown and monetary totals from the canonical calculation summary;
-- a safe sandbox note that states the export is not official validation,
-  Peppol certification, legal/tax/accounting advice, official filing, or
-  authority acceptance.
+- VAT breakdown and monetary totals from the canonical calculation summary.
+
+Generated UBL does not inject Invoice Lantern's platform legal disclaimer as a
+semantic `cbc:Note` or default XML comment. Canonical invoice notes or
+user-provided document notes may map to UBL note fields when supported, but the
+platform disclaimer belongs in API/export metadata, documentation, and
+validation reports rather than invoice content.
 
 Parsing currently maps the same supported fields back into
 `CanonicalInvoice`. It also preserves safe UBL metadata, including root type,
@@ -89,11 +92,13 @@ stable for the mapped fields.
 Round-tripping is interoperability-oriented. It is not a substitute for legal,
 tax, accounting, or official filing review.
 
-## Remaining For Step 7
+## Step 7 Boundary
 
-Step 7 should focus on the real XML/XSD worker path: reviewed local XSD
-execution, worker-level diagnostics, safe result mapping, and configuration
-checks. It should continue to avoid Schematron execution, EN 16931/Peppol rule
-engine claims, VIES, country-pack expansion, CII, webhooks, admin consoles, or
-legal-compliance guarantees unless those are explicitly scheduled in later
-locked steps.
+Step 7 completes the real local UBL XSD worker path for `xsd_ubl` when reviewed
+schema artefacts are configured. A passed XSD result is a technical schema
+validation result only. It is not official validation, Peppol or EN 16931
+certification, legal/tax/accounting advice, official filing, authority
+acceptance, or a compliance guarantee.
+
+Schematron execution, EN 16931/Peppol rule execution, VIES, CII, country-pack
+expansion, webhooks, and admin consoles remain out of scope for this step.

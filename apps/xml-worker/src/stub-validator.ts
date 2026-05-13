@@ -306,6 +306,15 @@ function getBooleanSummaryValue(
   return summary?.[key] === true;
 }
 
+function getStringSummaryValue(
+  summary: Record<string, unknown> | undefined,
+  key: string
+) {
+  const value = summary?.[key];
+
+  return typeof value === "string" ? value : undefined;
+}
+
 export async function runStubXmlValidator(
   request: XmlWorkerRequest
 ): Promise<XmlWorkerResult> {
@@ -397,6 +406,9 @@ export async function runStubXmlValidator(
           "validationExecuted"
         ),
         markedValid: getBooleanSummaryValue(xsdUblSummary, "markedValid"),
+        ...(getStringSummaryValue(xsdUblSummary, "disclaimer")
+          ? { disclaimer: getStringSummaryValue(xsdUblSummary, "disclaimer") }
+          : {}),
         ...(xsdUblResult ? { status: xsdUblResult.status } : {}),
         ...(xsdUblResult?.artifactInfo
           ? { artifactInfo: xsdUblResult.artifactInfo }
