@@ -14,7 +14,7 @@
     "precheck": "npm run build:packages",
     "check": "tsc -p tsconfig.json --noEmit",
     "pretest": "npm run build:packages",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --import ./src/test/setup-env.ts --test src/**/*.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",

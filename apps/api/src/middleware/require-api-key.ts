@@ -321,19 +321,19 @@ export async function requireSupabaseUser(
     );
   }
 
-  if (!hasSupabaseJwtConfig()) {
-    return sendUnauthorized(
-      reply,
-      "AUTH_NOT_CONFIGURED",
-      "Supabase authentication is not configured for this API service."
-    );
-  }
-
   if (looksLikeInvoiceLanternApiKey(bearerToken)) {
     return sendUnauthorized(
       reply,
       "AUTH_TOKEN_REQUIRED",
       "API key authentication is not allowed for this endpoint."
+    );
+  }
+
+  if (!hasSupabaseJwtConfig()) {
+    return sendUnauthorized(
+      reply,
+      "AUTH_NOT_CONFIGURED",
+      "Supabase authentication is not configured for this API service."
     );
   }
 
