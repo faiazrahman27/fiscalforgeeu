@@ -330,6 +330,7 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/invoices",
     "/invoices/from-draft",
     "/invoices/{id}",
+    "/invoices/{id}/export/ubl",
     "/invoices/{id}/transition",
     "/invoices/{id}/lifecycle-events",
     "/invoices/validate",
@@ -365,6 +366,9 @@ test("OpenAPI documents production invoice lifecycle endpoints and safe boundari
   const invoiceList = JSON.stringify(readRecord(paths, "/invoices"));
   const fromDraft = JSON.stringify(readRecord(paths, "/invoices/from-draft"));
   const invoiceDetail = JSON.stringify(readRecord(paths, "/invoices/{id}"));
+  const productionUblExport = JSON.stringify(
+    readRecord(paths, "/invoices/{id}/export/ubl")
+  );
   const transition = JSON.stringify(
     readRecord(paths, "/invoices/{id}/transition")
   );
@@ -389,6 +393,7 @@ test("OpenAPI documents production invoice lifecycle endpoints and safe boundari
     invoiceList,
     fromDraft,
     invoiceDetail,
+    productionUblExport,
     transition,
     lifecycleEvents,
     productionInvoice,
@@ -403,6 +408,9 @@ test("OpenAPI documents production invoice lifecycle endpoints and safe boundari
   assert.match(invoiceList, /tenant-scoped/i);
   assert.match(fromDraft, /without deleting the draft/i);
   assert.match(invoiceDetail, /organization id/i);
+  assert.match(productionUblExport, /technical UBL 2\.1 export/i);
+  assert.match(productionUblExport, /safe invoice_exports metadata/i);
+  assert.match(productionUblExport, /not Peppol-certified/i);
   assert.match(transition, /internal workspace state only/i);
   assert.match(transition, /not official filing/i);
   assert.match(transition, /not.*authority acceptance/i);

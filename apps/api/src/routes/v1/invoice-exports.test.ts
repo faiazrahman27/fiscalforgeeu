@@ -16,17 +16,45 @@ const validInvoicePayload = {
     number: "TST-UBL-001",
     currency: "EUR",
     issueDate: "2026-04-29",
-    profile: "EN16931"
+    dueDate: "2026-05-29",
+    taxPointDate: "2026-04-30",
+    profile: "EN16931",
+    buyerReference: "BR-EXPORT-001",
+    orderReference: "ORDER-EXPORT-001",
+    contractReference: "CONTRACT-EXPORT-001",
+    projectReference: "PROJECT-EXPORT-001",
+    accountingCost: "ACCT-EXPORT-001"
   },
   seller: {
     name: "Invoice Lantern Seller",
+    legalName: "Invoice Lantern Seller GmbH",
     country: "DE",
-    vatId: "DE123456789"
+    vatId: "DE123456789",
+    electronicAddress: "seller@example.test",
+    electronicAddressScheme: "EM",
+    street: "Seller Street 1",
+    city: "Berlin",
+    postalCode: "10115"
   },
   buyer: {
     name: "Invoice Lantern Buyer",
     country: "DE",
-    vatId: ""
+    vatId: "DE987654321",
+    electronicAddress: "buyer@example.test",
+    electronicAddressScheme: "EM",
+    street: "Buyer Street 2",
+    city: "Munich",
+    postalCode: "80331"
+  },
+  delivery: {
+    deliveryDate: "2026-05-01",
+    locationId: "DELIVERY-EXPORT-001",
+    country: "DE"
+  },
+  payment: {
+    paymentMeansCode: "30",
+    paymentReference: "RF18539007547034",
+    terms: "Due within 30 days."
   },
   lines: [
     {
@@ -35,7 +63,29 @@ const validInvoicePayload = {
       quantity: "2",
       unitCode: "EA",
       unitPrice: "50.00",
+      discountAmount: "5.00",
+      chargeAmount: "2.00",
       vatCategory: "S",
+      vatRate: "19"
+    }
+  ],
+  allowances: [
+    {
+      id: "ALLOW-EXPORT-1",
+      scope: "document",
+      reason: "Educational sandbox discount",
+      amount: "10.00",
+      taxCategory: "S",
+      vatRate: "19"
+    }
+  ],
+  charges: [
+    {
+      id: "CHARGE-EXPORT-1",
+      scope: "document",
+      reason: "Handling",
+      amount: "3.00",
+      taxCategory: "S",
       vatRate: "19"
     }
   ]
@@ -118,6 +168,13 @@ test("UBL export returns SHA-256 metadata and persists metadata-only export reco
 
   assert.equal(typeof xml, "string");
   assert.match(xml as string, /<Invoice\b/);
+  assert.match(xml as string, /<cbc:BuyerReference>BR-EXPORT-001<\/cbc:BuyerReference>/);
+  assert.match(xml as string, /<cac:OrderReference>/);
+  assert.match(xml as string, /<cac:Delivery>/);
+  assert.match(xml as string, /<cac:PaymentMeans>/);
+  assert.match(xml as string, /<cac:AllowanceCharge>/);
+  assert.match(xml as string, /<cbc:AllowanceTotalAmount currencyID="EUR">10.00<\/cbc:AllowanceTotalAmount>/);
+  assert.match(xml as string, /not Peppol-certified/i);
   assert.equal(
     xmlSha256,
     createHash("sha256").update(xml as string, "utf8").digest("hex")

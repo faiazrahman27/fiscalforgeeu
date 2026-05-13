@@ -275,6 +275,56 @@ test("UBL parse endpoint returns invoice-core findings for parsed invoices", asy
   );
 });
 
+test("UBL parse endpoint returns warnings for unsupported-but-detected fields", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/invoices/parse/ubl",
+    headers: {
+      "x-api-key": env.DEV_API_KEY,
+      "content-type": "application/json"
+    },
+    payload: JSON.stringify({
+      xml: simpleUblInvoiceXml.replace(
+        "<cac:AccountingSupplierParty>",
+        `<cac:AdditionalDocumentReference>
+    <cbc:ID>ATTACHMENT-API-001</cbc:ID>
+  </cac:AdditionalDocumentReference>
+  <cac:AccountingSupplierParty>`
+      )
+    })
+  });
+
+  assert.equal(response.statusCode, 200);
+
+  const body = response.json() as Record<string, unknown>;
+
+  assert.equal(body.parsed, true);
+  assert.equal(
+    getFindings(body).some(
+      (finding) =>
+        finding.code === "UBL_UNSUPPORTED_FIELD_DETECTED" &&
+        finding.severity === "warning"
+    ),
+    true
+  );
+  assert.equal(isPlainObject(body.canonicalInvoice), true);
+
+  const canonicalInvoice = body.canonicalInvoice as Record<string, unknown>;
+  const metadata = canonicalInvoice.metadata as Record<string, unknown>;
+  const ublMetadata = metadata.ubl as Record<string, unknown>;
+  const unsupportedFields =
+    ublMetadata.unsupportedFields as Record<string, unknown>[];
+
+  assert.equal(unsupportedFields[0]?.field, "AdditionalDocumentReference");
+  assert.deepEqual(unsupportedFields[0]?.sampleIds, ["ATTACHMENT-API-001"]);
+});
+
 test("UBL parse endpoint does not create drafts or XML upload records", async (t) => {
   const beforeDrafts = await readOptionalFile(invoiceDraftDataPath);
   const beforeXmlUploads = await readOptionalFile(xmlUploadDataPath);
@@ -472,7 +522,7 @@ test("UBL import endpoint does not create a draft for unsupported CreditNote XML
   assert.equal(body.created, false);
   assert.equal(
     getFindings(body).some(
-      (finding) => finding.code === "UBL_CREDIT_NOTE_PARSE_UNSUPPORTED"
+      (finding) => finding.code === "DRAFT_CREDIT_NOTE_IMPORT_UNSUPPORTED"
     ),
     true
   );

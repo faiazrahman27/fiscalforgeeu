@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
+import {
+  canonicalToUblInvoiceXml,
+  ublInvoiceXmlToCanonicalInvoice
+} from "@invoice-lantern/ubl";
 import { buildApp } from "../app.js";
 import {
   listInvoiceAllowances,
@@ -340,6 +344,38 @@ test("production invoice service persists canonical invoices and normalized chil
   );
 });
 
+test("production invoice canonical records export to UBL and parse back tenant-safely", async () => {
+  const invoice = await createProductionInvoice({
+    context: context("owner"),
+    canonicalInvoice: buildCanonicalInvoice("INV-SVC-UBL-001", 2),
+    source: "manual"
+  });
+  const xml = canonicalToUblInvoiceXml(invoice.canonicalInvoice);
+  const parsed = ublInvoiceXmlToCanonicalInvoice(xml);
+  const parsedInvoice = parsed.invoice;
+  const crossTenantRead = await getProductionInvoice({
+    context: context("owner", organizationB),
+    id: invoice.id
+  });
+
+  assert.equal(parsed.ok, true);
+  assert.ok(parsedInvoice);
+  assert.equal(parsedInvoice.document.number, "INV-SVC-UBL-001");
+  assert.equal(parsedInvoice.seller.name, invoice.canonicalInvoice.seller.name);
+  assert.equal(parsedInvoice.buyer.name, invoice.canonicalInvoice.buyer.name);
+  assert.equal(parsedInvoice.lines.length, 2);
+  assert.equal(
+    parsedInvoice.totals.payableAmount,
+    invoice.calculationSummary.totals.payableAmount
+  );
+  assert.equal(
+    parsedInvoice.taxBreakdown?.[0]?.taxAmount,
+    invoice.calculationSummary.taxBreakdown[0]?.taxAmount
+  );
+  assert.match(xml, /not Peppol-certified/);
+  assert.equal(crossTenantRead, null);
+});
+
 test("production invoice updates replace child rows and keep tenant ownership", async () => {
   const created = await createProductionInvoice({
     context: context("accountant"),
@@ -623,22 +659,32 @@ test("production invoice routes reject organization API keys as signed-user work
     await app.close();
   });
 
-  const response = await app.inject({
-    method: "GET",
-    url: "/api/v1/invoices",
-    headers: {
-      authorization:
-        "Bearer il_test_abcdef12.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+  for (const request of [
+    {
+      method: "GET",
+      url: "/api/v1/invoices"
+    },
+    {
+      method: "POST",
+      url: "/api/v1/invoices/00000000-0000-4000-8000-000000000001/export/ubl"
     }
-  });
-  const body = response.json() as Record<string, unknown>;
+  ] as const) {
+    const response = await app.inject({
+      ...request,
+      headers: {
+        authorization:
+          "Bearer il_test_abcdef12.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+      }
+    });
+    const body = response.json() as Record<string, unknown>;
 
-  assert.equal(response.statusCode, 401);
-  assert.deepEqual(body.error, {
-    code: "AUTH_TOKEN_REQUIRED",
-    message: "API key authentication is not allowed for this endpoint.",
-    details: null
-  });
+    assert.equal(response.statusCode, 401);
+    assert.deepEqual(body.error, {
+      code: "AUTH_TOKEN_REQUIRED",
+      message: "API key authentication is not allowed for this endpoint.",
+      details: null
+    });
+  }
 });
 
 test("migration 036 declares lifecycle events with RLS and safe issued-state wording", async () => {

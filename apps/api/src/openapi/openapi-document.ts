@@ -769,6 +769,35 @@ const openApiDocument = {
         }
       })
     },
+    "/invoices/{id}/export/ubl": {
+      post: bearerOperation({
+        tags: ["UBL"],
+        summary: "Export a production invoice as technical UBL 2.1 XML",
+        description:
+          "Generates a technical UBL 2.1 export from the tenant-scoped production invoice canonical record and stores safe invoice_exports metadata. This is structured invoice interoperability output only; it is not official validation, not Peppol-certified, not legal/tax/accounting advice, not official filing, and not authority acceptance.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        responses: {
+          "200": response(
+            "Generated technical UBL 2.1 XML and safe export metadata.",
+            ref("UblExportResponse")
+          ),
+          "404": errorResponse(
+            "Production invoice was not found in this workspace.",
+            "PRODUCTION_INVOICE_NOT_FOUND"
+          )
+        }
+      })
+    },
     "/invoices/{id}/transition": {
       post: bearerOperation({
         tags: ["Invoices"],
@@ -855,9 +884,9 @@ const openApiDocument = {
     "/invoices/export/ubl": {
       post: scopedApiKeyOperation({
         tags: ["UBL"],
-        summary: "Export a canonical invoice as UBL XML",
+        summary: "Export a canonical invoice as technical UBL 2.1 XML",
         description:
-          "Generates UBL Invoice XML from a canonical invoice payload and stores safe export metadata. Draft-only lookup is not available to organization API keys.",
+          "Generates a technical UBL 2.1 export from a canonical invoice payload and stores safe export metadata. Draft-only lookup is not available to organization API keys. This endpoint supports structured invoice interoperability only; it is not official validation, not Peppol-certified, not legal/tax/accounting advice, not official filing, and not authority acceptance.",
         scope: "invoices:export_ubl",
         requestBody: {
           required: true,
@@ -872,7 +901,7 @@ const openApiDocument = {
         },
         responses: {
           "200": {
-            description: "Generated UBL XML and safe export metadata.",
+            description: "Generated technical UBL 2.1 XML and safe export metadata.",
             headers: rateLimitHeaders,
             content: jsonContent(ref("UblExportResponse"))
           },
@@ -904,9 +933,9 @@ const openApiDocument = {
     "/invoices/parse/ubl": {
       post: scopedApiKeyOperation({
         tags: ["UBL"],
-        summary: "Parse UBL XML into the canonical invoice shape",
+        summary: "Parse UBL XML into the Invoice Lantern canonical model",
         description:
-          "Parses UBL XML into Invoice Lantern's canonical invoice shape and returns technical parser findings. The endpoint accepts raw XML with an XML content type or JSON with an xml string.",
+          "Parses UBL XML into the Invoice Lantern canonical invoice model and returns technical parser findings and warnings. The endpoint accepts raw XML with an XML content type or JSON with an xml string. Parsing is not official validation, not Peppol certification, not legal/tax/accounting advice, not official filing, and not authority acceptance.",
         scope: "invoices:parse_ubl",
         requestBody: {
           required: true,
@@ -2759,10 +2788,21 @@ const openApiDocument = {
           },
           readinessLabel: {
             type: "string",
-            example: "UBL export readiness"
+            example: "technical UBL 2.1 export"
           },
           exportId: {
             type: "string"
+          },
+          productionInvoiceId: {
+            type: "string",
+            format: "uuid"
+          },
+          invoiceNumber: {
+            type: "string"
+          },
+          invoiceType: {
+            type: "string",
+            enum: ["invoice", "credit_note"]
           },
           filename: {
             type: "string"
@@ -2804,6 +2844,10 @@ const openApiDocument = {
           metadata: ref("UblExportMetadata"),
           exportId: {
             type: "string"
+          },
+          productionInvoiceId: {
+            type: "string",
+            format: "uuid"
           },
           filename: {
             type: "string"

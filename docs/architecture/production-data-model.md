@@ -132,8 +132,10 @@ keys, private tokens, webhook secrets, or provider credentials.
 
 ## Remaining Work
 
-Step 6 should build the full invoice editor/studio UI on top of the production
-model and canonical lifecycle service without weakening RLS, draft preservation,
-decimal-string money logic, or legal disclaimers. Later steps still need broader
-UBL, CII, VIES, real Schematron, reviewed country packs, webhooks, admin/source
-console, legal-document, monitoring, and reporting work.
+Step 6 expands technical UBL 2.1 generation, parsing, import, export, warnings,
+and round-trip coverage on top of the production model and canonical lifecycle
+service without weakening RLS, draft preservation, decimal-string money logic,
+or legal disclaimers. It does not build the full invoice editor/studio UI.
+Later steps still need the real XML/XSD worker path, CII, VIES, real
+Schematron, reviewed country packs, webhooks, admin/source console,
+legal-document, monitoring, and reporting work.

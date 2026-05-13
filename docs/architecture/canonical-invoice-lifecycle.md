@@ -125,8 +125,12 @@ conclusion.
 
 ## Remaining For Step 6
 
-Step 6 should build the full invoice editor/studio UI on top of this canonical
-and production lifecycle layer. Step 5 does not complete the full editor,
-expand UBL coverage, implement CII, VIES, real Schematron, webhooks, reviewed
-country packs, admin rule/source consoles, legal-document systems, monitoring,
-or PDF report redesign.
+Step 6 expands technical UBL 2.1 generation, parsing, import, export, warnings,
+and round-trip coverage on top of this canonical and production lifecycle
+layer. It does not build the full invoice editor/studio UI and does not
+implement CII, VIES, real Schematron, webhooks, reviewed country packs, admin
+rule/source consoles, legal-document systems, monitoring, or PDF report
+redesign.
+
+Step 7 remains the real XML/XSD worker path. That work should keep using the
+canonical model as the boundary for generated or parsed invoice payloads.

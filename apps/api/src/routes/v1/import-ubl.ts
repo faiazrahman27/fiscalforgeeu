@@ -538,6 +538,29 @@ export async function importUblRoutes(app: FastifyInstance) {
         );
       }
 
+      if (parseResult.invoice.document.type !== "invoice") {
+        const totals = calculateInvoiceTotals(parseResult.invoice);
+        const creditNoteFinding = makeImportFinding({
+          code: "DRAFT_CREDIT_NOTE_IMPORT_UNSUPPORTED",
+          severity: "blocked",
+          fieldPath: "document.type",
+          message:
+            "CreditNote import-to-draft is not enabled in this technical sandbox step.",
+          fixSuggestion:
+            "Use UBL Invoice XML for editable draft import until dedicated CreditNote draft support is available."
+        });
+
+        return reply.status(422).send(
+          buildCreatedFalseResponse({
+            reason:
+              "The parsed document type is not supported for editable draft creation.",
+            detected: parseResult.detected,
+            findings: mergeFindings([...parseResult.findings, creditNoteFinding]),
+            totals
+          })
+        );
+      }
+
       const validationResult = validateCanonicalInvoice(parseResult.invoice);
       const validationFindings = validationResult.findings;
       const canonicalInvoice = validationResult.success
@@ -556,28 +579,6 @@ export async function importUblRoutes(app: FastifyInstance) {
               "The parsed invoice has blocked or fatal findings that must be fixed before creating an editable draft.",
             detected: parseResult.detected,
             findings,
-            totals
-          })
-        );
-      }
-
-      if (canonicalInvoice.document.type !== "invoice") {
-        const creditNoteFinding = makeImportFinding({
-          code: "DRAFT_CREDIT_NOTE_IMPORT_UNSUPPORTED",
-          severity: "blocked",
-          fieldPath: "document.type",
-          message:
-            "CreditNote import-to-draft is not enabled in this technical sandbox step.",
-          fixSuggestion:
-            "Use UBL Invoice XML for editable draft import until dedicated CreditNote draft support is available."
-        });
-
-        return reply.status(422).send(
-          buildCreatedFalseResponse({
-            reason:
-              "The parsed document type is not supported for editable draft creation.",
-            detected: parseResult.detected,
-            findings: mergeFindings([...findings, creditNoteFinding]),
             totals
           })
         );

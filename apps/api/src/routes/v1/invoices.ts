@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { canonicalToUblInvoiceXml } from "@invoice-lantern/ubl";
 import { requireSupabaseUser } from "../../middleware/require-api-key.js";
 import {
   WORKSPACE_ROLE_SETS,
@@ -24,7 +26,11 @@ import {
   transitionProductionInvoice,
   updateProductionInvoice
 } from "../../services/invoice-lifecycle-service.js";
+import { saveOrganizationInvoiceExportRecord } from "../../repositories/invoice-export-repository.js";
 import { formatZodError } from "../../utils/zod-error.js";
+
+const PRODUCTION_UBL_EXPORT_DISCLAIMER =
+  "Invoice Lantern generated this technical UBL 2.1 export from a production invoice canonical record. It is not official validation, not Peppol-certified, not legal/tax/accounting advice, not official filing, and not authority acceptance.";
 
 function sendError(
   reply: FastifyReply,
@@ -107,6 +113,21 @@ function sendNotFound(reply: FastifyReply) {
     code: "PRODUCTION_INVOICE_NOT_FOUND",
     message: "Production invoice was not found in this workspace."
   });
+}
+
+function sanitizeFilenamePart(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 80);
+
+  return cleaned || "invoice";
+}
+
+function calculateXmlSha256(xml: string) {
+  return createHash("sha256").update(xml, "utf8").digest("hex");
 }
 
 export async function invoiceRoutes(app: FastifyInstance) {
@@ -372,6 +393,113 @@ export async function invoiceRoutes(app: FastifyInstance) {
         return {
           record
         };
+      } catch (error) {
+        return sendInvoiceLifecycleError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/:id/export/ubl",
+    {
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceExporters, {
+          code: "PRODUCTION_INVOICE_EXPORT_ROLE_REQUIRED",
+          message:
+            "Production invoice UBL export requires an organization owner, admin, accountant, or developer role."
+        })
+      ]
+    },
+    async (request, reply) => {
+      const context = getWorkspaceAuthorizationContext(request, reply);
+
+      if (!context) {
+        return reply;
+      }
+
+      const parsedParams = productionInvoiceParamsSchema.safeParse(
+        request.params
+      );
+
+      if (!parsedParams.success) {
+        return sendValidationError(
+          reply,
+          "Production invoice ID failed schema validation.",
+          formatZodError(parsedParams.error)
+        );
+      }
+
+      try {
+        const record = await getProductionInvoice({
+          context,
+          id: parsedParams.data.id
+        });
+
+        if (!record) {
+          return sendNotFound(reply);
+        }
+
+        const xml = canonicalToUblInvoiceXml(record.canonicalInvoice);
+        const xmlSha256 = calculateXmlSha256(xml);
+        const xmlSizeBytes = Buffer.byteLength(xml, "utf8");
+        const filename = `invoice-lantern-ubl-${sanitizeFilenamePart(
+          record.invoiceNumber
+        )}.xml`;
+        const contentType = "application/xml; charset=utf-8";
+        const exportRecord = await saveOrganizationInvoiceExportRecord(
+          {
+            organizationId: context.organizationId,
+            userId: context.userId
+          },
+          {
+            invoiceDraftId: record.draftId,
+            validationRunId: null,
+            exportType: "ubl_invoice",
+            format: "xml",
+            profile: record.profile,
+            filename,
+            contentType,
+            xmlSha256,
+            xmlSizeBytes,
+            status: "generated",
+            disclaimer: PRODUCTION_UBL_EXPORT_DISCLAIMER
+          }
+        );
+
+        return reply.status(200).send({
+          xml,
+          metadata: {
+            exportId: exportRecord.id,
+            productionInvoiceId: record.id,
+            invoiceNumber: record.invoiceNumber,
+            invoiceType: record.invoiceType,
+            filename: exportRecord.filename,
+            contentType: exportRecord.contentType,
+            xmlSha256: exportRecord.xmlSha256,
+            xmlSizeBytes: exportRecord.xmlSizeBytes,
+            createdAt: exportRecord.createdAt,
+            status: exportRecord.status,
+            profile: exportRecord.profile,
+            readinessLabel: "technical UBL 2.1 export"
+          },
+          exportId: exportRecord.id,
+          productionInvoiceId: record.id,
+          filename: exportRecord.filename,
+          contentType: exportRecord.contentType,
+          xmlSha256: exportRecord.xmlSha256,
+          xmlSizeBytes: exportRecord.xmlSizeBytes,
+          createdAt: exportRecord.createdAt,
+          status: exportRecord.status,
+          profile: exportRecord.profile,
+          readinessStatus:
+            record.validationSummary.warningCount > 0
+              ? "generated_with_warnings"
+              : "generated",
+          totals: record.calculationSummary,
+          findings: record.validationSummary.findings,
+          disclaimer: PRODUCTION_UBL_EXPORT_DISCLAIMER
+        });
       } catch (error) {
         return sendInvoiceLifecycleError(reply, error);
       }
