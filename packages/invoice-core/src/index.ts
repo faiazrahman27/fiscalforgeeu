@@ -89,6 +89,7 @@ export type InvoiceMoneyTotals = {
   lineExtensionAmount: string;
   taxExclusiveAmount: string;
   taxAmount: string;
+  taxTotalAmount: string;
   taxInclusiveAmount: string;
   allowanceTotalAmount?: string;
   chargeTotalAmount?: string;
@@ -104,6 +105,8 @@ export type CalculatedInvoiceLine = {
   quantity: string;
   unitCode: string;
   unitPrice: string;
+  discountAmount: string;
+  chargeAmount: string;
   vatCategory: string;
   vatRate: string;
   netAmount: string;
@@ -117,9 +120,20 @@ export type CalculatedTaxSubtotal = {
   taxAmount: string;
 };
 
+export type CalculatedTaxBreakdown = {
+  taxCategory: string;
+  taxScheme: string;
+  vatRate: string;
+  taxableAmount: string;
+  taxAmount: string;
+  exemptionReason?: string;
+  exemptionReasonCode?: string;
+};
+
 export type InvoiceCalculationResult = {
   lines: CalculatedInvoiceLine[];
   taxSubtotals: CalculatedTaxSubtotal[];
+  taxBreakdown: CalculatedTaxBreakdown[];
   totals: InvoiceMoneyTotals;
 };
 
@@ -200,17 +214,17 @@ const CORE_VALIDATION_RULE_METADATA = {
     messageTemplate: "Document number is required for invoice validation readiness.",
     fixSuggestion: "Add the invoice document number before validation or export."
   }),
-  DOCUMENT_ISSUE_DATE_RECOMMENDED: coreRule({
-    code: "DOCUMENT_ISSUE_DATE_RECOMMENDED",
-    title: "Document issue date recommended",
+  DOCUMENT_ISSUE_DATE_REQUIRED: coreRule({
+    code: "DOCUMENT_ISSUE_DATE_REQUIRED",
+    title: "Document issue date required",
     description:
-      "An issue date is strongly recommended for invoice readiness review and downstream XML/export workflows.",
+      "An issue date is required for invoice lifecycle, calculation, and downstream XML/export readiness review.",
     category: "CANONICAL",
-    severity: "warning",
+    severity: "fatal",
     fieldPath: "document.issueDate",
     messageTemplate:
-      "Document issue date is missing. Add an issue date before operational use.",
-    fixSuggestion: "Add the invoice issue date in YYYY-MM-DD format where possible."
+      "Document issue date is required for invoice lifecycle readiness.",
+    fixSuggestion: "Add the invoice issue date in YYYY-MM-DD format."
   }),
   DUE_DATE_BEFORE_ISSUE_DATE: coreRule({
     code: "DUE_DATE_BEFORE_ISSUE_DATE",
@@ -324,6 +338,17 @@ const CORE_VALIDATION_RULE_METADATA = {
     fieldPath: "lines.{index}.unitPrice",
     messageTemplate: "Line {lineLabel} unit price must be zero or greater.",
     fixSuggestion: "Use a non-negative decimal unit price."
+  }),
+  LINE_UNIT_CODE_REQUIRED: coreRule({
+    code: "LINE_UNIT_CODE_REQUIRED",
+    title: "Line unit code required",
+    description:
+      "Each invoice line needs a unit code so quantities can be interpreted consistently by later export and validation steps.",
+    category: "CANONICAL",
+    severity: "fatal",
+    fieldPath: "lines.{index}.unitCode",
+    messageTemplate: "Line {lineLabel} requires a unit code.",
+    fixSuggestion: "Add a unit code such as EA, HUR, KGM, or another reviewed unit code."
   }),
   LINE_VAT_CATEGORY_RECOMMENDED: coreRule({
     code: "LINE_VAT_CATEGORY_RECOMMENDED",
@@ -444,7 +469,7 @@ const CORE_VALIDATION_RULE_METADATA = {
       "A supplied tax subtotal should match a calculated VAT category and rate group from invoice lines.",
     category: "CALCULATION",
     severity: "warning",
-    fieldPath: "taxSubtotals.{index}",
+    fieldPath: "taxBreakdown.{index}",
     messageTemplate:
       "Tax subtotal {lineLabel} does not match any calculated line VAT category and rate group.",
     fixSuggestion:
@@ -457,7 +482,7 @@ const CORE_VALIDATION_RULE_METADATA = {
       "A supplied tax subtotal taxable amount should match the calculated taxable amount for its VAT category and rate.",
     category: "CALCULATION",
     severity: "fatal",
-    fieldPath: "taxSubtotals.{index}.taxableAmount",
+    fieldPath: "taxBreakdown.{index}.taxableAmount",
     messageTemplate:
       "Tax subtotal {lineLabel} taxable amount does not match calculated line totals."
   }),
@@ -468,7 +493,7 @@ const CORE_VALIDATION_RULE_METADATA = {
       "A supplied tax subtotal tax amount should match the calculated tax amount for its VAT category and rate.",
     category: "CALCULATION",
     severity: "fatal",
-    fieldPath: "taxSubtotals.{index}.taxAmount",
+    fieldPath: "taxBreakdown.{index}.taxAmount",
     messageTemplate:
       "Tax subtotal {lineLabel} tax amount does not match calculated line tax totals."
   }),
@@ -578,6 +603,48 @@ export function isDecimalString(value: unknown): value is string {
   return typeof value === "string" && DECIMAL_STRING_PATTERN.test(value.trim());
 }
 
+function isBoundedDecimalString(value: string) {
+  if (!isDecimalString(value)) {
+    return false;
+  }
+
+  try {
+    return new Decimal(value).abs().lte("999999999999999.999999");
+  } catch {
+    return false;
+  }
+}
+
+function isDateOnlyString(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!DATE_ONLY_PATTERN.test(trimmedValue)) {
+    return false;
+  }
+
+  const [rawYear, rawMonth, rawDay] = trimmedValue.split("-");
+  const year = Number(rawYear);
+  const month = Number(rawMonth);
+  const day = Number(rawDay);
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
+    return false;
+  }
+
+  const timestamp = Date.UTC(year, month - 1, day);
+  const date = new Date(timestamp);
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 const textSchema = (maxLength: number) =>
   z.preprocess(normalizeTextInput, z.string().trim().max(maxLength));
 
@@ -591,8 +658,8 @@ const decimalStringSchema = z.preprocess(
     .trim()
     .max(64)
     .refine(
-      (value) => value === "" || isDecimalString(value),
-      "Value must be blank or a decimal string"
+      (value) => value === "" || isBoundedDecimalString(value),
+      "Value must be blank or a bounded decimal string"
     )
 );
 
@@ -602,7 +669,7 @@ const optionalDecimalStringSchema = z.preprocess(
     .string()
     .trim()
     .max(64)
-    .refine(isDecimalString, "Value must be a decimal string")
+    .refine(isBoundedDecimalString, "Value must be a bounded decimal string")
     .optional()
 );
 
@@ -626,84 +693,386 @@ const countrySchema = z
     "Country must be blank or a 2-letter ISO-style code"
   );
 
-const partySchema = z.object({
-  name: textSchema(160),
-  country: countrySchema,
-  vatId: optionalTextSchema(32).transform((value) => value.toUpperCase()),
-  city: optionalTextSchema(120),
-  postalCode: optionalTextSchema(32),
-  street: optionalTextSchema(180),
-  region: optionalTextSchema(120),
-  electronicAddress: optionalTextSchema(160)
-});
-
-const documentSchema = z.preprocess(
-  (value) => {
-    if (!isRecord(value)) {
-      return value;
-    }
-
-    return {
-      ...value,
-      type: value.type ?? value.invoiceType ?? "invoice"
-    };
-  },
-  z.object({
-    type: z.enum(["invoice", "credit_note"]).default("invoice"),
-    number: textSchema(80),
-    currency: currencySchema,
-    issueDate: optionalTextSchema(32),
-    dueDate: optionalTextSchema(32),
-    profile: optionalTextSchema(40),
-    buyerReference: optionalTextSchema(120),
-    contractReference: optionalTextSchema(120)
-  })
+const dateOnlyTextSchema = textSchema(32).refine(
+  (value) => value === "" || isDateOnlyString(value),
+  "Date must be blank or a valid ISO date string in YYYY-MM-DD format"
 );
 
-const invoiceLineSchema = z.object({
-  id: optionalTextSchema(80),
-  description: textSchema(280),
-  quantity: decimalStringSchema,
-  unitCode: optionalTextSchema(12).transform((value) => value.toUpperCase()),
-  unitPrice: decimalStringSchema,
-  vatCategory: optionalTextSchema(12).transform((value) => value.toUpperCase()),
-  vatRate: decimalStringSchema,
-  netAmount: optionalDecimalStringSchema,
-  taxAmount: optionalDecimalStringSchema
-});
+const profileSchema = z.enum(["EN16931", "PEPPOL_BIS_3", "COUNTRY_PACK"]);
+
+export const CANONICAL_INVOICE_LEGAL_DISCLAIMER =
+  "Invoice Lantern stores canonical invoice data as an independent technical validation and readiness sandbox record. Results are informational only and are not legal, tax, accounting, financial, professional, official filing, authority acceptance, Peppol certification, EN 16931 certification, or compliance advice.";
+
+function normalizeOptionalStringAlias(
+  primary: unknown,
+  fallback: unknown,
+  defaultValue = ""
+) {
+  if (typeof primary === "string" && primary.trim().length > 0) {
+    return primary;
+  }
+
+  if (typeof fallback === "string" && fallback.trim().length > 0) {
+    return fallback;
+  }
+
+  return primary ?? fallback ?? defaultValue;
+}
+
+function normalizePartyInput(value: unknown) {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const address = isRecord(value.address) ? value.address : {};
+  const country = normalizeOptionalStringAlias(value.country, address.country);
+  const street = normalizeOptionalStringAlias(value.street, address.street);
+  const additionalStreet = normalizeOptionalStringAlias(
+    value.additionalStreet,
+    address.additionalStreet
+  );
+  const city = normalizeOptionalStringAlias(value.city, address.city);
+  const postalCode = normalizeOptionalStringAlias(
+    value.postalCode,
+    address.postalCode
+  );
+  const region = normalizeOptionalStringAlias(value.region, address.region);
+
+  return {
+    ...value,
+    country,
+    street,
+    additionalStreet,
+    city,
+    postalCode,
+    region,
+    address: {
+      ...address,
+      street,
+      additionalStreet,
+      city,
+      postalCode,
+      region,
+      country: normalizeOptionalStringAlias(address.country, country)
+    }
+  };
+}
+
+function normalizeDocumentInput(value: unknown) {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const { invoiceType, ...document } = value;
+
+  return {
+    ...document,
+    type: document.type ?? invoiceType ?? "invoice"
+  };
+}
+
+function normalizeProfileInput(value: unknown) {
+  if (value === "EN16931" || value === "PEPPOL_BIS_3" || value === "COUNTRY_PACK") {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return "EN16931";
+  }
+
+  const normalized = value.toLowerCase();
+
+  if (normalized.includes("peppol")) {
+    return "PEPPOL_BIS_3";
+  }
+
+  if (normalized.includes("en16931") || normalized.includes("en 16931")) {
+    return "EN16931";
+  }
+
+  if (normalized.includes("country_pack")) {
+    return "COUNTRY_PACK";
+  }
+
+  return "EN16931";
+}
+
+function normalizeTaxBreakdownInput(value: unknown) {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    taxCategory: value.taxCategory ?? value.vatCategory ?? "",
+    vatCategory: value.vatCategory ?? value.taxCategory ?? ""
+  };
+}
+
+function normalizeCanonicalInvoiceInput(value: unknown) {
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const document = isRecord(value.document) ? value.document : {};
+  const totals = isRecord(value.totals) ? value.totals : {};
+  const profile = normalizeProfileInput(value.profile ?? document.profile);
+  const taxBreakdown = value.taxBreakdown ?? value.taxSubtotals ?? [];
+  const taxSubtotals = value.taxSubtotals ?? taxBreakdown;
+  const taxTotalAmount = totals.taxTotalAmount ?? totals.taxAmount;
+  const taxAmount = totals.taxAmount ?? totals.taxTotalAmount;
+  const normalizedDocument = normalizeDocumentInput(document);
+
+  return {
+    ...value,
+    profile,
+    document: {
+      ...(isRecord(normalizedDocument) ? normalizedDocument : {}),
+      profile
+    },
+    seller: normalizePartyInput(value.seller),
+    buyer: normalizePartyInput(value.buyer),
+    totals: {
+      ...totals,
+      taxAmount,
+      taxTotalAmount
+    },
+    taxBreakdown,
+    taxSubtotals
+  };
+}
+
+const addressSchema = z
+  .object({
+    street: optionalTextSchema(180),
+    additionalStreet: optionalTextSchema(180),
+    city: optionalTextSchema(120),
+    postalCode: optionalTextSchema(32),
+    region: optionalTextSchema(120),
+    country: countrySchema
+  })
+  .strict();
+
+const partySchema = z
+  .preprocess(
+    normalizePartyInput,
+    z
+      .object({
+        name: textSchema(160),
+        legalName: optionalTextSchema(240),
+        country: countrySchema,
+        vatId: optionalTextSchema(32).transform((value) => value.toUpperCase()),
+        taxRegistrationNumber: optionalTextSchema(120),
+        electronicAddress: optionalTextSchema(160),
+        electronicAddressScheme: optionalTextSchema(40),
+        email: optionalTextSchema(320),
+        phone: optionalTextSchema(80),
+        address: addressSchema,
+        city: optionalTextSchema(120),
+        postalCode: optionalTextSchema(32),
+        street: optionalTextSchema(180),
+        additionalStreet: optionalTextSchema(180),
+        region: optionalTextSchema(120)
+      })
+      .strict()
+  );
+
+const documentSchema = z.preprocess(
+  normalizeDocumentInput,
+  z
+    .object({
+      type: z.enum(["invoice", "credit_note"]).default("invoice"),
+      number: textSchema(80),
+      issueDate: dateOnlyTextSchema,
+      dueDate: dateOnlyTextSchema.optional().default(""),
+      taxPointDate: dateOnlyTextSchema.optional().default(""),
+      currency: currencySchema,
+      profile: profileSchema.optional().default("EN16931"),
+      buyerReference: optionalTextSchema(120),
+      contractReference: optionalTextSchema(120),
+      orderReference: optionalTextSchema(120),
+      projectReference: optionalTextSchema(120),
+      accountingCost: optionalTextSchema(120)
+    })
+    .strict()
+);
+
+const invoiceLineSchema = z
+  .object({
+    id: optionalTextSchema(80),
+    description: textSchema(1000),
+    itemName: optionalTextSchema(240),
+    quantity: decimalStringSchema,
+    unitCode: optionalTextSchema(24).transform((value) => value.toUpperCase()),
+    unitPrice: decimalStringSchema,
+    discountAmount: optionalDecimalStringSchema,
+    chargeAmount: optionalDecimalStringSchema,
+    netAmount: optionalDecimalStringSchema,
+    taxAmount: optionalDecimalStringSchema,
+    vatCategory: optionalTextSchema(40).transform((value) => value.toUpperCase()),
+    vatRate: decimalStringSchema,
+    accountingCost: optionalTextSchema(120),
+    orderLineReference: optionalTextSchema(120)
+  })
+  .strict();
 
 const invoiceTotalsSchema = z
   .object({
     lineExtensionAmount: optionalDecimalStringSchema,
-    taxExclusiveAmount: optionalDecimalStringSchema,
-    taxAmount: optionalDecimalStringSchema,
-    taxInclusiveAmount: optionalDecimalStringSchema,
     allowanceTotalAmount: optionalDecimalStringSchema,
     chargeTotalAmount: optionalDecimalStringSchema,
+    taxExclusiveAmount: optionalDecimalStringSchema,
+    taxAmount: optionalDecimalStringSchema,
+    taxTotalAmount: optionalDecimalStringSchema,
+    taxInclusiveAmount: optionalDecimalStringSchema,
     prepaidAmount: optionalDecimalStringSchema,
     payableRoundingAmount: optionalDecimalStringSchema,
     payableAmount: optionalDecimalStringSchema
   })
+  .strict()
   .optional()
   .default({});
 
-const invoiceTaxSubtotalSchema = z.object({
-  taxableAmount: optionalDecimalStringSchema,
-  taxAmount: optionalDecimalStringSchema,
-  vatCategory: optionalTextSchema(12).transform((value) => value.toUpperCase()),
-  vatRate: decimalStringSchema
-});
+const invoiceAdjustmentSchema = z
+  .object({
+    id: optionalTextSchema(80),
+    scope: z.enum(["document", "line"]),
+    lineId: optionalTextSchema(80),
+    reason: optionalTextSchema(500),
+    reasonCode: optionalTextSchema(80),
+    amount: decimalStringSchema,
+    baseAmount: optionalDecimalStringSchema,
+    percentage: optionalDecimalStringSchema,
+    taxCategory: optionalTextSchema(40).transform((value) => value.toUpperCase()),
+    vatRate: optionalDecimalStringSchema
+  })
+  .strict();
 
-export const canonicalInvoiceSchema = z.object({
-  document: documentSchema,
-  seller: partySchema,
-  buyer: partySchema,
-  lines: z.array(invoiceLineSchema).max(200),
-  taxSubtotals: z.array(invoiceTaxSubtotalSchema).max(100).optional().default([]),
-  totals: invoiceTotalsSchema
-});
+const invoiceTaxBreakdownSchema = z.preprocess(
+  normalizeTaxBreakdownInput,
+  z
+    .object({
+      taxCategory: optionalTextSchema(40).transform((value) =>
+        value.toUpperCase()
+      ),
+      taxScheme: optionalTextSchema(40).transform((value) =>
+        value ? value.toUpperCase() : "VAT"
+      ),
+      vatCategory: optionalTextSchema(40).transform((value) =>
+        value.toUpperCase()
+      ),
+      vatRate: decimalStringSchema,
+      taxableAmount: optionalDecimalStringSchema,
+      taxAmount: optionalDecimalStringSchema,
+      exemptionReason: optionalTextSchema(500),
+      exemptionReasonCode: optionalTextSchema(80)
+    })
+    .strict()
+);
+
+const deliverySchema = z
+  .object({
+    deliveryDate: dateOnlyTextSchema.optional().default(""),
+    locationId: optionalTextSchema(120),
+    country: countrySchema.optional().default(""),
+    address: addressSchema.optional()
+  })
+  .strict()
+  .optional();
+
+const paymentSchema = z
+  .object({
+    paymentMeansCode: optionalTextSchema(40),
+    paymentReference: optionalTextSchema(120),
+    terms: optionalTextSchema(2000),
+    dueDate: dateOnlyTextSchema.optional().default(""),
+    accountLabel: optionalTextSchema(120),
+    accountLast4: optionalTextSchema(4)
+  })
+  .strict()
+  .optional();
+
+const canonicalMetadataSchema = z
+  .record(z.string(), z.unknown())
+  .optional()
+  .default({});
+
+const legalSchema = z
+  .object({
+    legalConfidence: z
+      .enum([
+        "technical",
+        "standard_based",
+        "official_source_derived",
+        "educational_simulation",
+        "professional_review_required"
+      ])
+      .default("technical"),
+    disclaimer: textSchema(2000).default(CANONICAL_INVOICE_LEGAL_DISCLAIMER)
+  })
+  .strict()
+  .optional()
+  .default({
+    legalConfidence: "technical",
+    disclaimer: CANONICAL_INVOICE_LEGAL_DISCLAIMER
+  });
+
+export const canonicalInvoiceSchema = z
+  .preprocess(
+    normalizeCanonicalInvoiceInput,
+    z
+      .object({
+        profile: profileSchema.default("EN16931"),
+        document: documentSchema,
+        seller: partySchema,
+        buyer: partySchema,
+        delivery: deliverySchema,
+        payment: paymentSchema,
+        lines: z.array(invoiceLineSchema).max(500),
+        allowances: z.array(invoiceAdjustmentSchema).max(500).optional().default([]),
+        charges: z.array(invoiceAdjustmentSchema).max(500).optional().default([]),
+        taxBreakdown: z
+          .array(invoiceTaxBreakdownSchema)
+          .max(500)
+          .optional()
+          .default([]),
+        taxSubtotals: z
+          .array(invoiceTaxBreakdownSchema)
+          .max(500)
+          .optional()
+          .default([]),
+        totals: invoiceTotalsSchema,
+        metadata: canonicalMetadataSchema,
+        legal: legalSchema
+      })
+      .strict()
+  )
+  .transform((invoice) => {
+    const taxBreakdown =
+      invoice.taxBreakdown.length > 0 ? invoice.taxBreakdown : invoice.taxSubtotals;
+    const taxSubtotals =
+      invoice.taxSubtotals.length > 0 ? invoice.taxSubtotals : taxBreakdown;
+    const taxTotalAmount = invoice.totals.taxTotalAmount ?? invoice.totals.taxAmount;
+    const taxAmount = invoice.totals.taxAmount ?? invoice.totals.taxTotalAmount;
+
+    return {
+      ...invoice,
+      document: {
+        ...invoice.document,
+        profile: invoice.profile
+      },
+      taxBreakdown,
+      taxSubtotals,
+      totals: {
+        ...invoice.totals,
+        taxAmount,
+        taxTotalAmount
+      }
+    };
+  });
 
 export type CanonicalInvoice = z.infer<typeof canonicalInvoiceSchema>;
+export type CanonicalInvoiceInput = z.input<typeof canonicalInvoiceSchema>;
 
 export type CanonicalInvoiceValidationResult =
   | {
@@ -737,8 +1106,16 @@ function toRateKey(value: string) {
   return decimalOrZero(value).toDecimalPlaces(6, MONEY_ROUNDING).toString();
 }
 
-function toTaxGroupKey(input: { vatCategory: string; vatRate: string }) {
-  return `${input.vatCategory || "UNSPECIFIED"}::${toRateKey(input.vatRate)}`;
+function getTaxCategory(input: { taxCategory?: string; vatCategory?: string }) {
+  return input.taxCategory || input.vatCategory || "UNSPECIFIED";
+}
+
+function toTaxGroupKey(input: {
+  taxCategory?: string;
+  vatCategory?: string;
+  vatRate: string;
+}) {
+  return `${getTaxCategory(input)}::${toRateKey(input.vatRate)}`;
 }
 
 function amountsMatch(first: string, second: string) {
@@ -811,10 +1188,11 @@ function parseDateOnly(value: string) {
 }
 
 function findCalculatedTaxSubtotal(
-  calculatedSubtotals: readonly CalculatedTaxSubtotal[],
+  calculatedSubtotals: readonly CalculatedTaxBreakdown[],
   subtotal: CanonicalInvoice["taxSubtotals"][number]
 ) {
   const key = toTaxGroupKey({
+    taxCategory: subtotal.taxCategory,
     vatCategory: subtotal.vatCategory,
     vatRate: subtotal.vatRate
   });
@@ -823,7 +1201,7 @@ function findCalculatedTaxSubtotal(
     calculatedSubtotals.find(
       (calculatedSubtotal) =>
         toTaxGroupKey({
-          vatCategory: calculatedSubtotal.vatCategory,
+          taxCategory: calculatedSubtotal.taxCategory,
           vatRate: calculatedSubtotal.vatRate
         }) === key
     ) ?? null
@@ -836,7 +1214,11 @@ export function calculateInvoiceTotals(
   const calculatedLines = invoice.lines.map((line, index) => {
     const quantity = decimalOrZero(line.quantity);
     const unitPrice = decimalOrZero(line.unitPrice);
-    const netAmount = toMoney(quantity.mul(unitPrice));
+    const discountAmount = decimalOrZero(line.discountAmount);
+    const chargeAmount = decimalOrZero(line.chargeAmount);
+    const netAmount = toMoney(
+      quantity.mul(unitPrice).minus(discountAmount).plus(chargeAmount)
+    );
     const taxAmount = toMoney(
       decimalOrZero(netAmount).mul(decimalOrZero(line.vatRate)).div(100)
     );
@@ -848,6 +1230,8 @@ export function calculateInvoiceTotals(
       quantity: line.quantity,
       unitCode: line.unitCode,
       unitPrice: line.unitPrice,
+      discountAmount: toMoney(discountAmount),
+      chargeAmount: toMoney(chargeAmount),
       vatCategory: line.vatCategory,
       vatRate: line.vatRate,
       netAmount,
@@ -860,8 +1244,26 @@ export function calculateInvoiceTotals(
     new Decimal(0)
   );
 
-  const allowanceTotalAmount = decimalOrZero(invoice.totals.allowanceTotalAmount);
-  const chargeTotalAmount = decimalOrZero(invoice.totals.chargeTotalAmount);
+  const documentAllowances = invoice.allowances.filter(
+    (allowance) => allowance.scope === "document"
+  );
+  const documentCharges = invoice.charges.filter(
+    (charge) => charge.scope === "document"
+  );
+  const allowanceTotalAmount =
+    documentAllowances.length > 0
+      ? documentAllowances.reduce(
+          (sum, allowance) => sum.plus(decimalOrZero(allowance.amount)),
+          new Decimal(0)
+        )
+      : decimalOrZero(invoice.totals.allowanceTotalAmount);
+  const chargeTotalAmount =
+    documentCharges.length > 0
+      ? documentCharges.reduce(
+          (sum, charge) => sum.plus(decimalOrZero(charge.amount)),
+          new Decimal(0)
+        )
+      : decimalOrZero(invoice.totals.chargeTotalAmount);
   const prepaidAmount = decimalOrZero(invoice.totals.prepaidAmount);
   const payableRoundingAmount = decimalOrZero(
     invoice.totals.payableRoundingAmount
@@ -871,23 +1273,15 @@ export function calculateInvoiceTotals(
     .minus(allowanceTotalAmount)
     .plus(chargeTotalAmount);
 
-  const taxAmount = calculatedLines.reduce(
-    (sum, line) => sum.plus(line.taxAmount),
-    new Decimal(0)
-  );
-
-  const taxInclusiveAmount = taxExclusiveAmount.plus(taxAmount);
-  const payableAmount = taxInclusiveAmount
-    .minus(prepaidAmount)
-    .plus(payableRoundingAmount);
-
   const taxSubtotalMap = new Map<
     string,
     {
-      vatCategory: string;
+      taxCategory: string;
+      taxScheme: string;
       vatRate: string;
       taxableAmount: Decimal;
-      taxAmount: Decimal;
+      exemptionReason?: string;
+      exemptionReasonCode?: string;
     }
   >();
 
@@ -897,22 +1291,108 @@ export function calculateInvoiceTotals(
 
     if (existing) {
       existing.taxableAmount = existing.taxableAmount.plus(line.netAmount);
-      existing.taxAmount = existing.taxAmount.plus(line.taxAmount);
       continue;
     }
 
     taxSubtotalMap.set(key, {
-      vatCategory: line.vatCategory,
+      taxCategory: line.vatCategory,
+      taxScheme: "VAT",
       vatRate: line.vatRate,
-      taxableAmount: decimalOrZero(line.netAmount),
-      taxAmount: decimalOrZero(line.taxAmount)
+      taxableAmount: decimalOrZero(line.netAmount)
     });
   }
+
+  for (const allowance of documentAllowances) {
+    if (!allowance.taxCategory || !allowance.vatRate) {
+      continue;
+    }
+
+    const key = toTaxGroupKey({
+      taxCategory: allowance.taxCategory,
+      vatRate: allowance.vatRate
+    });
+    const existing = taxSubtotalMap.get(key);
+
+    if (existing) {
+      existing.taxableAmount = existing.taxableAmount.minus(
+        decimalOrZero(allowance.amount)
+      );
+      continue;
+    }
+
+    taxSubtotalMap.set(key, {
+      taxCategory: allowance.taxCategory,
+      taxScheme: "VAT",
+      vatRate: allowance.vatRate,
+      taxableAmount: decimalOrZero(allowance.amount).negated()
+    });
+  }
+
+  for (const charge of documentCharges) {
+    if (!charge.taxCategory || !charge.vatRate) {
+      continue;
+    }
+
+    const key = toTaxGroupKey({
+      taxCategory: charge.taxCategory,
+      vatRate: charge.vatRate
+    });
+    const existing = taxSubtotalMap.get(key);
+
+    if (existing) {
+      existing.taxableAmount = existing.taxableAmount.plus(
+        decimalOrZero(charge.amount)
+      );
+      continue;
+    }
+
+    taxSubtotalMap.set(key, {
+      taxCategory: charge.taxCategory,
+      taxScheme: "VAT",
+      vatRate: charge.vatRate,
+      taxableAmount: decimalOrZero(charge.amount)
+    });
+  }
+
+  const taxBreakdown = [...taxSubtotalMap.values()].map((subtotal) => {
+    const taxableAmount = toMoney(subtotal.taxableAmount);
+    const taxAmount = toMoney(
+      decimalOrZero(taxableAmount).mul(decimalOrZero(subtotal.vatRate)).div(100)
+    );
+    const breakdown: CalculatedTaxBreakdown = {
+      taxCategory: subtotal.taxCategory,
+      taxScheme: subtotal.taxScheme,
+      vatRate: subtotal.vatRate,
+      taxableAmount,
+      taxAmount
+    };
+
+    if (subtotal.exemptionReason) {
+      breakdown.exemptionReason = subtotal.exemptionReason;
+    }
+
+    if (subtotal.exemptionReasonCode) {
+      breakdown.exemptionReasonCode = subtotal.exemptionReasonCode;
+    }
+
+    return breakdown;
+  });
+
+  const taxAmount = taxBreakdown.reduce(
+    (sum, subtotal) => sum.plus(subtotal.taxAmount),
+    new Decimal(0)
+  );
+
+  const taxInclusiveAmount = taxExclusiveAmount.plus(taxAmount);
+  const payableAmount = taxInclusiveAmount
+    .minus(prepaidAmount)
+    .plus(payableRoundingAmount);
 
   const totals: InvoiceMoneyTotals = {
     lineExtensionAmount: toMoney(lineExtensionAmount),
     taxExclusiveAmount: toMoney(taxExclusiveAmount),
     taxAmount: toMoney(taxAmount),
+    taxTotalAmount: toMoney(taxAmount),
     taxInclusiveAmount: toMoney(taxInclusiveAmount),
     payableAmount: toMoney(payableAmount)
   };
@@ -935,12 +1415,13 @@ export function calculateInvoiceTotals(
 
   return {
     lines: calculatedLines,
-    taxSubtotals: [...taxSubtotalMap.values()].map((subtotal) => ({
-      vatCategory: subtotal.vatCategory,
+    taxSubtotals: taxBreakdown.map((subtotal) => ({
+      vatCategory: subtotal.taxCategory,
       vatRate: subtotal.vatRate,
-      taxableAmount: toMoney(subtotal.taxableAmount),
-      taxAmount: toMoney(subtotal.taxAmount)
+      taxableAmount: subtotal.taxableAmount,
+      taxAmount: subtotal.taxAmount
     })),
+    taxBreakdown,
     totals
   };
 }
@@ -968,13 +1449,13 @@ export function buildCoreValidationFindings(
   if (!hasRequiredText(invoice.document.issueDate)) {
     findings.push(
       makeFinding({
-        code: "DOCUMENT_ISSUE_DATE_RECOMMENDED",
-        severity: "warning",
+        code: "DOCUMENT_ISSUE_DATE_REQUIRED",
+        severity: "fatal",
         category: "CANONICAL",
         fieldPath: "document.issueDate",
         message:
-          "Document issue date is missing. Add an issue date before operational use.",
-        fixSuggestion: "Add the invoice issue date in YYYY-MM-DD format where possible.",
+          "Document issue date is required for invoice lifecycle readiness.",
+        fixSuggestion: "Add the invoice issue date in YYYY-MM-DD format.",
         legalConfidence: "technical"
       })
     );
@@ -1037,7 +1518,7 @@ export function buildCoreValidationFindings(
         code: "SELLER_COUNTRY_REQUIRED",
         severity: "fatal",
         category: "CANONICAL",
-        fieldPath: "seller.country",
+        fieldPath: "seller.address.country",
         message: "Seller country is required in the canonical invoice model.",
         fixSuggestion: "Add the seller country code.",
         legalConfidence: "technical"
@@ -1065,7 +1546,7 @@ export function buildCoreValidationFindings(
         code: "BUYER_COUNTRY_REQUIRED",
         severity: "fatal",
         category: "CANONICAL",
-        fieldPath: "buyer.country",
+        fieldPath: "buyer.address.country",
         message: "Buyer country is required in the canonical invoice model.",
         fixSuggestion: "Add the buyer country code.",
         legalConfidence: "technical"
@@ -1129,6 +1610,21 @@ export function buildCoreValidationFindings(
           fieldPath: `${fieldPrefix}.unitPrice`,
           message: `Line ${lineLabel} unit price must be zero or greater.`,
           fixSuggestion: "Use a non-negative decimal unit price.",
+          legalConfidence: "technical"
+        })
+      );
+    }
+
+    if (!hasRequiredText(line.unitCode)) {
+      findings.push(
+        makeFinding({
+          code: "LINE_UNIT_CODE_REQUIRED",
+          severity: "fatal",
+          category: "CANONICAL",
+          fieldPath: `${fieldPrefix}.unitCode`,
+          message: `Line ${lineLabel} requires a unit code.`,
+          fixSuggestion:
+            "Add a unit code such as EA, HUR, KGM, or another reviewed unit code.",
           legalConfidence: "technical"
         })
       );
@@ -1269,9 +1765,9 @@ export function buildCoreValidationFindings(
   }
 
   if (
-    invoice.totals.taxAmount !== undefined &&
+    (invoice.totals.taxTotalAmount ?? invoice.totals.taxAmount) !== undefined &&
     !amountsMatch(
-      toComparableMoney(invoice.totals.taxAmount),
+      toComparableMoney(invoice.totals.taxTotalAmount ?? invoice.totals.taxAmount),
       calculations.totals.taxAmount
     )
   ) {
@@ -1280,7 +1776,7 @@ export function buildCoreValidationFindings(
         code: "TAX_AMOUNT_MISMATCH",
         severity: "fatal",
         category: "CALCULATION",
-        fieldPath: "totals.taxAmount",
+        fieldPath: "totals.taxTotalAmount",
         message: "Tax amount does not match the sum of calculated line VAT amounts.",
         fixSuggestion: `Use ${calculations.totals.taxAmount} as the calculated tax amount or review line VAT rates.`,
         legalConfidence: "technical"
@@ -1329,16 +1825,18 @@ export function buildCoreValidationFindings(
     );
   }
 
-  invoice.taxSubtotals.forEach((subtotal, index) => {
+  invoice.taxBreakdown.forEach((subtotal, index) => {
     const subtotalLabel =
-      subtotal.vatCategory || subtotal.vatRate
-        ? `${subtotal.vatCategory || "UNSPECIFIED"} ${subtotal.vatRate || "0"}%`
+      subtotal.taxCategory || subtotal.vatCategory || subtotal.vatRate
+        ? `${subtotal.taxCategory || subtotal.vatCategory || "UNSPECIFIED"} ${
+            subtotal.vatRate || "0"
+          }%`
         : String(index + 1);
     const calculatedSubtotal = findCalculatedTaxSubtotal(
-      calculations.taxSubtotals,
+      calculations.taxBreakdown,
       subtotal
     );
-    const fieldPrefix = `taxSubtotals.${index}`;
+    const fieldPrefix = `taxBreakdown.${index}`;
 
     if (!calculatedSubtotal) {
       findings.push(

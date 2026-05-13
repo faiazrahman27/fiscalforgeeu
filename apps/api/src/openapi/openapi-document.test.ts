@@ -327,6 +327,11 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/api-requests/summary",
     "/api-usage/policies",
     "/api-usage/current",
+    "/invoices",
+    "/invoices/from-draft",
+    "/invoices/{id}",
+    "/invoices/{id}/transition",
+    "/invoices/{id}/lifecycle-events",
     "/invoices/validate",
     "/invoices/export/ubl",
     "/invoices/parse/ubl",
@@ -350,6 +355,75 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
   assert.equal(paths["/invoices/import/ubl"], undefined);
   assert.doesNotMatch(documentedPathNames, /vies/);
   assert.doesNotMatch(documentedPathNames, /webhook/);
+});
+
+test("OpenAPI documents production invoice lifecycle endpoints and safe boundaries", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+  const invoiceList = JSON.stringify(readRecord(paths, "/invoices"));
+  const fromDraft = JSON.stringify(readRecord(paths, "/invoices/from-draft"));
+  const invoiceDetail = JSON.stringify(readRecord(paths, "/invoices/{id}"));
+  const transition = JSON.stringify(
+    readRecord(paths, "/invoices/{id}/transition")
+  );
+  const lifecycleEvents = JSON.stringify(
+    readRecord(paths, "/invoices/{id}/lifecycle-events")
+  );
+  const productionInvoice = JSON.stringify(
+    readRecord(schemas, "ProductionInvoice")
+  );
+  const canonicalInvoice = JSON.stringify(readRecord(schemas, "CanonicalInvoice"));
+  const lifecycleStatus = JSON.stringify(
+    readRecord(schemas, "InvoiceLifecycleStatus")
+  );
+  const validationSummary = JSON.stringify(
+    readRecord(schemas, "ProductionInvoiceValidationSummary")
+  );
+  const invoiceTotals = JSON.stringify(readRecord(schemas, "InvoiceTotals"));
+  const eventSchema = JSON.stringify(
+    readRecord(schemas, "ProductionInvoiceLifecycleEvent")
+  );
+  const serialized = JSON.stringify({
+    invoiceList,
+    fromDraft,
+    invoiceDetail,
+    transition,
+    lifecycleEvents,
+    productionInvoice,
+    canonicalInvoice,
+    invoiceTotals,
+    lifecycleStatus,
+    validationSummary,
+    eventSchema
+  });
+
+  assert.match(invoiceList, /SupabaseBearerAuth/);
+  assert.match(invoiceList, /tenant-scoped/i);
+  assert.match(fromDraft, /without deleting the draft/i);
+  assert.match(invoiceDetail, /organization id/i);
+  assert.match(transition, /internal workspace state only/i);
+  assert.match(transition, /not official filing/i);
+  assert.match(transition, /not.*authority acceptance/i);
+  assert.match(lifecycleEvents, /lifecycle history/i);
+  assert.match(lifecycleStatus, /issued/);
+  assert.match(lifecycleStatus, /internal only/i);
+  assert.match(productionInvoice, /canonicalInvoice/);
+  assert.match(productionInvoice, /calculationSummary/);
+  assert.match(productionInvoice, /validationSummary/);
+  assert.match(productionInvoice, /issuedAt/);
+  assert.match(canonicalInvoice, /taxBreakdown/);
+  assert.match(invoiceTotals, /taxTotalAmount/);
+  assert.match(canonicalInvoice, /allowances/);
+  assert.match(canonicalInvoice, /charges/);
+  assert.match(canonicalInvoice, /additionalProperties/);
+  assert.match(validationSummary, /not legal, tax, accounting/i);
+  assert.match(eventSchema, /raw XML, full invoice bodies, secrets, or API keys/);
+  assert.doesNotMatch(
+    serialized,
+    /\bauthority-submitted\b|\bPeppol-delivered\b|\blegally accepted\b|\bguaranteed compliant\b|\bofficially filed\b/i
+  );
 });
 
 test("OpenAPI documents XML validation jobs with UBL XSD as configuration-gated", () => {

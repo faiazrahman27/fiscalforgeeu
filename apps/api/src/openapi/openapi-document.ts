@@ -20,6 +20,7 @@ const tinyUblXml = `<?xml version="1.0" encoding="UTF-8"?>
 </Invoice>`;
 
 const exampleCanonicalInvoice = {
+  profile: "EN16931",
   document: {
     type: "invoice",
     number: "INV-API-DOCS-001",
@@ -30,8 +31,15 @@ const exampleCanonicalInvoice = {
   },
   seller: {
     name: "Invoice Lantern Seller GmbH",
+    legalName: "Invoice Lantern Seller GmbH",
     country: "DE",
     vatId: "DE123456789",
+    address: {
+      street: "Example Street 1",
+      city: "Berlin",
+      postalCode: "10115",
+      country: "DE"
+    },
     city: "Berlin",
     postalCode: "10115",
     street: "Example Street 1",
@@ -41,6 +49,12 @@ const exampleCanonicalInvoice = {
     name: "Invoice Lantern Buyer Kft",
     country: "HU",
     vatId: "HU12345678",
+    address: {
+      street: "Example Utca 2",
+      city: "Budapest",
+      postalCode: "1051",
+      country: "HU"
+    },
     city: "Budapest",
     postalCode: "1051",
     street: "Example Utca 2",
@@ -53,8 +67,20 @@ const exampleCanonicalInvoice = {
       quantity: "1",
       unitCode: "EA",
       unitPrice: "100.00",
+      netAmount: "100.00",
       vatCategory: "S",
       vatRate: "27"
+    }
+  ],
+  allowances: [],
+  charges: [],
+  taxBreakdown: [
+    {
+      taxCategory: "S",
+      taxScheme: "VAT",
+      vatRate: "27",
+      taxableAmount: "100.00",
+      taxAmount: "27.00"
     }
   ],
   taxSubtotals: [
@@ -69,8 +95,14 @@ const exampleCanonicalInvoice = {
     lineExtensionAmount: "100.00",
     taxExclusiveAmount: "100.00",
     taxAmount: "27.00",
+    taxTotalAmount: "27.00",
     taxInclusiveAmount: "127.00",
     payableAmount: "127.00"
+  },
+  legal: {
+    legalConfidence: "technical",
+    disclaimer:
+      "Invoice Lantern stores canonical invoice data as an independent technical validation and readiness sandbox record. Results are informational only and are not legal, tax, accounting, financial, professional, official filing, authority acceptance, Peppol certification, EN 16931 certification, or compliance advice."
   }
 };
 
@@ -605,6 +637,194 @@ const openApiDocument = {
               }
             }
           })
+        }
+      })
+    },
+    "/invoices": {
+      get: bearerOperation({
+        tags: ["Invoices"],
+        summary: "List production invoices",
+        description:
+          "Lists production invoice lifecycle records for the signed-in workspace. This signed-user endpoint is tenant-scoped and returns internal invoice lifecycle state only; it is not official filing, authority submission, legal advice, tax advice, or accounting advice.",
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: ref("InvoiceLifecycleStatus")
+          },
+          {
+            name: "invoiceNumber",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              maxLength: 120
+            }
+          }
+        ],
+        responses: {
+          "200": response("Tenant-scoped production invoices.", ref("ProductionInvoiceListResponse"))
+        }
+      }),
+      post: bearerOperation({
+        tags: ["Invoices"],
+        summary: "Create a production invoice",
+        description:
+          "Creates a production invoice from a strict canonical invoice payload for the signed-in workspace. Owner, admin, accountant, or reviewer roles may create records. Organization API keys are not accepted for this Step 5 lifecycle endpoint.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("ProductionInvoiceCreateRequest"), {
+            createProductionInvoice: {
+              value: {
+                canonicalInvoice: exampleCanonicalInvoice,
+                source: "manual"
+              }
+            }
+          })
+        },
+        responses: {
+          "201": response("Created production invoice.", ref("ProductionInvoiceResponse")),
+          "422": response("Canonical invoice has blocked technical findings.", ref("ProductionInvoiceErrorResponse"))
+        }
+      })
+    },
+    "/invoices/from-draft": {
+      post: bearerOperation({
+        tags: ["Invoices"],
+        summary: "Create a production invoice from an invoice draft",
+        description:
+          "Converts an existing invoice draft into a production invoice without deleting the draft. The conversion uses the canonical invoice model and returns technical findings instead of persisting incomplete data.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("ProductionInvoiceFromDraftRequest"), {
+            fromDraft: {
+              value: {
+                draftId: "00000000-0000-4000-8000-000000000001",
+                source: "manual"
+              }
+            }
+          })
+        },
+        responses: {
+          "201": response("Created production invoice linked to the draft.", ref("ProductionInvoiceResponse")),
+          "422": response("Draft canonical conversion has blocked findings.", ref("ProductionInvoiceErrorResponse"))
+        }
+      })
+    },
+    "/invoices/{id}": {
+      get: bearerOperation({
+        tags: ["Invoices"],
+        summary: "Get a production invoice",
+        description:
+          "Reads one production invoice by id for the signed-in workspace. Reads are filtered by both invoice id and organization id.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Production invoice.", ref("ProductionInvoiceResponse"))
+        }
+      }),
+      patch: bearerOperation({
+        tags: ["Invoices"],
+        summary: "Update a production invoice canonical payload",
+        description:
+          "Updates an editable production invoice and replaces normalized child rows from the canonical invoice. Issued, archived, and voided invoices are locked in Step 5 until a future correction flow exists.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("ProductionInvoiceUpdateRequest"), {
+            updateProductionInvoice: {
+              value: {
+                canonicalInvoice: exampleCanonicalInvoice
+              }
+            }
+          })
+        },
+        responses: {
+          "200": response("Updated production invoice.", ref("ProductionInvoiceResponse")),
+          "409": errorResponse(
+            "Invoice lifecycle status does not allow this update.",
+            "PRODUCTION_INVOICE_STATUS_LOCKED"
+          ),
+          "422": response("Canonical invoice has blocked technical findings.", ref("ProductionInvoiceErrorResponse"))
+        }
+      })
+    },
+    "/invoices/{id}/transition": {
+      post: bearerOperation({
+        tags: ["Invoices"],
+        summary: "Transition a production invoice lifecycle status",
+        description:
+          "Applies a safe internal lifecycle status transition. The issued status is an internal workspace state only and is not official filing, authority acceptance, Peppol delivery, legal validity, tax compliance, or accounting compliance.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("ProductionInvoiceTransitionRequest"), {
+            transitionProductionInvoice: {
+              value: {
+                toStatus: "ready_for_review",
+                reason: "Ready for technical review."
+              }
+            }
+          })
+        },
+        responses: {
+          "200": response("Transitioned production invoice.", ref("ProductionInvoiceResponse")),
+          "409": errorResponse(
+            "Requested lifecycle transition is not allowed.",
+            "INVOICE_LIFECYCLE_TRANSITION_INVALID"
+          )
+        }
+      })
+    },
+    "/invoices/{id}/lifecycle-events": {
+      get: bearerOperation({
+        tags: ["Invoices"],
+        summary: "List production invoice lifecycle events",
+        description:
+          "Lists tenant-scoped lifecycle history for a production invoice. Events record internal workspace state changes and do not represent official filing or authority acceptance.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Production invoice lifecycle events.", ref("ProductionInvoiceLifecycleEventsResponse"))
         }
       })
     },
@@ -1595,11 +1815,14 @@ const openApiDocument = {
       },
       CanonicalInvoice: {
         type: "object",
-        required: ["document", "seller", "buyer", "lines"],
+        additionalProperties: false,
+        required: ["profile", "document", "seller", "buyer", "lines"],
         properties: {
+          profile: ref("CanonicalInvoiceProfile"),
           document: {
             type: "object",
-            required: ["type", "number", "currency"],
+            additionalProperties: false,
+            required: ["type", "number", "issueDate", "currency"],
             properties: {
               type: {
                 type: "string",
@@ -1626,8 +1849,7 @@ const openApiDocument = {
                 example: "2026-05-30"
               },
               profile: {
-                type: "string",
-                maxLength: 40
+                $ref: "#/components/schemas/CanonicalInvoiceProfile"
               },
               buyerReference: {
                 type: "string",
@@ -1636,31 +1858,75 @@ const openApiDocument = {
               contractReference: {
                 type: "string",
                 maxLength: 120
+              },
+              orderReference: {
+                type: "string",
+                maxLength: 120
+              },
+              projectReference: {
+                type: "string",
+                maxLength: 120
+              },
+              accountingCost: {
+                type: "string",
+                maxLength: 120
               }
             }
           },
           seller: ref("CanonicalParty"),
           buyer: ref("CanonicalParty"),
+          delivery: ref("CanonicalDelivery"),
+          payment: ref("CanonicalPayment"),
           lines: {
             type: "array",
-            maxItems: 200,
+            minItems: 1,
+            maxItems: 500,
             items: ref("CanonicalInvoiceLine")
+          },
+          allowances: {
+            type: "array",
+            maxItems: 500,
+            items: ref("CanonicalInvoiceAdjustment")
+          },
+          charges: {
+            type: "array",
+            maxItems: 500,
+            items: ref("CanonicalInvoiceAdjustment")
+          },
+          taxBreakdown: {
+            type: "array",
+            maxItems: 500,
+            items: ref("InvoiceTaxBreakdown")
           },
           taxSubtotals: {
             type: "array",
-            maxItems: 100,
-            items: ref("InvoiceTaxSubtotal")
+            maxItems: 500,
+            items: ref("InvoiceTaxBreakdown")
           },
-          totals: ref("InvoiceTotals")
+          totals: ref("InvoiceTotals"),
+          metadata: {
+            type: "object",
+            additionalProperties: true
+          },
+          legal: ref("CanonicalLegal")
         }
+      },
+      CanonicalInvoiceProfile: {
+        type: "string",
+        enum: ["EN16931", "PEPPOL_BIS_3", "COUNTRY_PACK"]
       },
       CanonicalParty: {
         type: "object",
-        required: ["name", "country"],
+        additionalProperties: false,
+        required: ["name", "country", "address"],
         properties: {
           name: {
             type: "string",
             maxLength: 160
+          },
+          legalName: {
+            type: "string",
+            maxLength: 240
           },
           country: {
             type: "string",
@@ -1670,6 +1936,10 @@ const openApiDocument = {
           vatId: {
             type: "string",
             maxLength: 32
+          },
+          taxRegistrationNumber: {
+            type: "string",
+            maxLength: 120
           },
           city: {
             type: "string",
@@ -1690,12 +1960,117 @@ const openApiDocument = {
           electronicAddress: {
             type: "string",
             maxLength: 160
+          },
+          electronicAddressScheme: {
+            type: "string",
+            maxLength: 40
+          },
+          email: {
+            type: "string",
+            maxLength: 320
+          },
+          phone: {
+            type: "string",
+            maxLength: 80
+          },
+          address: ref("CanonicalAddress")
+        }
+      },
+      CanonicalAddress: {
+        type: "object",
+        additionalProperties: false,
+        required: ["city", "country"],
+        properties: {
+          street: {
+            type: "string",
+            maxLength: 180
+          },
+          additionalStreet: {
+            type: "string",
+            maxLength: 180
+          },
+          city: {
+            type: "string",
+            maxLength: 120
+          },
+          postalCode: {
+            type: "string",
+            maxLength: 32
+          },
+          region: {
+            type: "string",
+            maxLength: 120
+          },
+          country: {
+            type: "string",
+            minLength: 2,
+            maxLength: 2,
+            example: "DE"
+          }
+        }
+      },
+      CanonicalDelivery: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          deliveryDate: {
+            type: "string",
+            example: "2026-04-30"
+          },
+          locationId: {
+            type: "string",
+            maxLength: 120
+          },
+          country: {
+            type: "string",
+            maxLength: 2
+          },
+          address: ref("CanonicalAddress")
+        }
+      },
+      CanonicalPayment: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          paymentMeansCode: {
+            type: "string",
+            maxLength: 40
+          },
+          paymentReference: {
+            type: "string",
+            maxLength: 120
+          },
+          terms: {
+            type: "string",
+            maxLength: 2000
+          },
+          dueDate: {
+            type: "string",
+            example: "2026-05-30"
+          },
+          accountLabel: {
+            type: "string",
+            maxLength: 120
+          },
+          accountLast4: {
+            type: "string",
+            maxLength: 4,
+            description:
+              "Optional account label suffix only. Full bank account data is not required."
           }
         }
       },
       CanonicalInvoiceLine: {
         type: "object",
-        required: ["description", "quantity", "unitPrice", "vatRate"],
+        additionalProperties: false,
+        required: [
+          "description",
+          "quantity",
+          "unitCode",
+          "unitPrice",
+          "vatCategory",
+          "vatRate"
+        ],
         properties: {
           id: {
             type: "string",
@@ -1703,7 +2078,11 @@ const openApiDocument = {
           },
           description: {
             type: "string",
-            maxLength: 280
+            maxLength: 1000
+          },
+          itemName: {
+            type: "string",
+            maxLength: 240
           },
           quantity: {
             type: "string",
@@ -1718,9 +2097,17 @@ const openApiDocument = {
             type: "string",
             example: "100.00"
           },
+          discountAmount: {
+            type: "string",
+            example: "0.00"
+          },
+          chargeAmount: {
+            type: "string",
+            example: "0.00"
+          },
           vatCategory: {
             type: "string",
-            maxLength: 12,
+            maxLength: 40,
             example: "S"
           },
           vatRate: {
@@ -1734,12 +2121,76 @@ const openApiDocument = {
           taxAmount: {
             type: "string",
             example: "27.00"
+          },
+          accountingCost: {
+            type: "string",
+            maxLength: 120
+          },
+          orderLineReference: {
+            type: "string",
+            maxLength: 120
           }
         }
       },
-      InvoiceTaxSubtotal: {
+      CanonicalInvoiceAdjustment: {
         type: "object",
+        additionalProperties: false,
+        required: ["scope", "amount"],
         properties: {
+          id: {
+            type: "string",
+            maxLength: 80
+          },
+          scope: {
+            type: "string",
+            enum: ["document", "line"]
+          },
+          lineId: {
+            type: "string",
+            maxLength: 80
+          },
+          reason: {
+            type: "string",
+            maxLength: 500
+          },
+          reasonCode: {
+            type: "string",
+            maxLength: 80
+          },
+          amount: {
+            type: "string",
+            example: "10.00"
+          },
+          baseAmount: {
+            type: "string",
+            example: "100.00"
+          },
+          percentage: {
+            type: "string",
+            example: "10"
+          },
+          taxCategory: {
+            type: "string",
+            example: "S"
+          },
+          vatRate: {
+            type: "string",
+            example: "27"
+          }
+        }
+      },
+      InvoiceTaxBreakdown: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          taxCategory: {
+            type: "string",
+            example: "S"
+          },
+          taxScheme: {
+            type: "string",
+            example: "VAT"
+          },
           taxableAmount: {
             type: "string",
             example: "100.00"
@@ -1755,11 +2206,21 @@ const openApiDocument = {
           vatRate: {
             type: "string",
             example: "27"
+          },
+          exemptionReason: {
+            type: "string"
+          },
+          exemptionReasonCode: {
+            type: "string"
           }
         }
       },
+      InvoiceTaxSubtotal: {
+        $ref: "#/components/schemas/InvoiceTaxBreakdown"
+      },
       InvoiceTotals: {
         type: "object",
+        additionalProperties: false,
         properties: {
           lineExtensionAmount: {
             type: "string",
@@ -1770,6 +2231,10 @@ const openApiDocument = {
             example: "100.00"
           },
           taxAmount: {
+            type: "string",
+            example: "27.00"
+          },
+          taxTotalAmount: {
             type: "string",
             example: "27.00"
           },
@@ -1796,6 +2261,28 @@ const openApiDocument = {
           payableAmount: {
             type: "string",
             example: "127.00"
+          }
+        }
+      },
+      CanonicalLegal: {
+        type: "object",
+        additionalProperties: false,
+        required: ["legalConfidence", "disclaimer"],
+        properties: {
+          legalConfidence: {
+            type: "string",
+            enum: [
+              "technical",
+              "standard_based",
+              "official_source_derived",
+              "educational_simulation",
+              "professional_review_required"
+            ]
+          },
+          disclaimer: {
+            type: "string",
+            description:
+              "Informational-only legal boundary. Results are not legal, tax, accounting, financial, professional, official filing, authority acceptance, or certification advice."
           }
         }
       },
@@ -1855,6 +2342,346 @@ const openApiDocument = {
             items: {
               type: "string"
             }
+          }
+        }
+      },
+      InvoiceLifecycleStatus: {
+        type: "string",
+        enum: [
+          "draft",
+          "ready_for_review",
+          "validated",
+          "issued",
+          "archived",
+          "voided"
+        ],
+        description:
+          "Internal Invoice Lantern workspace lifecycle state. The issued value is internal only and is not official filing, authority acceptance, Peppol delivery, legal advice, tax advice, or accounting advice."
+      },
+      ProductionInvoiceCreateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["canonicalInvoice"],
+        properties: {
+          canonicalInvoice: ref("CanonicalInvoice"),
+          source: {
+            type: "string",
+            enum: ["manual", "api", "ubl_import"],
+            default: "manual"
+          },
+          draftId: {
+            type: ["string", "null"],
+            format: "uuid"
+          }
+        }
+      },
+      ProductionInvoiceUpdateRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["canonicalInvoice"],
+        properties: {
+          canonicalInvoice: ref("CanonicalInvoice")
+        }
+      },
+      ProductionInvoiceFromDraftRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["draftId"],
+        properties: {
+          draftId: {
+            type: "string",
+            minLength: 1,
+            maxLength: 120
+          },
+          source: {
+            type: "string",
+            enum: ["manual", "api", "ubl_import"],
+            default: "manual"
+          }
+        }
+      },
+      ProductionInvoiceTransitionRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["toStatus"],
+        properties: {
+          toStatus: ref("InvoiceLifecycleStatus"),
+          reason: {
+            type: "string",
+            maxLength: 1000
+          }
+        }
+      },
+      ProductionInvoiceValidationSummary: {
+        type: "object",
+        required: [
+          "status",
+          "infoCount",
+          "warningCount",
+          "fatalCount",
+          "blockedCount",
+          "findings",
+          "disclaimer"
+        ],
+        properties: {
+          status: {
+            type: "string",
+            enum: ["ready", "blocked"]
+          },
+          infoCount: {
+            type: "integer",
+            minimum: 0
+          },
+          warningCount: {
+            type: "integer",
+            minimum: 0
+          },
+          fatalCount: {
+            type: "integer",
+            minimum: 0
+          },
+          blockedCount: {
+            type: "integer",
+            minimum: 0
+          },
+          findings: {
+            type: "array",
+            items: ref("ValidationFinding")
+          },
+          disclaimer: {
+            type: "string",
+            description:
+              "Preserved informational-only disclaimer. Not legal, tax, accounting, professional, official filing, or authority advice."
+          }
+        }
+      },
+      ProductionInvoiceCalculationSummary: {
+        type: "object",
+        required: ["lines", "taxSubtotals", "taxBreakdown", "totals"],
+        properties: {
+          lines: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true
+            }
+          },
+          taxSubtotals: {
+            type: "array",
+            items: ref("InvoiceTaxBreakdown")
+          },
+          taxBreakdown: {
+            type: "array",
+            items: ref("InvoiceTaxBreakdown")
+          },
+          totals: ref("InvoiceTotals")
+        }
+      },
+      ProductionInvoice: {
+        type: "object",
+        required: [
+          "id",
+          "organizationId",
+          "draftId",
+          "invoiceNumber",
+          "invoiceType",
+          "profile",
+          "issueDate",
+          "dueDate",
+          "currency",
+          "status",
+          "legalConfidence",
+          "source",
+          "canonicalInvoice",
+          "calculationSummary",
+          "validationSummary",
+          "createdAt",
+          "updatedAt",
+          "finalizedAt",
+          "issuedAt",
+          "archivedAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          organizationId: {
+            type: "string",
+            format: "uuid",
+            description:
+              "Tenant organization id from the authenticated workspace context."
+          },
+          draftId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          invoiceNumber: {
+            type: "string"
+          },
+          invoiceType: {
+            type: "string",
+            enum: ["invoice", "credit_note"]
+          },
+          profile: ref("CanonicalInvoiceProfile"),
+          issueDate: {
+            type: "string",
+            format: "date"
+          },
+          dueDate: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          currency: {
+            type: "string",
+            example: "EUR"
+          },
+          status: ref("InvoiceLifecycleStatus"),
+          legalConfidence: {
+            type: "string",
+            enum: [
+              "technical",
+              "standard_based",
+              "official_source_derived",
+              "educational_simulation",
+              "professional_review_required"
+            ]
+          },
+          source: {
+            type: "string"
+          },
+          canonicalInvoice: ref("CanonicalInvoice"),
+          calculationSummary: ref("ProductionInvoiceCalculationSummary"),
+          validationSummary: ref("ProductionInvoiceValidationSummary"),
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          finalizedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          issuedAt: {
+            type: ["string", "null"],
+            format: "date-time",
+            description:
+              "Timestamp for internal workspace issued state only; not official filing or authority acceptance."
+          },
+          archivedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          }
+        }
+      },
+      ProductionInvoiceResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("ProductionInvoice")
+        }
+      },
+      ProductionInvoiceListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("ProductionInvoice")
+          }
+        }
+      },
+      ProductionInvoiceLifecycleEvent: {
+        type: "object",
+        required: [
+          "id",
+          "organizationId",
+          "invoiceId",
+          "fromStatus",
+          "toStatus",
+          "reason",
+          "actorUserId",
+          "actorApiKeyId",
+          "metadata",
+          "createdAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          organizationId: {
+            type: "string",
+            format: "uuid"
+          },
+          invoiceId: {
+            type: "string",
+            format: "uuid"
+          },
+          fromStatus: {
+            oneOf: [ref("InvoiceLifecycleStatus"), { type: "null" }]
+          },
+          toStatus: ref("InvoiceLifecycleStatus"),
+          reason: {
+            type: ["string", "null"]
+          },
+          actorUserId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          actorApiKeyId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          metadata: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Safe lifecycle metadata. It must not include raw XML, full invoice bodies, secrets, or API keys."
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      ProductionInvoiceLifecycleEventsResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("ProductionInvoiceLifecycleEvent")
+          }
+        }
+      },
+      ProductionInvoiceErrorResponse: {
+        type: "object",
+        properties: {
+          error: {
+            type: "object",
+            properties: {
+              code: {
+                type: "string"
+              },
+              message: {
+                type: "string"
+              },
+              details: {}
+            }
+          },
+          findings: {
+            type: "array",
+            items: ref("ValidationFinding")
+          },
+          calculationSummary: {
+            oneOf: [ref("ProductionInvoiceCalculationSummary"), { type: "null" }]
+          },
+          validationSummary: {
+            oneOf: [ref("ProductionInvoiceValidationSummary"), { type: "null" }]
           }
         }
       },

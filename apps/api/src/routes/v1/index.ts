@@ -8,6 +8,7 @@ import { countryPackRoutes } from "./country-packs.js";
 import { importUblRoutes } from "./import-ubl.js";
 import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { invoiceExportRoutes } from "./invoice-exports.js";
+import { invoiceRoutes } from "./invoices.js";
 import { parseUblRoutes } from "./parse-ubl.js";
 import { transactionRoutes } from "./transactions.js";
 import { vatRoutes } from "./vat.js";
@@ -60,6 +61,10 @@ export async function v1Routes(app: FastifyInstance) {
   });
 
   await app.register(invoiceExportRoutes, {
+    prefix: "/invoices"
+  });
+
+  await app.register(invoiceRoutes, {
     prefix: "/invoices"
   });
 

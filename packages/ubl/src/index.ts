@@ -88,8 +88,28 @@ type UblParseOptions = {
   maxBytes?: number;
 };
 
-type UblLineInput = CanonicalInvoice["lines"][number];
-type UblPartyInput = CanonicalInvoice["seller"];
+type UblLineInput = {
+  id: string;
+  description: string;
+  quantity: string;
+  unitCode: string;
+  unitPrice: string;
+  vatCategory: string;
+  vatRate: string;
+  netAmount?: string;
+  taxAmount?: string;
+};
+
+type UblPartyInput = {
+  name: string;
+  country: string;
+  vatId: string;
+  city: string;
+  postalCode: string;
+  street: string;
+  region: string;
+  electronicAddress: string;
+};
 
 const ublParser = new XMLParser({
   ignoreAttributes: false,

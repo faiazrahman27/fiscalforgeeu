@@ -9,9 +9,10 @@ accounting, filing, authority-acceptance, or certified compliance conclusions.
 ## Scope
 
 Step 3 adds the persistent database foundation for production invoice records.
-It does not replace draft storage, complete the invoice lifecycle, implement a
-full editor, add CII, VIES, real Schematron, webhooks, country-pack expansion,
-admin tooling, or legal-document workflows.
+Step 5 adds the canonical invoice lifecycle service and an additive lifecycle
+event table. These steps do not replace draft storage, implement a full editor,
+add CII, VIES, real Schematron, webhooks, country-pack expansion, admin tooling,
+or legal-document workflows.
 
 ## New Tables
 
@@ -37,6 +38,10 @@ admin tooling, or legal-document workflows.
   country packs, ViDA notes, VIES explanations, legal notices, and admin review.
 - `source_reference_links`: generic link table connecting sources to invoices,
   validation findings, rules, country packs, and future reports.
+- `invoice_lifecycle_events`: Step 5 internal status history for production
+  invoices. The `issued` status is an internal workspace lifecycle state only;
+  it is not official filing, authority acceptance, Peppol delivery, legal
+  advice, tax advice, or accounting advice.
 
 ## Tenant Isolation
 
@@ -79,8 +84,25 @@ Step 3 does not migrate drafts into production invoices and does not delete or
 replace draft tables, draft routes, or draft behavior.
 
 `invoices` are production records that can optionally reference a draft. They
-coexist with drafts and prepare the database for the Step 5 canonical invoice
-model and lifecycle work.
+coexist with drafts and now persist the Step 5 canonical invoice model,
+calculation summary, validation summary, legal disclaimer, status timestamps,
+and normalized line/tax/allowance/charge child rows.
+
+Draft-to-production conversion preserves the source draft by default. It creates
+a production invoice linked by `draft_id` when the draft id is a UUID and blocks
+persistence when canonical validation returns fatal or blocked findings.
+
+## Lifecycle Events
+
+Migration `036_create_invoice_lifecycle_events.sql` records production invoice
+status changes. Rows are tenant-scoped by `organization_id`, linked to the
+parent `invoices` row with an organization-aware foreign key, and protected by
+RLS. Workspace members can read events for their organization; invoice editors
+can create events through authenticated backend paths.
+
+Lifecycle event metadata must stay safe. It may include status, reason, source,
+and invoice number labels. It must not include raw XML, raw API keys, secrets,
+full invoice bodies, sensitive headers, or unnecessary personal data.
 
 ## Attachments
 
@@ -110,11 +132,8 @@ keys, private tokens, webhook secrets, or provider credentials.
 
 ## Remaining Work
 
-Step 4 should add organization, member, invite, and workspace-management flows
-without weakening the Step 3 RLS assumptions.
-
-Step 5 should build the canonical invoice lifecycle on top of this model:
-draft-to-production conversion, reviewed state transitions, line/tax/allowance
-and charge persistence from the canonical model, and route/service behavior.
-That step should continue preserving decimal-string money logic in TypeScript
-and should not claim official compliance or authority acceptance.
+Step 6 should build the full invoice editor/studio UI on top of the production
+model and canonical lifecycle service without weakening RLS, draft preservation,
+decimal-string money logic, or legal disclaimers. Later steps still need broader
+UBL, CII, VIES, real Schematron, reviewed country packs, webhooks, admin/source
+console, legal-document, monitoring, and reporting work.

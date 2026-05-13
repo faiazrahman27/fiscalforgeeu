@@ -33,6 +33,7 @@ import {
   type InvoiceTaxCreateInput,
   type InvoiceTaxCreateData,
   type InvoiceUpdateInput,
+  type InvoiceUpdateData,
   type SecurityEventCreateInput,
   type SecurityEventCreateData,
   type SourceReferenceCreateInput,
@@ -229,6 +230,18 @@ function withoutUndefined<T extends Record<string, unknown>>(input: T): Partial<
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined)
   ) as Partial<T>;
+}
+
+function withoutUndefinedProvidedFields<
+  TInput extends Record<string, unknown>,
+  TParsed extends Record<string, unknown>
+>(input: TInput, parsed: TParsed): Partial<TParsed> {
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      ([key, value]) =>
+        Object.prototype.hasOwnProperty.call(input, key) && value !== undefined
+    )
+  ) as Partial<TParsed>;
 }
 
 async function assertBusinessProfileBelongsToOrganization(
@@ -626,19 +639,26 @@ export async function updateInvoiceById(
 ) {
   const organizationId = assertOrganizationId(organizationIdInput);
   const parsed = invoiceUpdateSchema.parse(input);
+  const parsedUpdates = withoutUndefinedProvidedFields(
+    input as Record<string, unknown>,
+    parsed as Record<string, unknown>
+  ) as InvoiceUpdateData;
 
   await assertBusinessProfileBelongsToOrganization(
     organizationId,
-    parsed.sellerProfileId
+    parsedUpdates.sellerProfileId
   );
   await assertBusinessProfileBelongsToOrganization(
     organizationId,
-    parsed.buyerProfileId
+    parsedUpdates.buyerProfileId
   );
-  await assertContactBelongsToOrganization(organizationId, parsed.buyerContactId);
   await assertContactBelongsToOrganization(
     organizationId,
-    parsed.sellerContactId
+    parsedUpdates.buyerContactId
+  );
+  await assertContactBelongsToOrganization(
+    organizationId,
+    parsedUpdates.sellerContactId
   );
 
   const records = await readCollection<InvoiceRecord>(INVOICES_FILE);
@@ -650,8 +670,9 @@ export async function updateInvoiceById(
     return null;
   }
 
-  const nextInvoiceNumber = parsed.invoiceNumber ?? existingRecord.invoiceNumber;
-  const nextStatus = parsed.status ?? existingRecord.status;
+  const nextInvoiceNumber =
+    parsedUpdates.invoiceNumber ?? existingRecord.invoiceNumber;
+  const nextStatus = parsedUpdates.status ?? existingRecord.status;
 
   if (
     nextStatus !== "voided" &&
@@ -671,7 +692,7 @@ export async function updateInvoiceById(
 
   const updatedRecord = {
     ...existingRecord,
-    ...withoutUndefined(parsed),
+    ...withoutUndefined(parsedUpdates),
     id: existingRecord.id,
     organizationId,
     createdAt: existingRecord.createdAt,
@@ -898,6 +919,52 @@ export async function listInvoiceCharges(
     (record) =>
       record.organizationId === organizationId && record.invoiceId === invoiceId
   );
+}
+
+export async function deleteInvoiceChildrenByInvoiceId(
+  organizationIdInput: string,
+  invoiceId: string
+) {
+  const organizationId = assertOrganizationId(organizationIdInput);
+  await assertInvoiceBelongsToOrganization(organizationId, invoiceId);
+
+  const [taxes, allowances, charges, lines] = await Promise.all([
+    readCollection<InvoiceTaxRecord>(INVOICE_TAXES_FILE),
+    readCollection<InvoiceAllowanceRecord>(INVOICE_ALLOWANCES_FILE),
+    readCollection<InvoiceChargeRecord>(INVOICE_CHARGES_FILE),
+    readCollection<InvoiceLineRecord>(INVOICE_LINES_FILE)
+  ]);
+
+  await Promise.all([
+    writeCollection(
+      INVOICE_TAXES_FILE,
+      taxes.filter(
+        (record) =>
+          record.organizationId !== organizationId || record.invoiceId !== invoiceId
+      )
+    ),
+    writeCollection(
+      INVOICE_ALLOWANCES_FILE,
+      allowances.filter(
+        (record) =>
+          record.organizationId !== organizationId || record.invoiceId !== invoiceId
+      )
+    ),
+    writeCollection(
+      INVOICE_CHARGES_FILE,
+      charges.filter(
+        (record) =>
+          record.organizationId !== organizationId || record.invoiceId !== invoiceId
+      )
+    ),
+    writeCollection(
+      INVOICE_LINES_FILE,
+      lines.filter(
+        (record) =>
+          record.organizationId !== organizationId || record.invoiceId !== invoiceId
+      )
+    )
+  ]);
 }
 
 export async function createInvoiceAttachment(

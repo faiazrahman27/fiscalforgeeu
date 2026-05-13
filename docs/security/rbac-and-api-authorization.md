@@ -74,6 +74,7 @@ paths, require signed-in Supabase users.
 | UBL parse | Signed-in user or scoped API key | Workspace validation roles or `invoices:parse_ubl`; XML safety checks stay in place. |
 | UBL import to editable draft | Signed-in user | Workspace draft editors only. Organization API keys can parse UBL but cannot create editable drafts in this step. |
 | Invoice drafts | Signed-in user | Read roles may view; edit roles may create/update; only owner/admin delete. |
+| Production invoice lifecycle | Signed-in user | Read roles may view; `owner`, `admin`, `accountant`, and `reviewer` may create, update, convert from draft, or transition; `developer` and `viewer` are read-only by default; organization API keys are rejected in Step 5. |
 | Validation runs and reports | Signed-in user or scoped API key | Report readers or `validation_runs:read`; object reads are organization-scoped. |
 | VAT format checks | Signed-in user or scoped API key | Validation roles or `vat:validate_format`; stored check history is signed-user only. |
 | ViDA simulation | Signed-in user or scoped API key | Validation roles or `transactions:simulate_vida`; simulation remains educational and technical only. |
@@ -111,11 +112,17 @@ new migrations only.
   disclaimers, not official conclusions.
 - XML handling must preserve protections against DTDs, external entities,
   unsafe schema fetching, excessive size/nesting, and unsafe paths.
+- Production invoice lifecycle responses return canonical invoice data,
+  calculation summaries, technical findings, safe status history, and
+  informational disclaimers. The `issued` state is internal only and is not
+  official filing, authority acceptance, Peppol delivery, legal advice, tax
+  advice, or accounting advice.
 
 ## Future Work
 
-This document covers the Step 2 authorization hardening and Step 4 workspace
-member/invitation management rules. Later prompts may add the canonical invoice
-lifecycle, full editor/studio fields, CII, VIES, webhooks, expanded country
-packs, admin/source consoles, monitoring, legal-document workflows, and
-PWA/offline capabilities. Those are not implemented or claimed complete here.
+This document covers the Step 2 authorization hardening, Step 4 workspace
+member/invitation management rules, and Step 5 production invoice lifecycle
+route permissions. Later prompts may add the full editor/studio fields, CII,
+VIES, webhooks, expanded country packs, admin/source consoles, monitoring,
+legal-document workflows, and PWA/offline capabilities. Those are not
+implemented or claimed complete here.
