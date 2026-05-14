@@ -230,6 +230,15 @@ const envSchema = z
       .default(600),
 
     /*
+     * Optional operational readiness placeholders. These values are never
+     * exposed directly by readiness endpoints; API responses only report safe
+     * configured/unconfigured states.
+     */
+    MONITORING_PROVIDER: z.string().trim().default(""),
+    SECURITY_CONTACT_EMAIL: z.string().trim().default(""),
+    INCIDENT_CONTACT_EMAIL: z.string().trim().default(""),
+
+    /*
      * Supabase server-side configuration.
      *
      * In development/test these may be blank because some tests and local

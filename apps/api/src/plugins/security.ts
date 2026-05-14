@@ -2,11 +2,57 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import type { FastifyInstance } from "fastify";
-import { env } from "../config/env.js";
+import { env, isProductionEnvironment } from "../config/env.js";
+
+function isSensitiveApiPath(url: string) {
+  if (!url.startsWith("/api/v1/")) {
+    return false;
+  }
+
+  return url !== "/api/v1/openapi.json";
+}
 
 export async function registerSecurityPlugins(app: FastifyInstance) {
   await app.register(helmet, {
-    global: true
+    global: true,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        baseUri: ["'none'"],
+        connectSrc: ["'self'"],
+        formAction: ["'none'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        upgradeInsecureRequests: isProductionEnvironment() ? [] : null
+      }
+    },
+    crossOriginOpenerPolicy: {
+      policy: "same-origin"
+    },
+    crossOriginResourcePolicy: {
+      policy: "same-origin"
+    },
+    frameguard: {
+      action: "deny"
+    },
+    hsts: isProductionEnvironment()
+      ? {
+          maxAge: 31536000,
+          includeSubDomains: true,
+          preload: false
+        }
+      : false,
+    noSniff: true,
+    originAgentCluster: true,
+    referrerPolicy: {
+      policy: "no-referrer"
+    },
+    permittedCrossDomainPolicies: {
+      permittedPolicies: "none"
+    }
   });
 
   await app.register(cors, {
@@ -35,5 +81,23 @@ export async function registerSecurityPlugins(app: FastifyInstance) {
         }
       }
     })
+  });
+
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (!reply.getHeader("Permissions-Policy")) {
+      reply.header(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+      );
+    }
+
+    if (
+      isSensitiveApiPath(request.url) &&
+      !reply.getHeader("Cache-Control")
+    ) {
+      reply.header("Cache-Control", "no-store");
+    }
+
+    return payload;
   });
 }

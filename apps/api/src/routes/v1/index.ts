@@ -12,6 +12,7 @@ import { invoiceExportRoutes } from "./invoice-exports.js";
 import { invoiceRoutes } from "./invoices.js";
 import { legalDocumentRoutes } from "./legal-documents.js";
 import { parseUblRoutes } from "./parse-ubl.js";
+import { securityReadinessRoutes } from "./security-readiness.js";
 import { transactionRoutes } from "./transactions.js";
 import { vatRoutes } from "./vat.js";
 import { validateInvoiceRoutes } from "./validate-invoice.js";
@@ -112,6 +113,10 @@ export async function v1Routes(app: FastifyInstance) {
   });
 
   await app.register(workspaceActivityRoutes, {
+    prefix: "/workspace"
+  });
+
+  await app.register(securityReadinessRoutes, {
     prefix: "/workspace"
   });
 

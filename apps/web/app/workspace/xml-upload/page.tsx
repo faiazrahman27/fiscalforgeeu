@@ -2722,6 +2722,15 @@ GET    /api/local/xml/uploads
 GET    /api/local/xml/uploads/:id
 DELETE /api/local/xml/uploads/:id`}</pre>
 
+        <div className="alert-item">
+          <span />
+          <p>
+            Mobile uploads stay online-only and API-mediated. The browser does
+            not cache raw XML or SOAP bodies for offline use, and large or
+            unsupported XML files are rejected before worker jobs are created.
+          </p>
+        </div>
+
         {errorMessage ? (
           <div className="alert-item">
             <span />

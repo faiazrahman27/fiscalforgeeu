@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { env } from "./config/env.js";
 import { registerApiKeyRequestLogging } from "./plugins/api-key-request-logging.js";
 import { registerSecurityPlugins } from "./plugins/security.js";
-import { healthRoutes } from "./routes/health.js";
+import { healthRoutes, publicReadyRoute } from "./routes/health.js";
 import { v1Routes } from "./routes/v1/index.js";
 import { HttpError, sendHttpError } from "./utils/http-error.js";
 
@@ -39,6 +39,8 @@ export async function buildApp() {
   await app.register(healthRoutes, {
     prefix: "/health"
   });
+
+  app.get("/ready", publicReadyRoute);
 
   await app.register(v1Routes, {
     prefix: "/api/v1"

@@ -1,5 +1,5 @@
+import Image from "next/image";
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
 
 const navItems = [
   { href: "/studio", label: "Studio" },
@@ -13,15 +13,20 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <Link href="/" className="brand-mark">
-          <span>
-            <ShieldCheck size={18} />
-          </span>
+        <Link href="/" className="brand-mark" aria-label="Invoice Lantern home">
+          <Image
+            src="/brand/invoice-lantern.png"
+            alt="Invoice Lantern"
+            width={46}
+            height={46}
+            className="brand-logo-image"
+            priority
+          />
 
           <strong>Invoice Lantern</strong>
         </Link>
 
-        <nav>
+        <nav aria-label="Primary navigation">
           {navItems.map((item) => (
             <Link key={item.href} href={item.href}>
               {item.label}

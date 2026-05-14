@@ -13,9 +13,11 @@ import {
   FileText,
   Globe2,
   History,
+  LockKeyhole,
   Save,
   ShieldAlert,
   Sparkles,
+  Trash2,
   WandSparkles,
   X
 } from "lucide-react";
@@ -31,6 +33,12 @@ import type {
   InvoicePartyDraft,
   InvoiceTotalsDraft
 } from "../../../../lib/types";
+import {
+  deleteEncryptedOfflineDraft,
+  isEncryptedOfflineDraftStorageAvailable,
+  loadEncryptedOfflineDraft,
+  saveEncryptedOfflineDraft
+} from "../../../../lib/pwa/offline-drafts";
 import styles from "./invoice-editor.module.css";
 
 type ValidationPreviewItem = {
@@ -328,11 +336,24 @@ export function InvoiceEditorClient({
     seller: false,
     buyer: false
   });
+  const [offlinePassphrase, setOfflinePassphrase] = useState("");
+  const [offlineDraftMessage, setOfflineDraftMessage] = useState("");
+  const [isSavingOfflineDraft, setIsSavingOfflineDraft] = useState(false);
+  const [isLoadingOfflineDraft, setIsLoadingOfflineDraft] = useState(false);
+  const [isDeletingOfflineDraft, setIsDeletingOfflineDraft] = useState(false);
+  const [encryptedOfflineDraftAvailable, setEncryptedOfflineDraftAvailable] =
+    useState(false);
 
   useEffect(() => {
     setDraft(initialDraft ?? createEmptyInvoiceDraft());
     setHasLoadedDraft(true);
   }, [initialDraft, loadStoredDraft]);
+
+  useEffect(() => {
+    setEncryptedOfflineDraftAvailable(
+      isEncryptedOfflineDraftStorageAvailable()
+    );
+  }, []);
 
   useEffect(() => {
     setPersistedDraftId(draftId ?? "");
@@ -407,6 +428,11 @@ export function InvoiceEditorClient({
   const validationPreview = useMemo(
     () => buildValidationPreview(draft, findings),
     [draft, findings]
+  );
+
+  const offlineDraftId = useMemo(
+    () => persistedDraftId || draftId || "current-editor-draft",
+    [draftId, persistedDraftId]
   );
 
   function updateDocument<K extends keyof InvoiceDocumentDraft>(
@@ -799,6 +825,95 @@ export function InvoiceEditorClient({
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(objectUrl);
+  }
+
+  async function saveEncryptedBrowserDraft() {
+    if (!encryptedOfflineDraftAvailable) {
+      setOfflineDraftMessage(
+        "Encrypted local draft storage is unavailable in this browser."
+      );
+      return;
+    }
+
+    setIsSavingOfflineDraft(true);
+    setOfflineDraftMessage("");
+
+    try {
+      const result = await saveEncryptedOfflineDraft({
+        id: offlineDraftId,
+        draft,
+        passphrase: offlinePassphrase
+      });
+
+      setOfflineDraftMessage(
+        `Encrypted local-only draft saved at ${new Date(result.savedAt).toLocaleTimeString()}. Save through the API when you are online.`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Encrypted local draft could not be saved.";
+
+      setOfflineDraftMessage(message);
+    } finally {
+      setIsSavingOfflineDraft(false);
+    }
+  }
+
+  async function restoreEncryptedBrowserDraft() {
+    if (!encryptedOfflineDraftAvailable) {
+      setOfflineDraftMessage(
+        "Encrypted local draft storage is unavailable in this browser."
+      );
+      return;
+    }
+
+    setIsLoadingOfflineDraft(true);
+    setOfflineDraftMessage("");
+
+    try {
+      const envelope = await loadEncryptedOfflineDraft<InvoiceEditorDraft>({
+        id: offlineDraftId,
+        passphrase: offlinePassphrase
+      });
+
+      if (!envelope) {
+        setOfflineDraftMessage("No encrypted local draft is stored for this editor.");
+        return;
+      }
+
+      if (!isInvoiceEditorDraft(envelope.draft)) {
+        setOfflineDraftMessage(
+          "Encrypted local draft shape was not recognized and was not loaded."
+        );
+        return;
+      }
+
+      setDraft(envelope.draft);
+      setOfflineDraftMessage(
+        `Encrypted local-only draft restored from ${new Date(envelope.savedAt).toLocaleString()}.`
+      );
+    } catch {
+      setOfflineDraftMessage(
+        "Encrypted local draft could not be restored. Check the passphrase."
+      );
+    } finally {
+      setIsLoadingOfflineDraft(false);
+    }
+  }
+
+  async function deleteEncryptedBrowserDraft() {
+    setIsDeletingOfflineDraft(true);
+    setOfflineDraftMessage("");
+
+    try {
+      await deleteEncryptedOfflineDraft(offlineDraftId);
+      setOfflineDraftMessage("Encrypted local-only draft deleted from this browser.");
+    } catch {
+      setOfflineDraftMessage("Encrypted local draft could not be deleted.");
+    } finally {
+      setIsDeletingOfflineDraft(false);
+    }
   }
 
   return (
@@ -1201,6 +1316,78 @@ export function InvoiceEditorClient({
               value={recalculatedTotals.payableAmount}
               strong
             />
+          </div>
+
+          <div className={styles.sidePanel}>
+            <div className={styles.sidePanelHead}>
+              <LockKeyhole size={20} />
+
+              <div>
+                <p>Offline draft</p>
+                <h3>Encrypted local-only copy</h3>
+              </div>
+            </div>
+
+            <p className={styles.offlineDraftCopy}>
+              Stores this draft in IndexedDB only after browser-side AES-GCM
+              encryption. The passphrase is not saved. API validation, VIES,
+              XML/XSD/Schematron, UBL export persistence, and server saving stay
+              online-only.
+            </p>
+
+            <label className={styles.offlineDraftField}>
+              <span>Local passphrase</span>
+              <input
+                type="password"
+                value={offlinePassphrase}
+                minLength={12}
+                autoComplete="new-password"
+                onChange={(event) => setOfflinePassphrase(event.target.value)}
+                placeholder="12+ characters"
+              />
+            </label>
+
+            <div className={styles.offlineDraftActions}>
+              <button
+                type="button"
+                className={styles.fullWidthButton}
+                onClick={saveEncryptedBrowserDraft}
+                disabled={
+                  isSavingOfflineDraft || !encryptedOfflineDraftAvailable
+                }
+              >
+                <Save size={16} />
+                {isSavingOfflineDraft ? "Encrypting..." : "Save local copy"}
+              </button>
+
+              <button
+                type="button"
+                className={styles.fullWidthButton}
+                onClick={restoreEncryptedBrowserDraft}
+                disabled={
+                  isLoadingOfflineDraft || !encryptedOfflineDraftAvailable
+                }
+              >
+                <History size={16} />
+                {isLoadingOfflineDraft ? "Restoring..." : "Restore local copy"}
+              </button>
+
+              <button
+                type="button"
+                className={styles.fullWidthButton}
+                onClick={deleteEncryptedBrowserDraft}
+                disabled={isDeletingOfflineDraft}
+              >
+                <Trash2 size={16} />
+                {isDeletingOfflineDraft ? "Deleting..." : "Delete local copy"}
+              </button>
+            </div>
+
+            <p className={styles.offlineDraftStatus}>
+              {encryptedOfflineDraftAvailable
+                ? offlineDraftMessage || "Encrypted local draft support is available."
+                : "Encrypted local draft support is unavailable until Web Crypto and IndexedDB are available."}
+            </p>
           </div>
 
           <div className={styles.sidePanel}>
@@ -2229,6 +2416,20 @@ function shortHash(value: string) {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isInvoiceEditorDraft(value: unknown): value is InvoiceEditorDraft {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  return (
+    isPlainObject(value.document) &&
+    isPlainObject(value.seller) &&
+    isPlainObject(value.buyer) &&
+    Array.isArray(value.lines) &&
+    isPlainObject(value.totals)
+  );
 }
 
 function getStringField(source: Record<string, unknown>, key: string) {

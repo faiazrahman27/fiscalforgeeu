@@ -83,6 +83,9 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
   const schemas = readRecord(components, "schemas");
 
   const requiredOperations = [
+    ["/health", "get"],
+    ["/health/ready", "get"],
+    ["/workspace/security/readiness", "get"],
     ["/api-keys", "get"],
     ["/api-keys", "post"],
     ["/api-keys/{id}/revoke", "post"],
@@ -191,6 +194,13 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
   }
 
   for (const schemaName of [
+    "HealthStatus",
+    "ReadinessStatus",
+    "PublicReadinessStatus",
+    "SecurityReadinessCheck",
+    "MonitoringReadinessMetric",
+    "IncidentReadinessChecklist",
+    "WorkspaceSecurityReadinessResponse",
     "UblImportResponse",
     "InvoiceExportListResponse",
     "XmlInspectResponse",
@@ -375,6 +385,7 @@ test("OpenAPI documents scopes and signed-user-only API boundaries", () => {
     ["/vat/checks", "get"],
     ["/xml/inspect", "post"],
     ["/xml/uploads", "get"],
+    ["/workspace/security/readiness", "get"],
     ["/validation-runs/{id}", "delete"]
   ] as const) {
     const operation = readOperation(paths, path, method);

@@ -4,6 +4,27 @@ All examples use placeholder keys and compact fixtures. Replace
 `il_test_your_key_here` with a server-side API key created in the Invoice
 Lantern workspace developer settings.
 
+## Health And Readiness
+
+```bash
+curl -sS http://localhost:4000/health
+curl -sS http://localhost:4000/ready
+curl -sS http://localhost:4000/api/v1/health/ready
+```
+
+These public responses are intentionally minimal. They do not expose secrets,
+environment values, provider credentials, internal paths, raw XML, raw SOAP, or
+stack traces.
+
+Workspace security/readiness diagnostics require a signed-in workspace user:
+
+```text
+GET /api/v1/workspace/security/readiness
+Authorization: Bearer <workspace-user-token>
+```
+
+Organization API keys are rejected for the workspace readiness endpoint.
+
 ## Validate A Canonical Invoice
 
 ```bash

@@ -31,6 +31,20 @@ GET /api/v1/openapi.json
 The OpenAPI document is the source of truth for request schemas, response
 schemas, scope metadata, examples, and common error responses.
 
+Public health and readiness:
+
+```text
+GET /health
+GET /ready
+GET /api/v1/health
+GET /api/v1/health/ready
+```
+
+These responses are intentionally minimal. They expose status, timestamps, and
+safe configured/unconfigured signals only. They do not expose environment
+values, secrets, database URLs, provider credentials, internal paths, raw XML,
+raw SOAP, or stack traces.
+
 Webhook simulator details are documented in
 [`docs/api/webhooks.md`](./webhooks.md).
 
@@ -107,6 +121,13 @@ list contains a reserved future scope.
 | Saved ViDA simulation history | `GET /api/v1/transactions/vida-simulations`, `GET /api/v1/transactions/vida-simulations/{id}` |
 | Webhook simulator endpoint management | `GET /api/v1/webhooks/endpoints`, `POST /api/v1/webhooks/endpoints`, `GET /api/v1/webhooks/endpoints/{id}`, `PATCH /api/v1/webhooks/endpoints/{id}`, `DELETE /api/v1/webhooks/endpoints/{id}`, `POST /api/v1/webhooks/endpoints/{id}/rotate-secret` |
 | Signed webhook test events and logs | `POST /api/v1/webhooks/endpoints/{id}/test`, `GET /api/v1/webhooks/deliveries`, `GET /api/v1/webhooks/deliveries/{id}`, `POST /api/v1/webhooks/deliveries/{id}/retry` |
+| Workspace security/readiness diagnostics | `GET /api/v1/workspace/security/readiness` |
+
+The workspace security/readiness endpoint is visible to owner/admin/developer
+roles. It returns safe operational, monitoring, incident, PWA/cache/offline,
+rate-limit, XML, VIES, webhook, legal, and privacy checklist state. It does not
+return secrets, internal paths, provider credentials, raw XML/SOAP, API key
+values, webhook signing secrets, or compliance guarantees.
 
 ## Legal And Privacy Support Routes
 

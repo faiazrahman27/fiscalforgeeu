@@ -28,6 +28,14 @@ endpoint management, signing secret rotation, test delivery, delivery logs, and
 retry actions are also signed-user-only; no `webhooks:*` API-key scope is active
 in this step.
 
+Workspace security/readiness diagnostics at
+`GET /api/v1/workspace/security/readiness` are also signed-user-only and visible
+to owner/admin/developer roles. There is no API-key scope for this endpoint. It
+returns safe configured/unconfigured and checklist state only; it does not
+return secrets, raw XML/SOAP, provider credentials, API key values, webhook
+signing secrets, internal paths, security certification, uptime guarantees, or
+compliance guarantees.
+
 Platform rule intelligence, source-register management, and country-pack review
 overlays under `/api/v1/admin/*` are signed-user and platform-admin-only. There
 is no API-key scope for these operations. `rules:read` remains limited to the

@@ -28,6 +28,10 @@ function getReadableAuthMessage(value: string | null) {
     return "The verification callback failed. The link may have expired or already been used.";
   }
 
+  if (value === "signed_out") {
+    return "You have been signed out. Local PWA caches and encrypted offline drafts were cleared.";
+  }
+
   return "";
 }
 

@@ -14,7 +14,10 @@ export async function POST(request: Request) {
      */
   }
 
-  return NextResponse.redirect(new URL("/auth/sign-in", requestUrl.origin), {
-    status: 303
-  });
+  return NextResponse.redirect(
+    new URL("/auth/sign-out/clear", requestUrl.origin),
+    {
+      status: 303
+    }
+  );
 }

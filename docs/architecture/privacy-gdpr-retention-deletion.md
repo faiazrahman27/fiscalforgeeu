@@ -178,3 +178,17 @@ matters for privacy and developer workflows. Acceptance records are metadata
 only. They do not decide whether the organization has met legal, tax,
 accounting, privacy, statutory retention, or GDPR obligations.
 
+## Incident And PWA Integration
+
+Privacy incident assessment follows
+[`docs/security/incident-response.md`](../security/incident-response.md). The
+workflow uses the privacy data map to identify affected data categories and must
+preserve minimized evidence without secrets, raw XML, raw SOAP, service-role
+keys, database URLs, webhook secrets, or VIES credentials.
+
+PWA/offline behavior follows
+[`docs/security/pwa-cache-offline-policy.md`](../security/pwa-cache-offline-policy.md).
+Offline draft storage is local-only and encrypted where browser support allows.
+Privacy export, deletion, retention execution, privacy request review, and legal
+acceptance state remain online-only authenticated workflows and must not be
+served from stale service-worker cache.

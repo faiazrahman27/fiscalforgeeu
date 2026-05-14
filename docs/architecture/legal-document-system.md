@@ -110,6 +110,21 @@ subprocessor list, cookie stance, export, deletion, retention, and privacy
 request workflows. This makes policy-version state visible without turning it
 into a legal or GDPR compliance determination.
 
+## Security, Incident, And PWA Policy Integration
+
+The legal document registry includes public policy surfaces for incident
+response and security posture. The engineering source documents are:
+
+- [`docs/security/incident-response.md`](../security/incident-response.md)
+- [`docs/security/security-readiness-checklist.md`](../security/security-readiness-checklist.md)
+- [`docs/security/pwa-cache-offline-policy.md`](../security/pwa-cache-offline-policy.md)
+- [`docs/architecture/pwa-mobile-offline-security.md`](./pwa-mobile-offline-security.md)
+- [`docs/architecture/monitoring-security-incident-readiness.md`](./monitoring-security-incident-readiness.md)
+
+These documents support product-policy drafting and operational review. They do
+not create legal advice, privacy advice, security certification, official
+filing status, authority acceptance, or compliance guarantees.
+
 ## Safe Language Rules
 
 Legal and public copy must keep these boundaries:
@@ -125,4 +140,3 @@ Legal and public copy must keep these boundaries:
   compliance, guaranteed correctness, or lawyer approval;
 - describe the documents as product policy drafts/notices requiring
   professional review.
-

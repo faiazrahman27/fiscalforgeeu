@@ -68,9 +68,11 @@ What they cover:
 - `npm --prefix apps/api run check`: API TypeScript and contract checks.
 - `npm --prefix apps/api run test`: API route and service tests, including
   deterministic JSON-backed authorization, API-key, validation, workspace,
-  webhook simulator, and privacy/retention/deletion coverage.
+  webhook simulator, privacy/retention/deletion, OpenAPI, public health,
+  security header, monitoring-readiness, and incident-readiness coverage.
 - `npm --prefix apps/web run typecheck`: Next.js workspace and developer UI
-  typecheck.
+  typecheck, including PWA manifest/offline/logout/security-readiness page
+  compilation.
 - `npm run check`: TypeScript checks for packages, API, XML worker, plus web
   typecheck and Next.js build through the web `check` script.
 - `npm run test`: Package tests and API tests, including OpenAPI, validation,
@@ -105,16 +107,12 @@ that blocks local `.data` storage in production or Supabase-backed environments.
 
 ## Current Known Non-Production Gaps
 
-These are intentionally not completed in Step 1:
+These are intentionally not completed before final release-candidate hardening:
 
-- Step 9 Peppol BIS Billing-style and EN 16931-style rule catalog expansion,
-  richer business-rule intelligence, source-linked rule explanations, and
-  validation finding enrichment.
-- Real VIES evidence checks.
 - CII generation and parsing.
-- Reviewed source-rich country packs for all target jurisdictions.
-- Admin rule/source console.
 - Professional legal/privacy review of the versioned legal document and
   GDPR-aware privacy-support policy text before production launch.
-- Monitoring, incident response, and security dashboard.
-- Production deployment hardening.
+- Provider-specific monitoring integration and alert routing.
+- Final production CSP nonce strategy and service-worker release policy review.
+- Production deployment hardening, secret rotation, backup/restore, and
+  operational owner assignment.

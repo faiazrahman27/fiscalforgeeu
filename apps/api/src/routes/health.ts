@@ -1,14 +1,26 @@
-import type { FastifyInstance } from "fastify";
-import { env } from "../config/env.js";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  buildHealthStatus,
+  buildPublicReadinessStatus
+} from "../services/security-readiness-service.js";
 
 export async function healthRoutes(app: FastifyInstance) {
-  app.get("/", async () => {
-    return {
-      status: "ok",
-      service: "Invoice Lantern API",
-      environment: env.APP_ENV,
-      timestamp: new Date().toISOString()
-    };
+  app.get("/", async (_request, reply) => {
+    return reply.header("Cache-Control", "no-store").send(buildHealthStatus());
+  });
+
+  app.get("/ready", async (_request, reply) => {
+    return reply
+      .header("Cache-Control", "no-store")
+      .send(buildPublicReadinessStatus());
   });
 }
 
+export async function publicReadyRoute(
+  _request: FastifyRequest,
+  reply: FastifyReply
+) {
+  return reply
+    .header("Cache-Control", "no-store")
+    .send(buildPublicReadinessStatus());
+}

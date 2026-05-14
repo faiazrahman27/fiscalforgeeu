@@ -769,6 +769,49 @@
   overflow-wrap: anywhere;
 }
 
+.offlineDraftCopy,
+.offlineDraftStatus {
+  margin: 0;
+  color: rgba(255,255,255,0.54);
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.offlineDraftField {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1rem;
+}
+
+.offlineDraftField span {
+  color: rgba(255,255,255,0.44);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.offlineDraftField input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.9rem;
+  background: rgba(0,0,0,0.28);
+  padding: 0.78rem 0.85rem;
+  color: white;
+  font: inherit;
+}
+
+.offlineDraftActions {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.offlineDraftStatus {
+  margin-top: 0.9rem;
+}
+
 @media (max-width: 1500px) {
   .editorGrid {
     grid-template-columns: 1fr;
@@ -846,5 +889,43 @@
 
   .validationReportTop {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 620px) {
+  .page {
+    padding-bottom: 2.5rem;
+  }
+
+  .hero,
+  .validationReportPanel {
+    padding: 1.1rem;
+  }
+
+  .hero h2 {
+    font-size: 2.25rem;
+    line-height: 1;
+  }
+
+  .primaryButton,
+  .secondaryButton,
+  .fullWidthButton,
+  .removeLineButton {
+    min-width: 0;
+    justify-content: center;
+    white-space: normal;
+  }
+
+  .lineTable {
+    overflow-x: auto;
+  }
+
+  .lineHeader,
+  .lineRow {
+    min-width: 46rem;
+  }
+
+  .exportHistoryMeta {
+    grid-template-columns: 1fr;
   }
 }

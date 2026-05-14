@@ -68,6 +68,10 @@ Webhook simulator endpoint management, signing secret rotation, test delivery,
 delivery logs, and retry actions are also signed-user-only owner/admin/developer
 routes. Organization API keys do not receive webhook management scopes in this
 step.
+Workspace security/readiness diagnostics are signed-user-only
+owner/admin/developer routes. Organization API keys are rejected because the
+response describes operational configuration state rather than a scoped
+developer API action.
 
 ## Platform Admin Boundary
 
@@ -105,6 +109,7 @@ certification.
 | ViDA simulation | Signed-in user or scoped API key | Validation roles or `transactions:simulate_vida`; direct transaction simulation remains educational and technical only. API keys can run direct simulation but cannot persist workspace history. |
 | XML validation jobs | Signed-in user or scoped API key | Validation/report roles or `xml:validation_jobs`; uploaded XML history remains signed-user only. |
 | Workspace activity | Signed-in user | `owner`, `admin`, or `developer`. |
+| Workspace security/readiness | Signed-in user | `owner`, `admin`, or `developer`; safe configured/unconfigured diagnostics only; no secrets, raw XML/SOAP, provider credentials, internal paths, or compliance guarantees. |
 | Workspace settings, privacy, retention, deletion, export packages | Signed-in user | `owner` or `admin`. |
 | Workspace privacy data map, subprocessors, and cookie stance | Signed-in user | `owner` or `admin`; GDPR-aware support metadata only, not a GDPR compliance guarantee. |
 | Workspace privacy requests | Signed-in user | `owner` or `admin`; supports access, export, deletion, correction, objection, restriction, portability, retention review, and other workflow records. |
@@ -179,10 +184,9 @@ new migrations only.
 
 ## Future Work
 
-This document covers the Step 2 authorization hardening, Step 4 workspace
-member/invitation management rules, and Step 5 production invoice lifecycle
-route permissions, plus the Step 10 explicit VIES evidence workflow and the
-legal/privacy/retention/deletion hardening layer. Later prompts may add the full
-editor/studio fields, CII, monitoring/security dashboard work, and
-PWA/mobile/offline capabilities. Those are not implemented or claimed complete
-here.
+This document covers the authorization hardening, workspace member/invitation
+management rules, production invoice lifecycle route permissions, explicit VIES
+evidence workflow, legal/privacy/retention/deletion hardening, webhook
+simulator, platform-admin rule/source console, and workspace
+security/readiness/PWA cache boundary added so far. Later prompts may add CII
+and final production release-candidate hardening.

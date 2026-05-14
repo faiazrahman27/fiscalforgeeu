@@ -569,6 +569,11 @@ const openApiDocument = {
       name: "Workspace Privacy",
       description:
         "Signed-user owner/admin privacy-support endpoints for GDPR-aware data maps, export packages, deletion reviews, retention reviews, privacy requests, subprocessors, and cookie stance. These controls require professional review and do not guarantee GDPR compliance."
+    },
+    {
+      name: "System Readiness",
+      description:
+        "Minimal public health/readiness and signed-user workspace security readiness diagnostics. Detailed readiness returns safe configured/unconfigured and checklist state only; it does not expose secrets, internal paths, raw XML, raw SOAP, credentials, stack traces, security certification, uptime guarantees, official filing, or compliance guarantees."
     }
   ],
   paths: {
@@ -585,6 +590,45 @@ const openApiDocument = {
           "500": commonErrorResponses["500"]
         }
       }
+    },
+    "/health": {
+      get: {
+        tags: ["System Readiness"],
+        summary: "Read minimal public API health",
+        description:
+          "Returns intentionally minimal public health state for the API process. The response excludes environment names, secrets, provider credentials, internal paths, raw XML, and raw SOAP.",
+        responses: {
+          "200": response("Minimal public API health.", ref("HealthStatus"))
+        }
+      }
+    },
+    "/health/ready": {
+      get: {
+        tags: ["System Readiness"],
+        summary: "Read minimal public API readiness",
+        description:
+          "Returns a minimal public readiness signal with safe high-level checks only. Detailed operational/security readiness is available through signed-user workspace endpoints and still requires professional security/privacy/legal review.",
+        responses: {
+          "200": response(
+            "Minimal public readiness state.",
+            ref("PublicReadinessStatus")
+          )
+        }
+      }
+    },
+    "/workspace/security/readiness": {
+      get: bearerOperation({
+        tags: ["System Readiness"],
+        summary: "Read workspace security and monitoring readiness",
+        description:
+          "Owner/admin/developer signed-user endpoint for safe security, monitoring, incident, PWA/cache/offline, rate-limit, XML, VIES, webhook, legal, and privacy readiness signals. Organization API keys are rejected. The response returns configured/unconfigured and checklist state only; it does not expose secrets, internal paths, raw XML, raw SOAP, API key values, webhook signing secrets, provider credentials, or compliance guarantees.",
+        responses: {
+          "200": response(
+            "Workspace security readiness diagnostics.",
+            ref("WorkspaceSecurityReadinessResponse")
+          )
+        }
+      })
     },
     "/legal/documents": {
       get: {
@@ -3055,6 +3099,253 @@ const openApiDocument = {
             }
           }
         }
+      },
+      ReadinessStatus: {
+        type: "string",
+        enum: [
+          "ready",
+          "configured",
+          "partially_configured",
+          "not_configured",
+          "disabled",
+          "review_required",
+          "attention_required"
+        ]
+      },
+      HealthStatus: {
+        type: "object",
+        required: ["status", "service", "timestamp"],
+        properties: {
+          status: {
+            type: "string",
+            const: "ok"
+          },
+          service: {
+            type: "string",
+            const: "Invoice Lantern API"
+          },
+          timestamp: {
+            type: "string",
+            format: "date-time"
+          }
+        },
+        additionalProperties: false
+      },
+      PublicReadinessStatus: {
+        type: "object",
+        required: ["status", "service", "timestamp", "checks", "disclaimer"],
+        properties: {
+          status: {
+            type: "string",
+            enum: ["ready", "attention_required"]
+          },
+          service: {
+            type: "string",
+            const: "Invoice Lantern API"
+          },
+          timestamp: {
+            type: "string",
+            format: "date-time"
+          },
+          checks: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["key", "label", "status"],
+              properties: {
+                key: { type: "string" },
+                label: { type: "string" },
+                status: ref("ReadinessStatus")
+              },
+              additionalProperties: false
+            }
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "Public readiness is intentionally minimal and does not expose secrets, environment values, provider credentials, internal paths, raw XML, or raw SOAP."
+          }
+        },
+        additionalProperties: false
+      },
+      SecurityReadinessCheck: {
+        type: "object",
+        required: [
+          "key",
+          "label",
+          "category",
+          "status",
+          "severity",
+          "summary",
+          "evidence"
+        ],
+        properties: {
+          key: { type: "string" },
+          label: { type: "string" },
+          category: {
+            type: "string",
+            enum: [
+              "platform",
+              "database",
+              "authentication",
+              "api",
+              "xml",
+              "vat",
+              "webhooks",
+              "privacy",
+              "legal",
+              "pwa",
+              "monitoring",
+              "incident"
+            ]
+          },
+          status: ref("ReadinessStatus"),
+          severity: {
+            type: "string",
+            enum: ["info", "warning", "critical"]
+          },
+          summary: {
+            type: "string"
+          },
+          evidence: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          }
+        },
+        additionalProperties: false
+      },
+      MonitoringReadinessMetric: {
+        type: "object",
+        required: ["key", "label", "status", "source", "privacyNote"],
+        properties: {
+          key: { type: "string" },
+          label: { type: "string" },
+          status: ref("ReadinessStatus"),
+          source: { type: "string" },
+          privacyNote: {
+            type: "string",
+            description:
+              "Safe metric collection guidance. Metrics must avoid secrets, raw XML, raw SOAP, credentials, and provider secrets."
+          }
+        },
+        additionalProperties: false
+      },
+      IncidentReadinessChecklist: {
+        type: "object",
+        required: ["key", "label", "status", "summary"],
+        properties: {
+          key: { type: "string" },
+          label: { type: "string" },
+          status: ref("ReadinessStatus"),
+          summary: { type: "string" }
+        },
+        additionalProperties: false
+      },
+      WorkspaceSecurityReadinessResponse: {
+        type: "object",
+        required: [
+          "status",
+          "generatedAt",
+          "workspace",
+          "disclaimer",
+          "contacts",
+          "checks",
+          "monitoringMetrics",
+          "incidentChecklist",
+          "operationalChecklist",
+          "offlineCapabilityBoundaries",
+          "rateLimitPolicies"
+        ],
+        properties: {
+          status: {
+            type: "string",
+            enum: ["ready_for_review", "attention_required"]
+          },
+          generatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          workspace: {
+            type: "object",
+            required: ["organizationId", "role"],
+            properties: {
+              organizationId: {
+                type: "string",
+                format: "uuid"
+              },
+              role: {
+                type: "string"
+              }
+            },
+            additionalProperties: false
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "Readiness diagnostics are not legal, tax, accounting, privacy, security, uptime, certification, official filing, authority acceptance, or compliance guarantees."
+          },
+          contacts: {
+            type: "object",
+            required: [
+              "securityContactConfigured",
+              "incidentContactConfigured",
+              "monitoringProviderConfigured"
+            ],
+            properties: {
+              securityContactConfigured: { type: "boolean" },
+              incidentContactConfigured: { type: "boolean" },
+              monitoringProviderConfigured: { type: "boolean" }
+            },
+            additionalProperties: false
+          },
+          checks: {
+            type: "array",
+            items: ref("SecurityReadinessCheck")
+          },
+          monitoringMetrics: {
+            type: "array",
+            items: ref("MonitoringReadinessMetric")
+          },
+          incidentChecklist: {
+            type: "array",
+            items: ref("IncidentReadinessChecklist")
+          },
+          operationalChecklist: {
+            type: "array",
+            items: ref("IncidentReadinessChecklist")
+          },
+          offlineCapabilityBoundaries: {
+            type: "array",
+            items: ref("IncidentReadinessChecklist")
+          },
+          rateLimitPolicies: {
+            type: "array",
+            items: {
+              type: "object",
+              required: [
+                "policyKey",
+                "scope",
+                "windowSeconds",
+                "maxRequests",
+                "appliesTo"
+              ],
+              properties: {
+                policyKey: { type: "string" },
+                scope: { type: "string" },
+                windowSeconds: { type: "integer" },
+                maxRequests: { type: "integer" },
+                appliesTo: {
+                  type: "string",
+                  enum: ["api_key", "organization"]
+                }
+              },
+              additionalProperties: false
+            }
+          }
+        },
+        additionalProperties: false
       },
       LegalDocument: {
         type: "object",

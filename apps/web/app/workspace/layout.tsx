@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
@@ -101,6 +102,11 @@ const workspaceNav = [
     href: "/workspace/developer",
     label: "Developer",
     icon: <Braces size={18} />
+  },
+  {
+    href: "/workspace/security",
+    label: "Security",
+    icon: <ShieldCheck size={18} />
   },
   {
     href: "/workspace/privacy",
@@ -317,9 +323,15 @@ export default async function WorkspaceLayout({
   return (
     <main className="workspace-shell">
       <aside className="workspace-sidebar">
-        <Link href="/" className="workspace-logo">
+        <Link href="/" className="workspace-logo" aria-label="Invoice Lantern home">
           <span>
-            <ShieldCheck size={20} />
+            <Image
+              src="/brand/invoice-lantern.png"
+              alt=""
+              width={30}
+              height={30}
+              priority
+            />
           </span>
           <strong>Invoice Lantern</strong>
         </Link>
