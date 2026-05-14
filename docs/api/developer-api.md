@@ -31,6 +31,9 @@ GET /api/v1/openapi.json
 The OpenAPI document is the source of truth for request schemas, response
 schemas, scope metadata, examples, and common error responses.
 
+Webhook simulator details are documented in
+[`docs/api/webhooks.md`](./webhooks.md).
+
 ## Authentication
 
 Organization API keys authenticate selected sandbox developer endpoints through
@@ -92,6 +95,8 @@ list contains a reserved future scope.
 | List saved local VAT checks | `GET /api/v1/vat/checks` |
 | Production invoice lifecycle | `GET /api/v1/invoices`, `POST /api/v1/invoices`, `POST /api/v1/invoices/from-draft`, `GET /api/v1/invoices/{id}`, `PATCH /api/v1/invoices/{id}`, `POST /api/v1/invoices/{id}/transition`, `GET /api/v1/invoices/{id}/lifecycle-events`, `POST /api/v1/invoices/{id}/export/ubl`, `POST /api/v1/invoices/{id}/simulate-vida` |
 | Saved ViDA simulation history | `GET /api/v1/transactions/vida-simulations`, `GET /api/v1/transactions/vida-simulations/{id}` |
+| Webhook simulator endpoint management | `GET /api/v1/webhooks/endpoints`, `POST /api/v1/webhooks/endpoints`, `GET /api/v1/webhooks/endpoints/{id}`, `PATCH /api/v1/webhooks/endpoints/{id}`, `DELETE /api/v1/webhooks/endpoints/{id}`, `POST /api/v1/webhooks/endpoints/{id}/rotate-secret` |
+| Signed webhook test events and logs | `POST /api/v1/webhooks/endpoints/{id}/test`, `GET /api/v1/webhooks/deliveries`, `GET /api/v1/webhooks/deliveries/{id}`, `POST /api/v1/webhooks/deliveries/{id}/retry` |
 
 `invoices:import_ubl` is reserved in the API-key scope enum for future access
 control alignment. It is not an active organization API-key draft creation path.
@@ -113,3 +118,7 @@ Use `POST /api/v1/invoices/parse/ubl` for API-key UBL parsing.
   professional-review expectations. No source means no legal or tax rule.
 - ViDA-readiness simulation is readiness planning only, not an official
   determination.
+- Webhook simulator events are signed sandbox test events only. Delivery logs
+  and retries help technical integrations; they do not indicate official filing,
+  authority submission, downstream acceptance, legal/tax/accounting advice, or a
+  compliance guarantee.

@@ -175,6 +175,41 @@ const envSchema = z
       .max(1000)
       .default(10),
 
+    /*
+     * Webhook simulator delivery configuration.
+     *
+     * WEBHOOK_SECRET_ENCRYPTION_KEY is backend-only and is required before
+     * creating or rotating persistent webhook signing secrets. It may be a
+     * long random string or base64-encoded key material; the API derives a
+     * 256-bit encryption key server-side and never exposes it to clients.
+     */
+    WEBHOOK_SECRET_ENCRYPTION_KEY: optionalSecretSchema,
+    WEBHOOK_SIGNING_KEY_ID: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .default("webhook-signing-v1"),
+    WEBHOOK_DELIVERY_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .min(500)
+      .max(30000)
+      .default(5000),
+    WEBHOOK_MAX_RESPONSE_BYTES: z.coerce
+      .number()
+      .int()
+      .min(256)
+      .max(32768)
+      .default(4096),
+    WEBHOOK_MAX_RETRY_ATTEMPTS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .default(3),
+    WEBHOOK_ALLOW_LOCALHOST_DELIVERY: optionalBooleanLikeSchema,
+
     XML_TRANSIENT_PAYLOAD_DIR: optionalLocalPathSchema,
     XML_TRANSIENT_PAYLOAD_TTL_SECONDS: z.coerce
       .number()
@@ -334,6 +369,28 @@ const envSchema = z
         "API_KEY_HASH_SECRET",
         "API_KEY_HASH_SECRET"
       );
+    }
+
+    if (!value.WEBHOOK_SECRET_ENCRYPTION_KEY.trim()) {
+      addProductionRequiredIssue(
+        context,
+        "WEBHOOK_SECRET_ENCRYPTION_KEY",
+        "WEBHOOK_SECRET_ENCRYPTION_KEY"
+      );
+    } else if (value.WEBHOOK_SECRET_ENCRYPTION_KEY.trim().length < 32) {
+      addProductionSecretLengthIssue(
+        context,
+        "WEBHOOK_SECRET_ENCRYPTION_KEY",
+        "WEBHOOK_SECRET_ENCRYPTION_KEY"
+      );
+    }
+
+    if (value.WEBHOOK_ALLOW_LOCALHOST_DELIVERY) {
+      context.addIssue({
+        code: "custom",
+        path: ["WEBHOOK_ALLOW_LOCALHOST_DELIVERY"],
+        message: "WEBHOOK_ALLOW_LOCALHOST_DELIVERY must be false in production."
+      });
     }
 
     if (!value.DATABASE_URL.trim()) {

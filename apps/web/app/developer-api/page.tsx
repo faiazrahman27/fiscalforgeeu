@@ -71,7 +71,7 @@ const apiModules = [
     icon: <RadioTower size={22} />,
     title: "Webhook simulator",
     description:
-      "Planned. Sandbox webhook testing is planned for a later step. No webhook events are sent yet. This is not an official filing, reporting, or authority-submission feature."
+      "Configure signed sandbox test endpoints, rotate HMAC secrets, send example events, inspect delivery logs, and retry failed simulator deliveries without official filing or compliance claims."
   },
   {
     icon: <ShieldCheck size={22} />,
@@ -119,6 +119,13 @@ export default function DeveloperApiPage() {
               >
                 <KeyRound size={18} />
                 API key manager
+              </Link>
+              <Link
+                href="/workspace/developer/webhooks"
+                className="text-link-button"
+              >
+                <RadioTower size={18} />
+                Webhooks
               </Link>
             </div>
           </Reveal>
@@ -321,6 +328,44 @@ curl -X POST http://localhost:4000/api/v1/vat/check-vies \\
   },
   "disclaimer": "VIES evidence is time-of-check evidence only."
 }`}</pre>
+            </div>
+          </Reveal>
+
+          <Reveal>
+            <div className="terminal-shell subpage-terminal">
+              <div className="terminal-top">
+                <span />
+                <span />
+                <span />
+                <p>Webhook simulator</p>
+              </div>
+
+              <pre>{`# Signed-user workspace route. Organization API keys cannot manage webhook secrets.
+# The signing secret is returned only on create or rotate.
+
+curl -X POST http://localhost:4000/api/v1/webhooks/endpoints \\
+  -H "content-type: application/json" \\
+  -H "Authorization: Bearer <supabase-user-token>" \\
+  -d '{
+    "name": "Integration receiver",
+    "url": "https://webhooks.example.test/invoice-lantern",
+    "eventTypes": ["webhook.test", "invoice.validation.completed"]
+  }'
+
+curl -X POST http://localhost:4000/api/v1/webhooks/endpoints/<endpoint-id>/test \\
+  -H "content-type: application/json" \\
+  -H "Authorization: Bearer <supabase-user-token>" \\
+  -d '{ "eventType": "webhook.test" }'
+
+# Delivery headers include:
+# Invoice-Lantern-Webhook-Id
+# Invoice-Lantern-Webhook-Timestamp
+# Invoice-Lantern-Webhook-Signature: v1=<hex-hmac-sha256>
+# Invoice-Lantern-Webhook-Event
+
+# Test events are technical sandbox events only.
+# They are not official filing, authority submission, downstream acceptance,
+# legal advice, tax advice, accounting advice, or compliance evidence.`}</pre>
             </div>
           </Reveal>
 

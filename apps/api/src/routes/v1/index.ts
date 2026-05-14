@@ -15,6 +15,7 @@ import { vatRoutes } from "./vat.js";
 import { validateInvoiceRoutes } from "./validate-invoice.js";
 import { validationRuleRoutes } from "./validation-rules.js";
 import { validationRunRoutes } from "./validation-runs.js";
+import { webhookRoutes } from "./webhooks.js";
 import { workspaceActivityRoutes } from "./workspace-activity.js";
 import { workspaceDeletionRunRoutes } from "./workspace-deletion-runs.js";
 import { workspaceExportPackageRoutes } from "./workspace-export-packages.js";
@@ -94,6 +95,10 @@ export async function v1Routes(app: FastifyInstance) {
 
   await app.register(xmlRoutes, {
     prefix: "/xml"
+  });
+
+  await app.register(webhookRoutes, {
+    prefix: "/webhooks"
   });
 
   await app.register(workspaceActivityRoutes, {

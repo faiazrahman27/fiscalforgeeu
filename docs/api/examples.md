@@ -211,6 +211,71 @@ curl -sS http://localhost:4000/api/v1/validation-runs/val_example \
   -H "X-API-Key: il_test_your_key_here"
 ```
 
+## Webhook Simulator
+
+Webhook management uses signed-in workspace bearer authentication. Organization
+API keys do not manage endpoints, secrets, test sends, or delivery logs.
+
+Create an endpoint:
+
+```bash
+curl -sS -X POST http://localhost:4000/api/v1/webhooks/endpoints \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <supabase-user-token>" \
+  -d '{
+    "name": "Integration receiver",
+    "url": "https://webhooks.example.test/invoice-lantern",
+    "eventTypes": ["webhook.test", "invoice.validation.completed"]
+  }'
+```
+
+Response excerpt:
+
+```json
+{
+  "endpoint": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "Integration receiver",
+    "signingSecretLast4": "abcd"
+  },
+  "signingSecret": "whsec_placeholder_store_once",
+  "warning": "Store this webhook signing secret now. Invoice Lantern only shows it on creation or rotation."
+}
+```
+
+Send a signed test event:
+
+```bash
+curl -sS -X POST http://localhost:4000/api/v1/webhooks/endpoints/00000000-0000-4000-8000-000000000001/test \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <supabase-user-token>" \
+  -d '{ "eventType": "webhook.test", "payload": { "message": "Receiver smoke test" } }'
+```
+
+Delivery headers sent to the receiver:
+
+```text
+Invoice-Lantern-Webhook-Id: <delivery-id>
+Invoice-Lantern-Webhook-Timestamp: <unix-seconds>
+Invoice-Lantern-Webhook-Signature: v1=<hex-hmac-sha256>
+Invoice-Lantern-Webhook-Event: webhook.test
+```
+
+Inspect or retry:
+
+```bash
+curl -sS http://localhost:4000/api/v1/webhooks/deliveries \
+  -H "Authorization: Bearer <supabase-user-token>"
+
+curl -sS -X POST http://localhost:4000/api/v1/webhooks/deliveries/<delivery-id>/retry \
+  -H "Authorization: Bearer <supabase-user-token>"
+```
+
+Webhook events are signed sandbox test events only. They are not official
+filing, authority submission, downstream acceptance, legal advice, tax advice,
+accounting advice, or compliance evidence. Do not place real API keys, service
+role keys, tokens, raw XML, raw SOAP, or sensitive invoice data in test payloads.
+
 ## Common Error Examples
 
 Validation error:
@@ -263,6 +328,18 @@ Rate limited:
     "limit": 30,
     "windowSeconds": 900,
     "retryAfterSeconds": 120
+  }
+}
+```
+
+Webhook URL blocked:
+
+```json
+{
+  "error": {
+    "code": "WEBHOOK_URL_PRIVATE_ADDRESS_BLOCKED",
+    "message": "Webhook endpoint URLs must not resolve to private, local, link-local, metadata, multicast, or reserved addresses.",
+    "details": null
   }
 }
 ```

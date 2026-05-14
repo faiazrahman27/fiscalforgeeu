@@ -99,11 +99,11 @@ const developerModules: DeveloperModule[] = [
   },
   {
     title: "Webhook simulator",
-    status: "planned",
-    actionLabel: "Planned",
+    status: "active",
+    actionLabel: "Open",
     description:
-      "Sandbox webhook testing is planned for a later step. No webhook events are sent yet. This is not an official filing, reporting, or authority-submission feature.",
-    href: "/developer-api",
+      "Configure safe test endpoints, send signed sandbox webhook events, inspect delivery logs, rotate secrets, and retry failed test deliveries. Events are technical integration tests, not official filing or compliance evidence.",
+    href: "/workspace/developer/webhooks",
     icon: <RadioTower size={22} />
   },
   {
@@ -128,8 +128,7 @@ export default function WorkspaceDeveloperPage() {
           boundaries for Invoice Lantern technical validation endpoints. API keys
           do not grant workspace UI permissions. API key management is reserved
           for owner, admin, and developer workspace roles. The API reference
-          documents active endpoints only; webhook work stays inactive until
-          implemented.
+          documents active endpoints only, including the signed webhook simulator.
         </p>
       </section>
 

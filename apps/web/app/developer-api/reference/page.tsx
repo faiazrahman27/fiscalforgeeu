@@ -6,6 +6,7 @@ import {
   Code2,
   Globe2,
   KeyRound,
+  RadioTower,
   ShieldCheck
 } from "lucide-react";
 import { Reveal } from "../../../components/reveal";
@@ -30,6 +31,15 @@ const publicReadOnlyRows = [
   ["Country-pack catalogue", "GET /api/v1/country-packs"],
   ["Country-pack detail", "GET /api/v1/country-packs/:countryCode"],
   ["OpenAPI document", "GET /api/v1/openapi.json"]
+];
+
+const signedUserRows = [
+  ["Webhook endpoints", "GET/POST /api/v1/webhooks/endpoints"],
+  ["Webhook endpoint detail", "GET/PATCH/DELETE /api/v1/webhooks/endpoints/:id"],
+  ["Rotate webhook secret", "POST /api/v1/webhooks/endpoints/:id/rotate-secret"],
+  ["Send test event", "POST /api/v1/webhooks/endpoints/:id/test"],
+  ["Delivery logs", "GET /api/v1/webhooks/deliveries and /:id"],
+  ["Retry delivery", "POST /api/v1/webhooks/deliveries/:id/retry"]
 ];
 
 export default function DeveloperApiReferencePage() {
@@ -69,6 +79,10 @@ export default function DeveloperApiReferencePage() {
               <Link href="/workspace/developer/api-keys" className="text-link-button">
                 <KeyRound size={18} />
                 API key manager
+              </Link>
+              <Link href="/workspace/developer/webhooks" className="text-link-button">
+                <RadioTower size={18} />
+                Webhook simulator
               </Link>
               <a
                 href="/api/local/openapi"
@@ -207,6 +221,35 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
                 UBL draft import is documented as a signed-user-only workspace
                 route. Organization API keys can parse UBL XML; they cannot
                 create editable drafts in this step.
+              </p>
+            </section>
+          </Reveal>
+
+          <Reveal>
+            <section className="reference-scope-table">
+              <div className="reference-table-head">
+                <div>
+                  <p>Signed-user routes</p>
+                  <h2>Webhook simulator</h2>
+                </div>
+                <RadioTower size={22} />
+              </div>
+
+              <div className="reference-scope-list">
+                {signedUserRows.map(([label, endpoint]) => (
+                  <div className="reference-scope-row" key={endpoint}>
+                    <strong>{label}</strong>
+                    <span>{endpoint}</span>
+                  </div>
+                ))}
+              </div>
+
+              <p>
+                Webhook management uses Supabase bearer sessions for owner,
+                admin, and developer workspace roles. Organization API keys do
+                not manage webhook endpoints or secrets. Test events use HMAC
+                SHA-256 headers and delivery logs redact signatures, secrets,
+                raw XML, raw SOAP, and response previews.
               </p>
             </section>
           </Reveal>

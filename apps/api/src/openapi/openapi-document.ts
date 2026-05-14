@@ -141,6 +141,39 @@ const exampleVidaSimulationRequest = {
   sourceLabels: ["European Commission ViDA package context"]
 };
 
+const WEBHOOK_SIMULATOR_DISCLAIMER =
+  "Webhook events are signed sandbox test events for technical integration testing. They are informational only, not official filing, not authority submission, and not legal, tax, accounting, or compliance advice.";
+
+const webhookEventTypes = [
+  "invoice.validation.completed",
+  "invoice.ubl.exported",
+  "xml.validation.completed",
+  "vat.vies.checked",
+  "vida.simulation.completed",
+  "country_pack.review_required",
+  "webhook.test"
+];
+
+const webhookEndpointIdParameter = {
+  name: "id",
+  in: "path",
+  required: true,
+  schema: {
+    type: "string",
+    format: "uuid"
+  }
+};
+
+const webhookDeliveryIdParameter = {
+  name: "id",
+  in: "path",
+  required: true,
+  schema: {
+    type: "string",
+    format: "uuid"
+  }
+};
+
 const rateLimitHeaders = {
   "X-RateLimit-Limit": {
     description: "Maximum requests allowed for the active sandbox window.",
@@ -264,6 +297,30 @@ const rateLimitResponse = {
           limit: 30,
           windowSeconds: 900,
           retryAfterSeconds: 123
+        }
+      }
+    }
+  })
+};
+
+const webhookRateLimitResponse = {
+  description: "The signed-user webhook simulator operation limit was exceeded.",
+  headers: {
+    ...rateLimitHeaders,
+    ...retryAfterHeader
+  },
+  content: jsonContent(ref("ErrorEnvelope"), {
+    webhookRateLimitExceeded: {
+      value: {
+        error: {
+          code: "WEBHOOK_RATE_LIMIT_EXCEEDED",
+          message:
+            "Webhook simulator operation rate limit exceeded. Slow down and try again.",
+          details: {
+            limit: 30,
+            windowSeconds: 900,
+            retryAfterSeconds: 123
+          }
         }
       }
     }
@@ -400,6 +457,11 @@ const openApiDocument = {
       name: "Usage and Rate Limits",
       description:
         "Signed-in workspace usage metadata, summaries, policies, and current request-window counts."
+    },
+    {
+      name: "Webhooks",
+      description:
+        "Signed-user-only webhook simulator endpoints for owner, admin, and developer integration testing. They create signed sandbox test events, delivery logs, and bounded retries only; no webhook event is official filing, authority submission, downstream acceptance, or compliance evidence."
     },
     {
       name: "Reports",
@@ -672,6 +734,231 @@ const openApiDocument = {
               }
             }
           })
+        }
+      })
+    },
+    "/webhooks/endpoints": {
+      get: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "List webhook simulator endpoints",
+        description:
+          "Lists tenant-scoped webhook simulator endpoints for the signed-in workspace. Requires owner, admin, or developer role. Raw signing secrets are never returned. Organization API keys are intentionally rejected for webhook endpoint and secret management.",
+        parameters: [
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: ref("WebhookEndpointStatus")
+          },
+          {
+            name: "eventType",
+            in: "query",
+            required: false,
+            schema: ref("WebhookEventType")
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 50
+            }
+          }
+        ],
+        responses: {
+          "200": response("Webhook endpoint list.", ref("WebhookEndpointListResponse")),
+          "429": webhookRateLimitResponse
+        }
+      }),
+      post: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "Create a webhook simulator endpoint",
+        description:
+          "Creates a safe HTTPS webhook simulator endpoint and returns the raw HMAC SHA-256 signing secret once. Requires owner, admin, or developer role. The API encrypts the signing secret at rest and rejects missing encryption configuration, unsafe URLs, unsafe redirects, credentials in URLs, private/internal/metadata addresses, and non-HTTPS endpoints except explicitly enabled localhost development delivery.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WebhookEndpointCreateRequest"), {
+            createEndpoint: {
+              value: {
+                name: "Local integration receiver",
+                url: "https://webhooks.example.test/invoice-lantern",
+                eventTypes: ["webhook.test", "invoice.validation.completed"],
+                description: "Sandbox test receiver used by the integration team."
+              }
+            }
+          })
+        },
+        responses: {
+          "201": response(
+            "Endpoint created. Copy the signing secret immediately.",
+            ref("WebhookEndpointSecretResponse")
+          ),
+          "429": webhookRateLimitResponse
+        }
+      })
+    },
+    "/webhooks/endpoints/{id}": {
+      get: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "Get webhook simulator endpoint detail",
+        description:
+          "Returns safe endpoint metadata, status, subscribed sandbox event types, delivery timestamps, and signing secret last4. The raw signing secret and encrypted secret material are never returned.",
+        parameters: [webhookEndpointIdParameter],
+        responses: {
+          "200": response("Webhook endpoint detail.", ref("WebhookEndpointResponse")),
+          "429": webhookRateLimitResponse
+        }
+      }),
+      patch: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "Update webhook simulator endpoint metadata",
+        description:
+          "Updates endpoint name, URL, status, event types, or description. URL changes pass the same HTTPS, no-credentials, DNS, SSRF, metadata-address, redirect-safety, and localhost policy checks as creation. Requires owner, admin, or developer role.",
+        parameters: [webhookEndpointIdParameter],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WebhookEndpointUpdateRequest"), {
+            updateEndpoint: {
+              value: {
+                status: "active",
+                eventTypes: ["webhook.test", "vida.simulation.completed"],
+                description: "Rotated sandbox receiver configuration."
+              }
+            }
+          })
+        },
+        responses: {
+          "200": response("Updated endpoint.", ref("WebhookEndpointResponse")),
+          "429": webhookRateLimitResponse
+        }
+      }),
+      delete: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "Disable webhook simulator endpoint",
+        description:
+          "Soft-disables a webhook simulator endpoint for the signed-in workspace. Delivery records remain available for inspection. This does not delete any official filing record because webhook simulator events are sandbox-only technical events.",
+        parameters: [webhookEndpointIdParameter],
+        responses: {
+          "200": response("Disabled endpoint.", ref("WebhookEndpointResponse")),
+          "429": webhookRateLimitResponse
+        }
+      })
+    },
+    "/webhooks/endpoints/{id}/rotate-secret": {
+      post: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "Rotate webhook signing secret",
+        description:
+          "Generates a new HMAC SHA-256 signing secret, encrypts it at rest, and returns the raw secret once. Future test deliveries use the new secret. Previous secrets are not returned by list or detail endpoints.",
+        parameters: [webhookEndpointIdParameter],
+        responses: {
+          "200": response(
+            "Secret rotated. Copy the signing secret immediately.",
+            ref("WebhookEndpointSecretResponse")
+          ),
+          "429": webhookRateLimitResponse
+        }
+      })
+    },
+    "/webhooks/endpoints/{id}/test": {
+      post: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "Send signed sandbox test event",
+        description:
+          "Sends one signed JSON POST sandbox test event to a configured endpoint, records a redacted delivery log, and never sends API keys, service-role secrets, raw XML, or raw SOAP bodies. Signature input is `${timestamp}.${deliveryId}.${rawJsonPayload}` and the `Invoice-Lantern-Webhook-Signature` header uses `v1=<hex-hmac-sha256>`. These events are technical integration tests only; delivery is not official acceptance or compliance evidence.",
+        parameters: [webhookEndpointIdParameter],
+        requestBody: {
+          required: false,
+          content: jsonContent(ref("WebhookTestEventRequest"), {
+            sendTest: {
+              value: {
+                eventType: "webhook.test",
+                payload: {
+                  message: "Receiver smoke test"
+                }
+              }
+            }
+          })
+        },
+        responses: {
+          "200": response("Delivery attempt logged.", ref("WebhookDeliveryResponse")),
+          "429": webhookRateLimitResponse
+        }
+      })
+    },
+    "/webhooks/deliveries": {
+      get: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "List webhook delivery logs",
+        description:
+          "Lists redacted webhook simulator delivery attempts for the signed-in workspace. Logs include status, response status, bounded response preview, redacted headers, retry state, and safe errors only. They never include raw signing secrets, API keys, raw XML, raw SOAP bodies, or stack traces.",
+        parameters: [
+          {
+            name: "endpointId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          },
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: ref("WebhookDeliveryStatus")
+          },
+          {
+            name: "eventType",
+            in: "query",
+            required: false,
+            schema: ref("WebhookEventType")
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 50
+            }
+          }
+        ],
+        responses: {
+          "200": response("Webhook delivery list.", ref("WebhookDeliveryListResponse")),
+          "429": webhookRateLimitResponse
+        }
+      })
+    },
+    "/webhooks/deliveries/{id}": {
+      get: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "Get webhook delivery detail",
+        description:
+          "Returns one redacted, tenant-scoped webhook simulator delivery attempt. The signature header is represented as presence metadata only and response previews are capped and sanitized.",
+        parameters: [webhookDeliveryIdParameter],
+        responses: {
+          "200": response("Webhook delivery detail.", ref("WebhookDeliveryResponse")),
+          "429": webhookRateLimitResponse
+        }
+      })
+    },
+    "/webhooks/deliveries/{id}/retry": {
+      post: bearerOperation({
+        tags: ["Webhooks"],
+        summary: "Retry failed webhook test delivery",
+        description:
+          "Creates one bounded retry attempt for a failed, blocked, or retry-scheduled sandbox delivery. Retries are capped by WEBHOOK_MAX_RETRY_ATTEMPTS and never form infinite loops. Disabled or suspended endpoints cannot be retried.",
+        parameters: [webhookDeliveryIdParameter],
+        responses: {
+          "200": response("Retry delivery attempt logged.", ref("WebhookDeliveryResponse")),
+          "409": commonErrorResponses["409"],
+          "429": webhookRateLimitResponse
         }
       })
     },
@@ -1835,7 +2122,7 @@ const openApiDocument = {
         scheme: "bearer",
         bearerFormat: "Supabase access token",
         description:
-          "Signed-in workspace user session token. Used by API key management, usage logs, rate-limit dashboard endpoints, and report downloads."
+          "Signed-in workspace user session token. Used by API key management, usage logs, webhook simulator management, rate-limit dashboard endpoints, and report downloads."
       }
     },
     schemas: {
@@ -1865,6 +2152,13 @@ const openApiDocument = {
                   "UNSUPPORTED_MEDIA_TYPE",
                   "UNPROCESSABLE_ENTITY",
                   "EXTERNAL_SERVICE_UNAVAILABLE",
+                  "WEBHOOK_RATE_LIMIT_EXCEEDED",
+                  "WEBHOOK_URL_PRIVATE_ADDRESS_BLOCKED",
+                  "WEBHOOK_SECRET_ENCRYPTION_KEY_MISSING",
+                  "WEBHOOK_RESOURCE_NOT_FOUND",
+                  "WEBHOOK_EVENT_TYPE_NOT_ENABLED",
+                  "WEBHOOK_DELIVERY_MAX_ATTEMPTS_REACHED",
+                  "WEBHOOK_OPERATION_UNAVAILABLE",
                   "INTERNAL_ERROR"
                 ]
               },
@@ -1922,6 +2216,452 @@ const openApiDocument = {
                 type: "integer"
               }
             }
+          }
+        }
+      },
+      WebhookEventType: {
+        type: "string",
+        enum: webhookEventTypes,
+        description:
+          "Sandbox webhook simulator event type. Events are examples for technical integration testing only."
+      },
+      WebhookEndpointStatus: {
+        type: "string",
+        enum: ["active", "disabled", "failing", "suspended"]
+      },
+      WebhookDeliveryStatus: {
+        type: "string",
+        enum: [
+          "pending",
+          "delivered",
+          "failed",
+          "retry_scheduled",
+          "skipped",
+          "blocked"
+        ]
+      },
+      WebhookEndpointCreateRequest: {
+        type: "object",
+        required: ["name", "url"],
+        additionalProperties: false,
+        properties: {
+          name: {
+            type: "string",
+            minLength: 1,
+            maxLength: 120
+          },
+          url: {
+            type: "string",
+            format: "uri",
+            minLength: 12,
+            maxLength: 2048,
+            description:
+              "HTTPS endpoint URL. Credentials, private/internal/metadata addresses, unsafe redirects, file URLs, and non-HTTP schemes are blocked. Localhost HTTP is only available in explicitly enabled local development."
+          },
+          eventTypes: {
+            type: "array",
+            maxItems: 16,
+            uniqueItems: true,
+            items: ref("WebhookEventType"),
+            default: ["webhook.test"]
+          },
+          description: {
+            type: "string",
+            maxLength: 1000
+          }
+        }
+      },
+      WebhookEndpointUpdateRequest: {
+        type: "object",
+        additionalProperties: false,
+        minProperties: 1,
+        properties: {
+          name: {
+            type: "string",
+            minLength: 1,
+            maxLength: 120
+          },
+          url: {
+            type: "string",
+            format: "uri",
+            minLength: 12,
+            maxLength: 2048
+          },
+          status: ref("WebhookEndpointStatus"),
+          eventTypes: {
+            type: "array",
+            maxItems: 16,
+            uniqueItems: true,
+            items: ref("WebhookEventType")
+          },
+          description: {
+            oneOf: [
+              {
+                type: "string",
+                maxLength: 1000
+              },
+              {
+                type: "null"
+              }
+            ]
+          }
+        }
+      },
+      WebhookEndpoint: {
+        type: "object",
+        required: [
+          "id",
+          "organizationId",
+          "name",
+          "url",
+          "status",
+          "eventTypes",
+          "description",
+          "signingSecretLast4",
+          "signingSecretKeyId",
+          "lastDeliveryAt",
+          "lastSuccessAt",
+          "lastFailureAt",
+          "failureCount",
+          "createdAt",
+          "updatedAt",
+          "disabledAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          organizationId: {
+            type: "string",
+            format: "uuid"
+          },
+          name: {
+            type: "string"
+          },
+          url: {
+            type: "string",
+            format: "uri"
+          },
+          status: ref("WebhookEndpointStatus"),
+          eventTypes: {
+            type: "array",
+            items: ref("WebhookEventType")
+          },
+          description: {
+            type: ["string", "null"]
+          },
+          signingSecretLast4: {
+            type: ["string", "null"],
+            description:
+              "Last four characters only. Raw and encrypted signing secrets are never returned from list or detail endpoints."
+          },
+          signingSecretKeyId: {
+            type: ["string", "null"]
+          },
+          lastDeliveryAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          lastSuccessAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          lastFailureAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          failureCount: {
+            type: "integer",
+            minimum: 0
+          },
+          createdBy: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          updatedBy: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          disabledAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          }
+        }
+      },
+      WebhookEndpointResponse: {
+        type: "object",
+        required: ["endpoint", "disclaimer"],
+        properties: {
+          endpoint: ref("WebhookEndpoint"),
+          disclaimer: {
+            type: "string",
+            example: WEBHOOK_SIMULATOR_DISCLAIMER
+          }
+        }
+      },
+      WebhookEndpointListResponse: {
+        type: "object",
+        required: ["endpoints", "disclaimer"],
+        properties: {
+          endpoints: {
+            type: "array",
+            items: ref("WebhookEndpoint")
+          },
+          disclaimer: {
+            type: "string",
+            example: WEBHOOK_SIMULATOR_DISCLAIMER
+          }
+        }
+      },
+      WebhookEndpointSecretResponse: {
+        type: "object",
+        required: ["endpoint", "signingSecret", "warning", "disclaimer"],
+        properties: {
+          endpoint: ref("WebhookEndpoint"),
+          signingSecret: {
+            type: "string",
+            description:
+              "One-time raw webhook HMAC signing secret. Returned only when creating an endpoint or rotating the secret.",
+            example: "whsec_placeholder_store_once"
+          },
+          warning: {
+            type: "string",
+            example:
+              "Store this webhook signing secret now. Invoice Lantern only shows it on creation or rotation."
+          },
+          disclaimer: {
+            type: "string",
+            example: WEBHOOK_SIMULATOR_DISCLAIMER
+          }
+        }
+      },
+      WebhookTestEventRequest: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          eventType: {
+            allOf: [ref("WebhookEventType")],
+            default: "webhook.test"
+          },
+          payload: {
+            type: "object",
+            maxProperties: 100,
+            additionalProperties: true,
+            description:
+              "Optional safe JSON data object for the event data field. API keys, secrets, tokens, passwords, service-role values, raw XML, raw SOAP, raw UBL, local file paths, and stack traces must not be included."
+          }
+        }
+      },
+      WebhookDelivery: {
+        type: "object",
+        required: [
+          "id",
+          "organizationId",
+          "webhookEndpointId",
+          "eventType",
+          "status",
+          "attemptNumber",
+          "maxAttempts",
+          "requestUrl",
+          "requestMethod",
+          "requestHeadersRedacted",
+          "requestPayload",
+          "payloadHash",
+          "signatureHeaderPresent",
+          "responseStatus",
+          "responseHeadersRedacted",
+          "responseBodyPreview",
+          "responseTimeMs",
+          "errorCode",
+          "errorMessageSafe",
+          "nextRetryAt",
+          "deliveredAt",
+          "createdAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          organizationId: {
+            type: "string",
+            format: "uuid"
+          },
+          webhookEndpointId: {
+            type: "string",
+            format: "uuid"
+          },
+          eventType: ref("WebhookEventType"),
+          status: ref("WebhookDeliveryStatus"),
+          attemptNumber: {
+            type: "integer",
+            minimum: 1
+          },
+          maxAttempts: {
+            type: "integer",
+            minimum: 1,
+            maximum: 10
+          },
+          requestUrl: {
+            type: "string",
+            format: "uri"
+          },
+          requestMethod: {
+            type: "string",
+            const: "POST"
+          },
+          requestHeadersRedacted: {
+            type: "object",
+            additionalProperties: {
+              type: "string"
+            },
+            description:
+              "Request headers with signature, authorization, cookie, token, API-key, and secret-like values redacted."
+          },
+          requestPayload: ref("WebhookEventPayload"),
+          payloadHash: {
+            type: "string",
+            description: "SHA-256 hash of the stable JSON payload."
+          },
+          signatureHeaderPresent: {
+            type: "boolean",
+            description:
+              "Indicates that a signature header was sent. The signature value itself is redacted in logs."
+          },
+          responseStatus: {
+            type: ["integer", "null"],
+            minimum: 100,
+            maximum: 599
+          },
+          responseHeadersRedacted: {
+            type: "object",
+            additionalProperties: {
+              type: "string"
+            }
+          },
+          responseBodyPreview: {
+            type: ["string", "null"],
+            description:
+              "Bounded, sanitized response preview capped by WEBHOOK_MAX_RESPONSE_BYTES."
+          },
+          responseTimeMs: {
+            type: ["integer", "null"],
+            minimum: 0
+          },
+          errorCode: {
+            type: ["string", "null"],
+            examples: [
+              "WEBHOOK_URL_PRIVATE_ADDRESS_BLOCKED",
+              "WEBHOOK_REDIRECT_BLOCKED",
+              "WEBHOOK_HTTP_STATUS_FAILED"
+            ]
+          },
+          errorMessageSafe: {
+            type: ["string", "null"]
+          },
+          nextRetryAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          deliveredAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          createdBy: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      WebhookEventPayload: {
+        type: "object",
+        required: [
+          "id",
+          "type",
+          "createdAt",
+          "apiVersion",
+          "organizationId",
+          "livemode",
+          "simulator",
+          "data",
+          "disclaimer"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            example: "evt_00000000-0000-4000-8000-000000000001"
+          },
+          type: ref("WebhookEventType"),
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          apiVersion: {
+            type: "string",
+            example: "2026-05-14.webhook-simulator"
+          },
+          organizationId: {
+            type: "string",
+            format: "uuid"
+          },
+          livemode: {
+            type: "boolean",
+            const: false
+          },
+          simulator: {
+            type: "boolean",
+            const: true
+          },
+          data: {
+            type: "object",
+            additionalProperties: true,
+            example: {
+              message: "This is a signed sandbox webhook test event."
+            }
+          },
+          disclaimer: {
+            type: "string",
+            example: WEBHOOK_SIMULATOR_DISCLAIMER
+          }
+        },
+        description:
+          "Safe JSON sandbox event payload. It does not include API keys, service-role keys, raw XML, raw SOAP, full sensitive invoice data, local file paths, or internal stack traces."
+      },
+      WebhookDeliveryResponse: {
+        type: "object",
+        required: ["delivery", "disclaimer"],
+        properties: {
+          delivery: ref("WebhookDelivery"),
+          disclaimer: {
+            type: "string",
+            example: WEBHOOK_SIMULATOR_DISCLAIMER
+          }
+        }
+      },
+      WebhookDeliveryListResponse: {
+        type: "object",
+        required: ["deliveries", "disclaimer"],
+        properties: {
+          deliveries: {
+            type: "array",
+            items: ref("WebhookDelivery")
+          },
+          disclaimer: {
+            type: "string",
+            example: WEBHOOK_SIMULATOR_DISCLAIMER
           }
         }
       },

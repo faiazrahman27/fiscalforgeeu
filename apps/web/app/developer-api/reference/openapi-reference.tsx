@@ -238,6 +238,61 @@ const fallbackRows: EndpointRow[] = [
   },
   {
     method: "GET",
+    path: "/api/v1/webhooks/endpoints",
+    tag: "Webhooks",
+    summary: "List webhook simulator endpoints",
+    description:
+      "Signed-user-only workspace route for safe endpoint metadata. Raw webhook signing secrets are never returned.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "429", "500"]
+  },
+  {
+    method: "POST",
+    path: "/api/v1/webhooks/endpoints",
+    tag: "Webhooks",
+    summary: "Create webhook simulator endpoint",
+    description:
+      "Creates a safe HTTPS endpoint and returns the raw HMAC signing secret once. Unsafe URLs and missing encryption configuration are rejected.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["201", "400", "401", "403", "429", "500", "503"]
+  },
+  {
+    method: "POST",
+    path: "/api/v1/webhooks/endpoints/:id/test",
+    tag: "Webhooks",
+    summary: "Send signed sandbox test event",
+    description:
+      "Sends one signed JSON sandbox event with Invoice-Lantern-Webhook-* headers and records a redacted delivery log.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "409", "429", "500"]
+  },
+  {
+    method: "GET",
+    path: "/api/v1/webhooks/deliveries",
+    tag: "Webhooks",
+    summary: "List webhook delivery logs",
+    description:
+      "Lists redacted delivery logs with status, attempts, response status, bounded previews, and safe errors only.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "429", "500"]
+  },
+  {
+    method: "POST",
+    path: "/api/v1/webhooks/deliveries/:id/retry",
+    tag: "Webhooks",
+    summary: "Retry failed webhook test delivery",
+    description:
+      "Creates one bounded retry attempt for a failed, blocked, or retry-scheduled sandbox delivery.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "409", "429", "500"]
+  },
+  {
+    method: "GET",
     path: "/api/v1/api-keys",
     tag: "Authentication / API Keys",
     summary: "List organization API keys",
@@ -400,10 +455,11 @@ export function OpenApiReference() {
         </div>
         <p>
           Organization API keys authenticate selected sandbox developer
-          endpoints only. Workspace key management and usage logs use signed-in
-          user bearer authentication. This reference is not official filing,
-          authority submission, tax advice, legal advice, accounting advice, or
-          a compliance guarantee.
+          endpoints only. Workspace key management, webhook simulator endpoint
+          management, delivery logs, and usage logs use signed-in user bearer
+          authentication. This reference is not official filing, authority
+          submission, tax advice, legal advice, accounting advice, or a
+          compliance guarantee.
         </p>
       </div>
 

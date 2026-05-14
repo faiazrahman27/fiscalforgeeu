@@ -90,6 +90,16 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
     ["/api-requests/summary", "get"],
     ["/api-usage/policies", "get"],
     ["/api-usage/current", "get"],
+    ["/webhooks/endpoints", "get"],
+    ["/webhooks/endpoints", "post"],
+    ["/webhooks/endpoints/{id}", "get"],
+    ["/webhooks/endpoints/{id}", "patch"],
+    ["/webhooks/endpoints/{id}", "delete"],
+    ["/webhooks/endpoints/{id}/rotate-secret", "post"],
+    ["/webhooks/endpoints/{id}/test", "post"],
+    ["/webhooks/deliveries", "get"],
+    ["/webhooks/deliveries/{id}", "get"],
+    ["/webhooks/deliveries/{id}/retry", "post"],
     ["/invoices", "get"],
     ["/invoices", "post"],
     ["/invoices/from-draft", "post"],
@@ -140,6 +150,8 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
     "XmlInspectResponse",
     "XmlUploadListResponse",
     "VatCheckListResponse",
+    "WebhookEndpoint",
+    "WebhookDelivery",
     "ValidationRunListResponse",
     "DeleteResponse"
   ]) {
@@ -189,6 +201,16 @@ test("OpenAPI documents scopes and signed-user-only API boundaries", () => {
     ["/api-keys", "get"],
     ["/api-requests", "get"],
     ["/api-usage/current", "get"],
+    ["/webhooks/endpoints", "get"],
+    ["/webhooks/endpoints", "post"],
+    ["/webhooks/endpoints/{id}", "get"],
+    ["/webhooks/endpoints/{id}", "patch"],
+    ["/webhooks/endpoints/{id}", "delete"],
+    ["/webhooks/endpoints/{id}/rotate-secret", "post"],
+    ["/webhooks/endpoints/{id}/test", "post"],
+    ["/webhooks/deliveries", "get"],
+    ["/webhooks/deliveries/{id}", "get"],
+    ["/webhooks/deliveries/{id}/retry", "post"],
     ["/invoices/exports", "get"],
     ["/vat/checks", "get"],
     ["/xml/inspect", "post"],
@@ -486,6 +508,13 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/api-requests/summary",
     "/api-usage/policies",
     "/api-usage/current",
+    "/webhooks/endpoints",
+    "/webhooks/endpoints/{id}",
+    "/webhooks/endpoints/{id}/rotate-secret",
+    "/webhooks/endpoints/{id}/test",
+    "/webhooks/deliveries",
+    "/webhooks/deliveries/{id}",
+    "/webhooks/deliveries/{id}/retry",
     "/invoices",
     "/invoices/from-draft",
     "/invoices/{id}",
@@ -524,7 +553,72 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
 
   assert.match(importUblPath, /Organization API keys are intentionally rejected/);
   assert.match(documentedPathNames, /\/vat\/check-vies/);
-  assert.doesNotMatch(documentedPathNames, /webhook/);
+  assert.match(documentedPathNames, /\/webhooks\/endpoints/);
+});
+
+test("OpenAPI documents webhook simulator endpoints, signing, and safe boundaries", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+
+  const createEndpoint = readOperation(paths, "/webhooks/endpoints", "post");
+  const listEndpoint = readOperation(paths, "/webhooks/endpoints", "get");
+  const testDelivery = readOperation(
+    paths,
+    "/webhooks/endpoints/{id}/test",
+    "post"
+  );
+  const retryDelivery = readOperation(
+    paths,
+    "/webhooks/deliveries/{id}/retry",
+    "post"
+  );
+  const endpointSchema = JSON.stringify(readRecord(schemas, "WebhookEndpoint"));
+  const deliverySchema = JSON.stringify(readRecord(schemas, "WebhookDelivery"));
+  const payloadSchema = JSON.stringify(readRecord(schemas, "WebhookEventPayload"));
+  const secretResponse = JSON.stringify(
+    readRecord(schemas, "WebhookEndpointSecretResponse")
+  );
+  const serialized = JSON.stringify({
+    createEndpoint,
+    listEndpoint,
+    testDelivery,
+    retryDelivery,
+    endpointSchema,
+    deliverySchema,
+    payloadSchema,
+    secretResponse
+  });
+
+  assert.match(JSON.stringify(createEndpoint.security), /SupabaseBearerAuth/);
+  assert.doesNotMatch(JSON.stringify(createEndpoint.security), /ApiKeyAuth/);
+  assert.equal(createEndpoint["x-required-scope"], undefined);
+  assert.match(serialized, /owner, admin, or developer/i);
+  assert.match(serialized, /HMAC SHA-256/i);
+  assert.match(serialized, /Invoice-Lantern-Webhook-Signature/);
+  assert.match(serialized, /v1=<hex-hmac-sha256>/);
+  assert.match(serialized, /signingSecret/);
+  assert.match(serialized, /Returned only when creating an endpoint or rotating/);
+  assert.match(endpointSchema, /signingSecretLast4/);
+  assert.doesNotMatch(endpointSchema, /signingSecretEncrypted/);
+  assert.doesNotMatch(endpointSchema, /signingSecretIv/);
+  assert.match(deliverySchema, /signatureHeaderPresent/);
+  assert.match(deliverySchema, /responseBodyPreview/);
+  assert.match(deliverySchema, /WEBHOOK_MAX_RESPONSE_BYTES/);
+  assert.match(payloadSchema, /livemode/);
+  assert.match(payloadSchema, /simulator/);
+  assert.match(payloadSchema, /not official filing/i);
+  assert.match(payloadSchema, /not authority submission/i);
+  assert.match(serialized, /private\/internal\/metadata addresses/i);
+  assert.match(serialized, /unsafe redirects/i);
+  assert.match(serialized, /raw XML/);
+  assert.match(serialized, /raw SOAP/);
+  assert.match(serialized, /WEBHOOK_RATE_LIMIT_EXCEEDED/);
+  assert.doesNotMatch(
+    serialized,
+    /\bofficially valid\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bViDA compliant\b|\bauthority accepted\b|\baccepted by authority\b|\bproves compliance\b/i
+  );
 });
 
 test("OpenAPI documents VIES evidence as explicit and legally cautious", () => {

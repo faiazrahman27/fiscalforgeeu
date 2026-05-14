@@ -35,12 +35,16 @@ npm --prefix apps/web ci
 ## Verification Commands
 
 ```powershell
-npm --prefix packages/ubl run test
+npm --prefix packages/vida-simulator run test
+npm --prefix packages/country-packs run test
+npm --prefix packages/tax-engine run test
 npm --prefix packages/invoice-core run test
-npm run check
+npm --prefix packages/ubl run test
 npm --prefix apps/xml-worker run test
 npm --prefix apps/api run check
 npm --prefix apps/api run test
+npm --prefix apps/web run typecheck
+npm run check
 npm run test
 npm run build
 git diff --check
@@ -49,18 +53,26 @@ git status --short
 
 What they cover:
 
-- `npm --prefix packages/ubl run test`: UBL generation, parsing, XSD, and
-  guarded Schematron execution package tests.
+- `npm --prefix packages/vida-simulator run test`: ViDA readiness simulator
+  package tests.
+- `npm --prefix packages/country-packs run test`: EU country-pack metadata,
+  source, warning, and compatibility tests.
+- `npm --prefix packages/tax-engine run test`: VAT and tax-engine package
+  tests.
 - `npm --prefix packages/invoice-core run test`: Canonical invoice model and
   invoice lifecycle tests.
-- `npm run check`: TypeScript checks for packages, API, XML worker, plus web
-  typecheck and Next.js build through the web `check` script.
+- `npm --prefix packages/ubl run test`: UBL generation, parsing, XSD, and
+  guarded Schematron execution package tests.
 - `npm --prefix apps/xml-worker run test`: XML worker queue, transient payload,
   XSD diagnostics, and guarded Schematron worker/orchestration safety tests.
 - `npm --prefix apps/api run check`: API TypeScript and contract checks.
 - `npm --prefix apps/api run test`: API route and service tests, including
-  deterministic JSON-backed authorization, API-key, validation, workspace, and
-  privacy/retention/deletion coverage.
+  deterministic JSON-backed authorization, API-key, validation, workspace,
+  webhook simulator, and privacy/retention/deletion coverage.
+- `npm --prefix apps/web run typecheck`: Next.js workspace and developer UI
+  typecheck.
+- `npm run check`: TypeScript checks for packages, API, XML worker, plus web
+  typecheck and Next.js build through the web `check` script.
 - `npm run test`: Package tests and API tests, including OpenAPI, validation,
   UBL parse/export/import, VAT local-format checks, API keys, XML job routes,
   ViDA simulation, and report generation.
@@ -101,7 +113,6 @@ These are intentionally not completed in Step 1:
 - Real VIES evidence checks.
 - CII generation and parsing.
 - Reviewed source-rich country packs for all target jurisdictions.
-- Webhook simulator implementation.
 - Admin rule/source console.
 - Full legal document system.
 - Monitoring, incident response, and security dashboard.

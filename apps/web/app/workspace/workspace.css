@@ -953,6 +953,26 @@
   line-height: 1.65;
 }
 
+.workspace-success-copy,
+.workspace-error-copy {
+  margin: 0;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 1rem;
+  padding: 0.85rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.workspace-success-copy {
+  background: rgba(34,197,94,0.1);
+  color: #bbf7d0;
+}
+
+.workspace-error-copy {
+  background: rgba(248,113,113,0.1);
+  color: #fecaca;
+}
+
 .api-key-form {
   display: grid;
   gap: 1rem;
@@ -976,7 +996,8 @@
 }
 
 .api-key-form input,
-.api-key-form select {
+.api-key-form select,
+.api-key-form textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid rgba(255,255,255,0.12);
@@ -989,9 +1010,16 @@
 }
 
 .api-key-form input:focus,
-.api-key-form select:focus {
+.api-key-form select:focus,
+.api-key-form textarea:focus {
   border-color: rgba(100,210,255,0.34);
   box-shadow: 0 0 0 3px rgba(100,210,255,0.08);
+}
+
+.api-key-form textarea {
+  min-height: 7rem;
+  resize: vertical;
+  line-height: 1.6;
 }
 
 .api-key-form fieldset {
@@ -1032,6 +1060,13 @@
   letter-spacing: 0;
   line-height: 1.45;
   text-transform: none;
+}
+
+.api-key-scope-grid small {
+  grid-column: 2;
+  color: rgba(255,255,255,0.42);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 .api-key-scope-grid strong {

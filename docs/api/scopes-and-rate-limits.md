@@ -23,7 +23,10 @@ configuration, or rate limits.
 Country-pack catalogue endpoints are public read-only endpoints at this stage.
 API request logs, usage summaries, API-key management, VAT check history, XML
 upload history, editable UBL draft import, saved ViDA history, and production
-invoice lifecycle routes require a signed-in workspace user.
+invoice lifecycle routes require a signed-in workspace user. Webhook simulator
+endpoint management, signing secret rotation, test delivery, delivery logs, and
+retry actions are also signed-user-only; no `webhooks:*` API-key scope is active
+in this step.
 
 ## Sandbox Rate Policies
 
@@ -40,6 +43,13 @@ Current default policies are per API key unless otherwise noted:
 | `invoices_parse_ubl` | `invoices:parse_ubl` | 30 requests per 15 minutes |
 | `xml_validation_jobs` | `xml:validation_jobs` | 15 requests per 15 minutes |
 | `organization_total` | all scoped API-key traffic for an organization | 300 requests per 15 minutes |
+
+Signed-user webhook simulator routes also have route-level operation limits for
+create/update, secret rotation, test delivery, retry delivery, and log reads.
+They return `WEBHOOK_RATE_LIMIT_EXCEEDED` with `Retry-After` and rate-limit
+headers when exceeded. Delivery attempts are separately bounded by
+`WEBHOOK_DELIVERY_TIMEOUT_MS`, `WEBHOOK_MAX_RESPONSE_BYTES`, and
+`WEBHOOK_MAX_RETRY_ATTEMPTS`.
 
 The API returns rate-limit headers on scoped API-key responses when a policy is
 applied:
@@ -80,3 +90,6 @@ invoice, XML file, VAT number, or simulation result is valid or invalid.
   treated as invalid VAT.
 - Rotate and revoke keys regularly. Use narrower scopes for production-like
   testing and separate keys by environment.
+- Rotate webhook signing secrets when receiver ownership changes. Webhook
+  secrets are shown only on creation or rotation, encrypted at rest, and never
+  returned by list/detail endpoints.

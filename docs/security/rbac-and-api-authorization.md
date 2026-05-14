@@ -30,7 +30,7 @@ filing, certified Peppol compliance, or a compliance guarantee.
 | `owner` | Full workspace control, API-key management, request-log visibility, activity visibility, invoice draft work, validation, export, privacy, retention, deletion, and settings operations. |
 | `admin` | Broad workspace administration, API-key management, request-log visibility, activity visibility, invoice draft work, validation, export, and owner/admin workspace controls currently implemented by the API. |
 | `accountant` | Invoice draft create/edit, validation, export, and validation-report reads. No API-key, settings, privacy, retention, or deletion management. |
-| `developer` | API-key management, API request and usage visibility, activity visibility, validation/export-oriented developer operations, and report reads. No privacy, deletion, retention, settings, or normal draft-edit permissions. |
+| `developer` | API-key management, webhook simulator management, API request and usage visibility, activity visibility, validation/export-oriented developer operations, and report reads. No privacy, deletion, retention, settings, or normal draft-edit permissions. |
 | `reviewer` | Invoice draft review/edit where currently supported, validation, and report reads. No API-key, settings, privacy, retention, or deletion management. |
 | `viewer` | Read-only report/draft visibility where allowed. No mutate, export, API-key, settings, privacy, retention, or deletion management. |
 
@@ -64,6 +64,10 @@ act inside the key's organization. User-only workspace routes, such as API-key
 management, privacy/deletion/retention/settings operations, editable draft
 storage routes, VAT check history, XML upload history, and local draft import
 paths, require signed-in Supabase users.
+Webhook simulator endpoint management, signing secret rotation, test delivery,
+delivery logs, and retry actions are also signed-user-only owner/admin/developer
+routes. Organization API keys do not receive webhook management scopes in this
+step.
 
 ## Route Family Overview
 
@@ -71,6 +75,7 @@ paths, require signed-in Supabase users.
 | --- | --- | --- |
 | API keys | Signed-in user | `owner`, `admin`, or `developer`; safe metadata only; one-time secret display on create. |
 | API requests and usage | Signed-in user | `owner`, `admin`, or `developer`; request logs contain safe metadata only. |
+| Webhook simulator | Signed-in user | `owner`, `admin`, or `developer`; endpoint secrets are encrypted at rest, raw secrets are returned only on create/rotate, test deliveries are signed and bounded, logs are redacted, and organization API keys are rejected. |
 | Invoice validation | Signed-in user or scoped API key | Workspace validation roles or `invoices:validate`; organization API-key validation runs are organization-scoped. |
 | UBL export | Signed-in user or scoped API key | Workspace export roles or `invoices:export_ubl`; export metadata is safe and does not return stored XML. |
 | UBL parse | Signed-in user or scoped API key | Workspace validation roles or `invoices:parse_ubl`; XML safety checks stay in place. |
@@ -123,12 +128,17 @@ new migrations only.
   informational disclaimers. The `issued` state is internal only and is not
   official filing, authority acceptance, Peppol delivery, legal advice, tax
   advice, or accounting advice.
+- Webhook endpoint list/detail responses return safe metadata and
+  `signingSecretLast4` only. Delivery logs redact signatures, secret-like
+  headers, response headers, and response previews. They do not return raw XML,
+  raw SOAP, full API keys, service-role details, encrypted secret material, or
+  stack traces.
 
 ## Future Work
 
 This document covers the Step 2 authorization hardening, Step 4 workspace
 member/invitation management rules, and Step 5 production invoice lifecycle
 route permissions, plus the Step 10 explicit VIES evidence workflow. Later
-prompts may add the full editor/studio fields, CII, webhooks, expanded country
-packs, admin/source consoles, monitoring, legal-document workflows, and
+prompts may add the full editor/studio fields, CII, expanded country packs,
+admin/source consoles, monitoring, legal-document workflows, and
 PWA/offline capabilities. Those are not implemented or claimed complete here.
