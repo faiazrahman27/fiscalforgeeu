@@ -134,6 +134,32 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
     ["/transactions/simulate-vida", "post"],
     ["/transactions/vida-simulations", "get"],
     ["/transactions/vida-simulations/{id}", "get"],
+    ["/legal/documents", "get"],
+    ["/legal/documents/{documentKey}", "get"],
+    ["/legal/documents/{documentKey}/accept", "post"],
+    ["/legal/acceptances/me", "get"],
+    ["/legal/acceptances/workspace", "get"],
+    ["/workspace/settings", "get"],
+    ["/workspace/settings", "put"],
+    ["/workspace/settings/privacy", "get"],
+    ["/workspace/settings/privacy", "patch"],
+    ["/workspace/privacy/data-map", "get"],
+    ["/workspace/privacy/subprocessors", "get"],
+    ["/workspace/privacy/cookie-stance", "get"],
+    ["/workspace/privacy-requests", "get"],
+    ["/workspace/privacy-requests", "post"],
+    ["/workspace/privacy-requests/{id}", "get"],
+    ["/workspace/privacy-requests/{id}", "patch"],
+    ["/workspace/export-packages", "get"],
+    ["/workspace/export-packages", "post"],
+    ["/workspace/export-packages/{id}", "get"],
+    ["/workspace/retention-preview", "get"],
+    ["/workspace/retention-runs", "get"],
+    ["/workspace/retention-runs", "post"],
+    ["/workspace/retention-runs/{id}/execute", "post"],
+    ["/workspace/deletion-runs", "get"],
+    ["/workspace/deletion-runs", "post"],
+    ["/workspace/deletion-runs/{id}/execute", "post"],
     ["/admin/context", "get"],
     ["/admin/rules", "get"],
     ["/admin/rules", "post"],
@@ -176,11 +202,121 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
     "AdminSourceReference",
     "AdminCountryPack",
     "AdminLifecycleEvent",
+    "LegalDocument",
+    "LegalDocumentListResponse",
+    "LegalDocumentDetailResponse",
+    "LegalAcceptanceRequest",
+    "LegalAcceptance",
+    "LegalAcceptanceResponse",
+    "LegalAcceptanceListResponse",
+    "WorkspacePrivacySettings",
+    "WorkspacePrivacySettingsResponse",
+    "WorkspacePrivacyBundleResponse",
+    "PrivacyDataMapRecord",
+    "PrivacyDataMapResponse",
+    "SubprocessorRecord",
+    "SubprocessorListResponse",
+    "CookieTrackingStance",
+    "CookieTrackingStanceResponse",
+    "WorkspacePrivacyRequest",
+    "WorkspacePrivacyRequestCreate",
+    "WorkspacePrivacyRequestReview",
+    "WorkspacePrivacyRequestResponse",
+    "WorkspacePrivacyRequestListResponse",
+    "WorkspaceExportPackage",
+    "WorkspaceExportPackageCreate",
+    "WorkspaceExportPackageResponse",
+    "WorkspaceExportPackageListResponse",
+    "RetentionBucket",
+    "WorkspaceRetentionPreview",
+    "WorkspaceRetentionPreviewResponse",
+    "WorkspaceRetentionRun",
+    "WorkspaceRetentionRunResponse",
+    "WorkspaceRetentionRunListResponse",
+    "WorkspaceDeletionCounts",
+    "WorkspaceDeletionRun",
+    "WorkspaceDeletionRunCreate",
+    "WorkspaceDeletionRunResponse",
+    "WorkspaceDeletionRunListResponse",
     "ValidationRunListResponse",
     "DeleteResponse"
   ]) {
     assert.ok(schemas[schemaName], `Expected schema ${schemaName}`);
   }
+});
+
+test("OpenAPI documents legal and privacy support boundaries", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+
+  const legalList = JSON.stringify(
+    readOperation(paths, "/legal/documents", "get")
+  );
+  const legalAccept = JSON.stringify(
+    readOperation(paths, "/legal/documents/{documentKey}/accept", "post")
+  );
+  const dataMap = JSON.stringify(
+    readOperation(paths, "/workspace/privacy/data-map", "get")
+  );
+  const exportCreate = JSON.stringify(
+    readOperation(paths, "/workspace/export-packages", "post")
+  );
+  const retentionExecute = JSON.stringify(
+    readOperation(paths, "/workspace/retention-runs/{id}/execute", "post")
+  );
+  const deletionExecute = JSON.stringify(
+    readOperation(paths, "/workspace/deletion-runs/{id}/execute", "post")
+  );
+  const legalSchemas = JSON.stringify({
+    legalDocument: readRecord(schemas, "LegalDocument"),
+    legalAcceptance: readRecord(schemas, "LegalAcceptance")
+  });
+  const privacySchemas = JSON.stringify({
+    settings: readRecord(schemas, "WorkspacePrivacySettings"),
+    dataMap: readRecord(schemas, "PrivacyDataMapRecord"),
+    exportPackage: readRecord(schemas, "WorkspaceExportPackage"),
+    privacyRequest: readRecord(schemas, "WorkspacePrivacyRequest"),
+    cookieStance: readRecord(schemas, "CookieTrackingStance")
+  });
+  const serialized = [
+    legalList,
+    legalAccept,
+    dataMap,
+    exportCreate,
+    retentionExecute,
+    deletionExecute,
+    legalSchemas,
+    privacySchemas
+  ].join("\n");
+
+  assert.match(legalList, /Draft and review documents are hidden/);
+  assert.match(legalAccept, /Organization API keys are rejected/);
+  assert.match(legalAccept, /do not store raw IP addresses or raw user agents/);
+  assert.match(dataMap, /validation reports/);
+  assert.match(dataMap, /raw XML\/SOAP/);
+  assert.match(dataMap, /API key hashes/);
+  assert.match(exportCreate, /service-role keys/);
+  assert.match(exportCreate, /API key hashes\/secrets/);
+  assert.match(exportCreate, /webhook raw secret/);
+  assert.match(exportCreate, /raw SOAP/);
+  assert.match(exportCreate, /raw XML/);
+  assert.match(retentionExecute, /tenant-scoped/);
+  assert.match(retentionExecute, /Public legal documents/);
+  assert.match(deletionExecute, /API keys are revoked/);
+  assert.match(deletionExecute, /webhook endpoint secrets are nulled/);
+  assert.match(privacySchemas, /essential_only/);
+  assert.match(privacySchemas, /not a GDPR compliance guarantee/);
+  assert.match(privacySchemas, /professional review/i);
+  assert.match(legalSchemas, /legalReviewRequired/);
+  assert.match(legalSchemas, /professionalReviewRequired/);
+  assert.match(legalSchemas, /Raw IP addresses are not stored or returned/);
+  assert.doesNotMatch(serialized, /FiscalForge/i);
+  assert.doesNotMatch(
+    serialized,
+    /\bis official EU software\b|\bprovides official validation\b|\bprovides official filing\b|\blawyer-approved legal documents\b|\bis GDPR compliant\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bis authority accepted\b|\bguaranteed correctness\b|\bproves compliance\b/i
+  );
 });
 
 test("OpenAPI documents scopes and signed-user-only API boundaries", () => {

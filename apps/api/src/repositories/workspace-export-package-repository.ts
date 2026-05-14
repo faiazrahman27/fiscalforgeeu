@@ -577,6 +577,10 @@ function redactExportCollection(records: unknown[]) {
   return records.map((record) => redactExportRecord(record));
 }
 
+export function redactExportRecordForTesting(value: unknown) {
+  return redactExportRecord(value);
+}
+
 function buildRecordCounts(data: WorkspaceExportPackagePayload["data"]) {
   return {
     organizationProfile: data.organizationProfile.length,

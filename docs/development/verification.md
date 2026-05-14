@@ -114,6 +114,7 @@ These are intentionally not completed in Step 1:
 - CII generation and parsing.
 - Reviewed source-rich country packs for all target jurisdictions.
 - Admin rule/source console.
-- Full legal document system.
+- Professional legal/privacy review of the versioned legal document and
+  GDPR-aware privacy-support policy text before production launch.
 - Monitoring, incident response, and security dashboard.
 - Production deployment hardening.

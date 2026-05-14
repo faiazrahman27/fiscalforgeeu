@@ -14,21 +14,43 @@ import {
   LockKeyhole,
   RefreshCcw,
   Save,
+  Scale,
   Send,
   ShieldCheck,
   Trash2
 } from "lucide-react";
 
 type RetentionMode = "manual" | "scheduled";
+type DataMinimizationMode = "standard" | "reduced" | "strict";
 
 type WorkspaceSettings = {
   retentionMode: RetentionMode;
   invoiceDraftRetentionDays: number;
   validationRunRetentionDays: number;
   xmlReportRetentionDays: number;
+  xmlValidationJobRetentionDays: number;
+  invoiceExportRetentionDays: number;
+  apiRequestLogRetentionDays: number;
+  webhookDeliveryLogRetentionDays: number;
+  viesEvidenceRetentionDays: number;
+  vidaSimulationRetentionDays: number;
   activityLogRetentionDays: number;
+  privacyRequestRetentionDays: number;
+  retentionRunRetentionDays: number;
+  deletionRunRetentionDays: number;
+  legalAcceptanceRetentionDays: number;
+  storeUploadedXmlAfterValidation: boolean;
+  retainValidationReports: boolean;
+  retainViesEvidence: boolean;
+  retainWebhookPayloadPreviews: boolean;
   allowDataExportRequests: boolean;
   allowDeletionRequests: boolean;
+  includeApiLogsInExports: boolean;
+  includeWebhookLogsInExports: boolean;
+  includeLegalAcceptancesInExports: boolean;
+  dataMinimizationMode: DataMinimizationMode;
+  privacyContactEmail: string;
+  securityContactEmail: string;
   updatedAt: string;
 };
 
@@ -44,7 +66,19 @@ type WorkspaceRetentionPreview = {
   invoiceDrafts: RetentionPreviewBucket;
   validationRuns: RetentionPreviewBucket;
   xmlReadinessReports: RetentionPreviewBucket;
+  xmlValidationJobs: RetentionPreviewBucket;
+  invoiceExports: RetentionPreviewBucket;
+  apiRequests: RetentionPreviewBucket;
+  webhookDeliveries: RetentionPreviewBucket;
+  viesEvidenceChecks: RetentionPreviewBucket;
+  vidaSimulationRuns: RetentionPreviewBucket;
   activityEvents: RetentionPreviewBucket;
+  privacyRequests: RetentionPreviewBucket;
+  retentionRuns: RetentionPreviewBucket;
+  deletionRuns: RetentionPreviewBucket;
+  legalAcceptances: RetentionPreviewBucket;
+  warnings: string[];
+  disclaimer: string;
 };
 
 type WorkspaceRetentionRunStatus = "prepared" | "executed" | "failed";
@@ -64,9 +98,21 @@ type WorkspaceRetentionRun = {
   invoiceDrafts: WorkspaceRetentionRunBucket;
   validationRuns: WorkspaceRetentionRunBucket;
   xmlReadinessReports: WorkspaceRetentionRunBucket;
+  xmlValidationJobs: WorkspaceRetentionRunBucket;
+  invoiceExports: WorkspaceRetentionRunBucket;
+  apiRequests: WorkspaceRetentionRunBucket;
+  webhookDeliveries: WorkspaceRetentionRunBucket;
+  viesEvidenceChecks: WorkspaceRetentionRunBucket;
+  vidaSimulationRuns: WorkspaceRetentionRunBucket;
   activityEvents: WorkspaceRetentionRunBucket;
+  privacyRequests: WorkspaceRetentionRunBucket;
+  retentionRuns: WorkspaceRetentionRunBucket;
+  deletionRuns: WorkspaceRetentionRunBucket;
+  legalAcceptances: WorkspaceRetentionRunBucket;
   totalAffectedCount: number;
   totalExecutedCount: number;
+  warnings: string[];
+  disclaimer: string;
   errorMessage: string;
   executedAt: string;
   createdAt: string;
@@ -81,6 +127,21 @@ type WorkspaceDeletionRunRecordCounts = {
   xmlReadinessReports: number;
   workspaceExportPackages: number;
   activityEvents: number;
+  productionInvoices: number;
+  businessProfiles: number;
+  contacts: number;
+  invoiceExports: number;
+  vatNumberChecks: number;
+  xmlValidationJobs: number;
+  apiKeys: number;
+  apiRequests: number;
+  webhookEndpoints: number;
+  webhookDeliveries: number;
+  viesEvidenceChecks: number;
+  vidaSimulationRuns: number;
+  legalAcceptances: number;
+  privacyRequestEvents: number;
+  privacyAuditEvents: number;
 };
 
 type WorkspaceDeletionRun = {
@@ -92,15 +153,35 @@ type WorkspaceDeletionRun = {
   executedCounts: WorkspaceDeletionRunRecordCounts;
   totalAffectedCount: number;
   totalExecutedCount: number;
+  warnings: string[];
+  disclaimer: string;
   errorMessage: string;
   executedAt: string;
   createdAt: string;
   updatedAt: string;
 };
 
-type PrivacyRequestType = "data_export" | "deletion" | "retention_review";
+type PrivacyRequestType =
+  | "data_export"
+  | "export"
+  | "deletion"
+  | "access"
+  | "correction"
+  | "objection"
+  | "restriction"
+  | "portability"
+  | "retention_review"
+  | "other";
 
-type PrivacyRequestStatus = "submitted" | "in_review" | "completed" | "rejected";
+type PrivacyRequestStatus =
+  | "submitted"
+  | "in_review"
+  | "awaiting_verification"
+  | "approved"
+  | "rejected"
+  | "fulfilled"
+  | "cancelled"
+  | "completed";
 
 type WorkspacePrivacyRequest = {
   id: string;
@@ -123,12 +204,37 @@ type PrivacyRequestReviewDraft = {
 type WorkspaceExportPackageStatus = "prepared" | "failed";
 
 type WorkspaceExportPackageRecordCounts = {
+  organizationProfile: number;
+  members: number;
+  invitations: number;
+  businessProfiles: number;
+  contacts: number;
+  productionInvoices: number;
+  invoiceLines: number;
+  invoiceTaxes: number;
+  invoiceAllowances: number;
+  invoiceCharges: number;
+  invoiceExports: number;
   invoiceDrafts: number;
   validationRuns: number;
+  vatNumberChecks: number;
+  viesEvidenceChecks: number;
+  vidaSimulationRuns: number;
+  xmlValidationJobs: number;
   xmlReadinessReports: number;
   workspaceSettings: number;
+  apiKeys: number;
+  apiRequests: number;
+  webhookEndpoints: number;
+  webhookDeliveries: number;
+  legalAcceptances: number;
   privacyRequests: number;
+  privacyRequestEvents: number;
+  retentionRuns: number;
+  deletionRuns: number;
   activityEvents: number;
+  securityEvents: number;
+  privacyAuditEvents: number;
 };
 
 type WorkspaceExportPackage = {
@@ -152,14 +258,81 @@ type PrivacyControlCard = {
   icon: ReactNode;
 };
 
+type PrivacyDataMapRecord = {
+  datasetKey: string;
+  dataCategory: string;
+  purpose: string;
+  tableOrSource: string;
+  defaultRetentionDays: number | null;
+  exportable: boolean;
+  deletable: boolean;
+  anonymizable: boolean;
+  rawPayloadStored: boolean;
+  userFacingDescription: string;
+  riskNote: string;
+  legalReviewRequired: boolean;
+};
+
+type SubprocessorRecord = {
+  providerKey: string;
+  provider: string;
+  status: "configured" | "not_configured" | "review_required";
+  purpose: string;
+  dataCategories: string[];
+  region: string;
+  legalReviewRequired: boolean;
+  notes: string;
+};
+
+type CookieTrackingStanceRecord = {
+  stance: "essential_only";
+  essentialCookiesUsed: boolean;
+  nonEssentialCookiesUsed: boolean;
+  analyticsConfigured: boolean;
+  preferenceStorage: "minimal";
+  summary: string;
+  legalReviewRequired: boolean;
+};
+
+type LegalAcceptanceRecord = {
+  id: string;
+  organizationId: string | null;
+  userId: string;
+  documentKey: string;
+  title: string;
+  version: string;
+  acceptedAt: string;
+  acceptanceContext: string;
+};
+
 const defaultWorkspaceSettings: WorkspaceSettings = {
   retentionMode: "manual",
   invoiceDraftRetentionDays: 365,
   validationRunRetentionDays: 365,
   xmlReportRetentionDays: 180,
+  xmlValidationJobRetentionDays: 180,
+  invoiceExportRetentionDays: 365,
+  apiRequestLogRetentionDays: 180,
+  webhookDeliveryLogRetentionDays: 180,
+  viesEvidenceRetentionDays: 365,
+  vidaSimulationRetentionDays: 365,
   activityLogRetentionDays: 365,
+  privacyRequestRetentionDays: 1095,
+  retentionRunRetentionDays: 1095,
+  deletionRunRetentionDays: 1095,
+  legalAcceptanceRetentionDays: 2555,
+  storeUploadedXmlAfterValidation: false,
+  retainValidationReports: true,
+  retainViesEvidence: true,
+  retainWebhookPayloadPreviews: false,
   allowDataExportRequests: true,
   allowDeletionRequests: true,
+  includeApiLogsInExports: true,
+  includeWebhookLogsInExports: true,
+  includeLegalAcceptancesInExports: true,
+  dataMinimizationMode: "standard",
+  privacyContactEmail: "",
+  securityContactEmail: "",
   updatedAt: ""
 };
 
@@ -181,16 +354,56 @@ const emptyDeletionRunRecordCounts: WorkspaceDeletionRunRecordCounts = {
   validationRuns: 0,
   xmlReadinessReports: 0,
   workspaceExportPackages: 0,
-  activityEvents: 0
+  activityEvents: 0,
+  productionInvoices: 0,
+  businessProfiles: 0,
+  contacts: 0,
+  invoiceExports: 0,
+  vatNumberChecks: 0,
+  xmlValidationJobs: 0,
+  apiKeys: 0,
+  apiRequests: 0,
+  webhookEndpoints: 0,
+  webhookDeliveries: 0,
+  viesEvidenceChecks: 0,
+  vidaSimulationRuns: 0,
+  legalAcceptances: 0,
+  privacyRequestEvents: 0,
+  privacyAuditEvents: 0
 };
 
 const emptyExportRecordCounts: WorkspaceExportPackageRecordCounts = {
+  organizationProfile: 0,
+  members: 0,
+  invitations: 0,
+  businessProfiles: 0,
+  contacts: 0,
+  productionInvoices: 0,
+  invoiceLines: 0,
+  invoiceTaxes: 0,
+  invoiceAllowances: 0,
+  invoiceCharges: 0,
+  invoiceExports: 0,
   invoiceDrafts: 0,
   validationRuns: 0,
+  vatNumberChecks: 0,
+  viesEvidenceChecks: 0,
+  vidaSimulationRuns: 0,
+  xmlValidationJobs: 0,
   xmlReadinessReports: 0,
   workspaceSettings: 0,
+  apiKeys: 0,
+  apiRequests: 0,
+  webhookEndpoints: 0,
+  webhookDeliveries: 0,
+  legalAcceptances: 0,
   privacyRequests: 0,
-  activityEvents: 0
+  privacyRequestEvents: 0,
+  retentionRuns: 0,
+  deletionRuns: 0,
+  activityEvents: 0,
+  securityEvents: 0,
+  privacyAuditEvents: 0
 };
 
 const privacyControls: PrivacyControlCard[] = [
@@ -286,8 +499,27 @@ function normalizeRetentionMode(value: string): RetentionMode {
   return value === "scheduled" ? "scheduled" : "manual";
 }
 
+function normalizeDataMinimizationMode(value: string): DataMinimizationMode {
+  if (value === "reduced" || value === "strict") {
+    return value;
+  }
+
+  return "standard";
+}
+
 function normalizePrivacyRequestType(value: string): PrivacyRequestType {
-  if (value === "deletion" || value === "retention_review") {
+  if (
+    value === "data_export" ||
+    value === "export" ||
+    value === "deletion" ||
+    value === "access" ||
+    value === "correction" ||
+    value === "objection" ||
+    value === "restriction" ||
+    value === "portability" ||
+    value === "retention_review" ||
+    value === "other"
+  ) {
     return value;
   }
 
@@ -295,7 +527,16 @@ function normalizePrivacyRequestType(value: string): PrivacyRequestType {
 }
 
 function normalizePrivacyRequestStatus(value: string): PrivacyRequestStatus {
-  if (value === "in_review" || value === "completed" || value === "rejected") {
+  if (
+    value === "submitted" ||
+    value === "in_review" ||
+    value === "awaiting_verification" ||
+    value === "approved" ||
+    value === "rejected" ||
+    value === "fulfilled" ||
+    value === "cancelled" ||
+    value === "completed"
+  ) {
     return value;
   }
 
@@ -406,12 +647,102 @@ function normalizeWorkspaceSettings(data: unknown): WorkspaceSettings {
         defaultWorkspaceSettings.xmlReportRetentionDays
       )
     ),
+    xmlValidationJobRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "xmlValidationJobRetentionDays",
+        defaultWorkspaceSettings.xmlValidationJobRetentionDays
+      )
+    ),
+    invoiceExportRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "invoiceExportRetentionDays",
+        defaultWorkspaceSettings.invoiceExportRetentionDays
+      )
+    ),
+    apiRequestLogRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "apiRequestLogRetentionDays",
+        defaultWorkspaceSettings.apiRequestLogRetentionDays
+      )
+    ),
+    webhookDeliveryLogRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "webhookDeliveryLogRetentionDays",
+        defaultWorkspaceSettings.webhookDeliveryLogRetentionDays
+      )
+    ),
+    viesEvidenceRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "viesEvidenceRetentionDays",
+        defaultWorkspaceSettings.viesEvidenceRetentionDays
+      )
+    ),
+    vidaSimulationRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "vidaSimulationRetentionDays",
+        defaultWorkspaceSettings.vidaSimulationRetentionDays
+      )
+    ),
     activityLogRetentionDays: clampRetentionDays(
       readNumberField(
         record,
         "activityLogRetentionDays",
         defaultWorkspaceSettings.activityLogRetentionDays
       )
+    ),
+    privacyRequestRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "privacyRequestRetentionDays",
+        defaultWorkspaceSettings.privacyRequestRetentionDays
+      )
+    ),
+    retentionRunRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "retentionRunRetentionDays",
+        defaultWorkspaceSettings.retentionRunRetentionDays
+      )
+    ),
+    deletionRunRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "deletionRunRetentionDays",
+        defaultWorkspaceSettings.deletionRunRetentionDays
+      )
+    ),
+    legalAcceptanceRetentionDays: clampRetentionDays(
+      readNumberField(
+        record,
+        "legalAcceptanceRetentionDays",
+        defaultWorkspaceSettings.legalAcceptanceRetentionDays
+      )
+    ),
+    storeUploadedXmlAfterValidation: readBooleanField(
+      record,
+      "storeUploadedXmlAfterValidation",
+      defaultWorkspaceSettings.storeUploadedXmlAfterValidation
+    ),
+    retainValidationReports: readBooleanField(
+      record,
+      "retainValidationReports",
+      defaultWorkspaceSettings.retainValidationReports
+    ),
+    retainViesEvidence: readBooleanField(
+      record,
+      "retainViesEvidence",
+      defaultWorkspaceSettings.retainViesEvidence
+    ),
+    retainWebhookPayloadPreviews: readBooleanField(
+      record,
+      "retainWebhookPayloadPreviews",
+      defaultWorkspaceSettings.retainWebhookPayloadPreviews
     ),
     allowDataExportRequests: readBooleanField(
       record,
@@ -423,6 +754,30 @@ function normalizeWorkspaceSettings(data: unknown): WorkspaceSettings {
       "allowDeletionRequests",
       defaultWorkspaceSettings.allowDeletionRequests
     ),
+    includeApiLogsInExports: readBooleanField(
+      record,
+      "includeApiLogsInExports",
+      defaultWorkspaceSettings.includeApiLogsInExports
+    ),
+    includeWebhookLogsInExports: readBooleanField(
+      record,
+      "includeWebhookLogsInExports",
+      defaultWorkspaceSettings.includeWebhookLogsInExports
+    ),
+    includeLegalAcceptancesInExports: readBooleanField(
+      record,
+      "includeLegalAcceptancesInExports",
+      defaultWorkspaceSettings.includeLegalAcceptancesInExports
+    ),
+    dataMinimizationMode: normalizeDataMinimizationMode(
+      readStringField(
+        record,
+        "dataMinimizationMode",
+        defaultWorkspaceSettings.dataMinimizationMode
+      )
+    ),
+    privacyContactEmail: readStringField(record, "privacyContactEmail"),
+    securityContactEmail: readStringField(record, "securityContactEmail"),
     updatedAt: readStringField(record, "updatedAt")
   };
 }
@@ -474,10 +829,54 @@ function normalizeWorkspaceRetentionPreview(
       record.xmlReadinessReports,
       settings.xmlReportRetentionDays
     ),
+    xmlValidationJobs: normalizeRetentionPreviewBucket(
+      record.xmlValidationJobs,
+      settings.xmlValidationJobRetentionDays
+    ),
+    invoiceExports: normalizeRetentionPreviewBucket(
+      record.invoiceExports,
+      settings.invoiceExportRetentionDays
+    ),
+    apiRequests: normalizeRetentionPreviewBucket(
+      record.apiRequests,
+      settings.apiRequestLogRetentionDays
+    ),
+    webhookDeliveries: normalizeRetentionPreviewBucket(
+      record.webhookDeliveries,
+      settings.webhookDeliveryLogRetentionDays
+    ),
+    viesEvidenceChecks: normalizeRetentionPreviewBucket(
+      record.viesEvidenceChecks,
+      settings.viesEvidenceRetentionDays
+    ),
+    vidaSimulationRuns: normalizeRetentionPreviewBucket(
+      record.vidaSimulationRuns,
+      settings.vidaSimulationRetentionDays
+    ),
     activityEvents: normalizeRetentionPreviewBucket(
       record.activityEvents,
       settings.activityLogRetentionDays
-    )
+    ),
+    privacyRequests: normalizeRetentionPreviewBucket(
+      record.privacyRequests,
+      settings.privacyRequestRetentionDays
+    ),
+    retentionRuns: normalizeRetentionPreviewBucket(
+      record.retentionRuns,
+      settings.retentionRunRetentionDays
+    ),
+    deletionRuns: normalizeRetentionPreviewBucket(
+      record.deletionRuns,
+      settings.deletionRunRetentionDays
+    ),
+    legalAcceptances: normalizeRetentionPreviewBucket(
+      record.legalAcceptances,
+      settings.legalAcceptanceRetentionDays
+    ),
+    warnings: Array.isArray(record.warnings)
+      ? record.warnings.filter((item): item is string => typeof item === "string")
+      : [],
+    disclaimer: readStringField(record, "disclaimer")
   };
 }
 
@@ -516,7 +915,17 @@ function normalizeWorkspaceRetentionRun(
     invoiceDrafts: normalizeRetentionRunBucket(value.invoiceDrafts),
     validationRuns: normalizeRetentionRunBucket(value.validationRuns),
     xmlReadinessReports: normalizeRetentionRunBucket(value.xmlReadinessReports),
+    xmlValidationJobs: normalizeRetentionRunBucket(value.xmlValidationJobs),
+    invoiceExports: normalizeRetentionRunBucket(value.invoiceExports),
+    apiRequests: normalizeRetentionRunBucket(value.apiRequests),
+    webhookDeliveries: normalizeRetentionRunBucket(value.webhookDeliveries),
+    viesEvidenceChecks: normalizeRetentionRunBucket(value.viesEvidenceChecks),
+    vidaSimulationRuns: normalizeRetentionRunBucket(value.vidaSimulationRuns),
     activityEvents: normalizeRetentionRunBucket(value.activityEvents),
+    privacyRequests: normalizeRetentionRunBucket(value.privacyRequests),
+    retentionRuns: normalizeRetentionRunBucket(value.retentionRuns),
+    deletionRuns: normalizeRetentionRunBucket(value.deletionRuns),
+    legalAcceptances: normalizeRetentionRunBucket(value.legalAcceptances),
     totalAffectedCount: Math.max(
       0,
       readNumberField(value, "totalAffectedCount", 0)
@@ -525,6 +934,10 @@ function normalizeWorkspaceRetentionRun(
       0,
       readNumberField(value, "totalExecutedCount", 0)
     ),
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((item): item is string => typeof item === "string")
+      : [],
+    disclaimer: readStringField(value, "disclaimer"),
     errorMessage: readStringField(value, "errorMessage"),
     executedAt: readStringField(value, "executedAt"),
     createdAt,
@@ -550,7 +963,46 @@ function normalizeDeletionRunRecordCounts(
       0,
       readNumberField(value, "workspaceExportPackages", 0)
     ),
-    activityEvents: Math.max(0, readNumberField(value, "activityEvents", 0))
+    activityEvents: Math.max(0, readNumberField(value, "activityEvents", 0)),
+    productionInvoices: Math.max(
+      0,
+      readNumberField(value, "productionInvoices", 0)
+    ),
+    businessProfiles: Math.max(0, readNumberField(value, "businessProfiles", 0)),
+    contacts: Math.max(0, readNumberField(value, "contacts", 0)),
+    invoiceExports: Math.max(0, readNumberField(value, "invoiceExports", 0)),
+    vatNumberChecks: Math.max(0, readNumberField(value, "vatNumberChecks", 0)),
+    xmlValidationJobs: Math.max(
+      0,
+      readNumberField(value, "xmlValidationJobs", 0)
+    ),
+    apiKeys: Math.max(0, readNumberField(value, "apiKeys", 0)),
+    apiRequests: Math.max(0, readNumberField(value, "apiRequests", 0)),
+    webhookEndpoints: Math.max(
+      0,
+      readNumberField(value, "webhookEndpoints", 0)
+    ),
+    webhookDeliveries: Math.max(
+      0,
+      readNumberField(value, "webhookDeliveries", 0)
+    ),
+    viesEvidenceChecks: Math.max(
+      0,
+      readNumberField(value, "viesEvidenceChecks", 0)
+    ),
+    vidaSimulationRuns: Math.max(
+      0,
+      readNumberField(value, "vidaSimulationRuns", 0)
+    ),
+    legalAcceptances: Math.max(0, readNumberField(value, "legalAcceptances", 0)),
+    privacyRequestEvents: Math.max(
+      0,
+      readNumberField(value, "privacyRequestEvents", 0)
+    ),
+    privacyAuditEvents: Math.max(
+      0,
+      readNumberField(value, "privacyAuditEvents", 0)
+    )
   };
 }
 
@@ -560,7 +1012,22 @@ function sumDeletionRunRecordCounts(counts: WorkspaceDeletionRunRecordCounts) {
     counts.validationRuns +
     counts.xmlReadinessReports +
     counts.workspaceExportPackages +
-    counts.activityEvents
+    counts.activityEvents +
+    counts.productionInvoices +
+    counts.businessProfiles +
+    counts.contacts +
+    counts.invoiceExports +
+    counts.vatNumberChecks +
+    counts.xmlValidationJobs +
+    counts.apiKeys +
+    counts.apiRequests +
+    counts.webhookEndpoints +
+    counts.webhookDeliveries +
+    counts.viesEvidenceChecks +
+    counts.vidaSimulationRuns +
+    counts.legalAcceptances +
+    counts.privacyRequestEvents +
+    counts.privacyAuditEvents
   );
 }
 
@@ -604,6 +1071,10 @@ function normalizeWorkspaceDeletionRun(
         sumDeletionRunRecordCounts(executedCounts)
       )
     ),
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter((item): item is string => typeof item === "string")
+      : [],
+    disclaimer: readStringField(value, "disclaimer"),
     errorMessage: readStringField(value, "errorMessage"),
     executedAt: readStringField(value, "executedAt"),
     createdAt,
@@ -657,12 +1128,37 @@ function normalizeExportRecordCounts(
   }
 
   return {
+    organizationProfile: readNumberField(value, "organizationProfile", 0),
+    members: readNumberField(value, "members", 0),
+    invitations: readNumberField(value, "invitations", 0),
+    businessProfiles: readNumberField(value, "businessProfiles", 0),
+    contacts: readNumberField(value, "contacts", 0),
+    productionInvoices: readNumberField(value, "productionInvoices", 0),
+    invoiceLines: readNumberField(value, "invoiceLines", 0),
+    invoiceTaxes: readNumberField(value, "invoiceTaxes", 0),
+    invoiceAllowances: readNumberField(value, "invoiceAllowances", 0),
+    invoiceCharges: readNumberField(value, "invoiceCharges", 0),
+    invoiceExports: readNumberField(value, "invoiceExports", 0),
     invoiceDrafts: readNumberField(value, "invoiceDrafts", 0),
     validationRuns: readNumberField(value, "validationRuns", 0),
+    vatNumberChecks: readNumberField(value, "vatNumberChecks", 0),
+    viesEvidenceChecks: readNumberField(value, "viesEvidenceChecks", 0),
+    vidaSimulationRuns: readNumberField(value, "vidaSimulationRuns", 0),
+    xmlValidationJobs: readNumberField(value, "xmlValidationJobs", 0),
     xmlReadinessReports: readNumberField(value, "xmlReadinessReports", 0),
     workspaceSettings: readNumberField(value, "workspaceSettings", 0),
+    apiKeys: readNumberField(value, "apiKeys", 0),
+    apiRequests: readNumberField(value, "apiRequests", 0),
+    webhookEndpoints: readNumberField(value, "webhookEndpoints", 0),
+    webhookDeliveries: readNumberField(value, "webhookDeliveries", 0),
+    legalAcceptances: readNumberField(value, "legalAcceptances", 0),
     privacyRequests: readNumberField(value, "privacyRequests", 0),
-    activityEvents: readNumberField(value, "activityEvents", 0)
+    privacyRequestEvents: readNumberField(value, "privacyRequestEvents", 0),
+    retentionRuns: readNumberField(value, "retentionRuns", 0),
+    deletionRuns: readNumberField(value, "deletionRuns", 0),
+    activityEvents: readNumberField(value, "activityEvents", 0),
+    securityEvents: readNumberField(value, "securityEvents", 0),
+    privacyAuditEvents: readNumberField(value, "privacyAuditEvents", 0)
   };
 }
 
@@ -705,9 +1201,169 @@ function buildSettingsPayload(settings: WorkspaceSettings) {
       settings.validationRunRetentionDays
     ),
     xmlReportRetentionDays: clampRetentionDays(settings.xmlReportRetentionDays),
+    xmlValidationJobRetentionDays: clampRetentionDays(
+      settings.xmlValidationJobRetentionDays
+    ),
+    invoiceExportRetentionDays: clampRetentionDays(
+      settings.invoiceExportRetentionDays
+    ),
+    apiRequestLogRetentionDays: clampRetentionDays(
+      settings.apiRequestLogRetentionDays
+    ),
+    webhookDeliveryLogRetentionDays: clampRetentionDays(
+      settings.webhookDeliveryLogRetentionDays
+    ),
+    viesEvidenceRetentionDays: clampRetentionDays(
+      settings.viesEvidenceRetentionDays
+    ),
+    vidaSimulationRetentionDays: clampRetentionDays(
+      settings.vidaSimulationRetentionDays
+    ),
     activityLogRetentionDays: clampRetentionDays(settings.activityLogRetentionDays),
+    privacyRequestRetentionDays: clampRetentionDays(
+      settings.privacyRequestRetentionDays
+    ),
+    retentionRunRetentionDays: clampRetentionDays(settings.retentionRunRetentionDays),
+    deletionRunRetentionDays: clampRetentionDays(settings.deletionRunRetentionDays),
+    legalAcceptanceRetentionDays: clampRetentionDays(
+      settings.legalAcceptanceRetentionDays
+    ),
+    storeUploadedXmlAfterValidation: settings.storeUploadedXmlAfterValidation,
+    retainValidationReports: settings.retainValidationReports,
+    retainViesEvidence: settings.retainViesEvidence,
+    retainWebhookPayloadPreviews: settings.retainWebhookPayloadPreviews,
     allowDataExportRequests: settings.allowDataExportRequests,
-    allowDeletionRequests: settings.allowDeletionRequests
+    allowDeletionRequests: settings.allowDeletionRequests,
+    includeApiLogsInExports: settings.includeApiLogsInExports,
+    includeWebhookLogsInExports: settings.includeWebhookLogsInExports,
+    includeLegalAcceptancesInExports: settings.includeLegalAcceptancesInExports,
+    dataMinimizationMode: settings.dataMinimizationMode,
+    privacyContactEmail: settings.privacyContactEmail.trim(),
+    securityContactEmail: settings.securityContactEmail.trim()
+  };
+}
+
+function normalizePrivacyDataMapRecord(value: unknown): PrivacyDataMapRecord | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const datasetKey = readStringField(value, "datasetKey");
+  const dataCategory = readStringField(value, "dataCategory");
+
+  if (!datasetKey || !dataCategory) {
+    return null;
+  }
+
+  return {
+    datasetKey,
+    dataCategory,
+    purpose: readStringField(value, "purpose"),
+    tableOrSource: readStringField(value, "tableOrSource"),
+    defaultRetentionDays:
+      typeof value.defaultRetentionDays === "number"
+        ? value.defaultRetentionDays
+        : null,
+    exportable: readBooleanField(value, "exportable", false),
+    deletable: readBooleanField(value, "deletable", false),
+    anonymizable: readBooleanField(value, "anonymizable", false),
+    rawPayloadStored: readBooleanField(value, "rawPayloadStored", false),
+    userFacingDescription: readStringField(value, "userFacingDescription"),
+    riskNote: readStringField(value, "riskNote"),
+    legalReviewRequired: readBooleanField(value, "legalReviewRequired", true)
+  };
+}
+
+function normalizeSubprocessorRecord(value: unknown): SubprocessorRecord | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const provider = readStringField(value, "provider");
+  const providerName = readStringField(value, "providerName", provider);
+  const providerKey = readStringField(
+    value,
+    "providerKey",
+    providerName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+  );
+
+  if (!providerKey || !providerName) {
+    return null;
+  }
+
+  const status = readStringField(value, "status");
+
+  return {
+    providerKey,
+    provider: providerName,
+    status:
+      status === "configured" ||
+      status === "not_configured" ||
+      status === "review_required"
+        ? status
+        : "review_required",
+    purpose: readStringField(value, "purpose"),
+    dataCategories: Array.isArray(value.dataCategories)
+      ? value.dataCategories.filter(
+          (item): item is string => typeof item === "string"
+        )
+      : [],
+    region: readStringField(value, "region", "review_required"),
+    legalReviewRequired: readBooleanField(value, "legalReviewRequired", true),
+    notes: readStringField(value, "notes")
+  };
+}
+
+function normalizeCookieTrackingStanceRecord(
+  value: unknown
+): CookieTrackingStanceRecord | null {
+  const record = isPlainObject(value) && isPlainObject(value.record)
+    ? value.record
+    : value;
+
+  if (!isPlainObject(record)) {
+    return null;
+  }
+
+  return {
+    stance: "essential_only",
+    essentialCookiesUsed: readBooleanField(record, "essentialCookiesUsed", true),
+    nonEssentialCookiesUsed: readBooleanField(
+      record,
+      "nonEssentialCookiesUsed",
+      false
+    ),
+    analyticsConfigured: readBooleanField(record, "analyticsConfigured", false),
+    preferenceStorage: "minimal",
+    summary: readStringField(record, "summary"),
+    legalReviewRequired: readBooleanField(record, "legalReviewRequired", true)
+  };
+}
+
+function normalizeLegalAcceptanceRecord(
+  value: unknown
+): LegalAcceptanceRecord | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id");
+  const documentKey = readStringField(value, "documentKey");
+  const title = readStringField(value, "title");
+
+  if (!id || !documentKey || !title) {
+    return null;
+  }
+
+  return {
+    id,
+    organizationId: readStringField(value, "organizationId") || null,
+    userId: readStringField(value, "userId"),
+    documentKey,
+    title,
+    version: readStringField(value, "version"),
+    acceptedAt: readStringField(value, "acceptedAt"),
+    acceptanceContext: readStringField(value, "acceptanceContext")
   };
 }
 
@@ -770,20 +1426,60 @@ function formatRetentionMode(value: RetentionMode) {
 }
 
 function formatPrivacyRequestType(value: PrivacyRequestType) {
+  if (value === "access") {
+    return "Access request";
+  }
+
+  if (value === "correction") {
+    return "Correction request";
+  }
+
   if (value === "deletion") {
     return "Deletion request";
+  }
+
+  if (value === "objection") {
+    return "Objection request";
+  }
+
+  if (value === "restriction") {
+    return "Restriction request";
+  }
+
+  if (value === "portability") {
+    return "Portability request";
   }
 
   if (value === "retention_review") {
     return "Retention review";
   }
 
+  if (value === "other") {
+    return "Other request";
+  }
+
   return "Data export";
 }
 
 function formatPrivacyRequestStatus(value: PrivacyRequestStatus) {
+  if (value === "awaiting_verification") {
+    return "Awaiting verification";
+  }
+
+  if (value === "approved") {
+    return "Approved";
+  }
+
   if (value === "in_review") {
     return "In review";
+  }
+
+  if (value === "fulfilled") {
+    return "Fulfilled";
+  }
+
+  if (value === "cancelled") {
+    return "Cancelled";
   }
 
   if (value === "completed") {
@@ -843,30 +1539,57 @@ function formatBytes(value: number) {
 
 function formatRecordCounts(counts: WorkspaceExportPackageRecordCounts) {
   return [
+    `${counts.organizationProfile} organization profile`,
+    `${counts.members} member(s)`,
     `${counts.invoiceDrafts} draft(s)`,
     `${counts.validationRuns} validation run(s)`,
+    `${counts.xmlValidationJobs} XML job(s)`,
     `${counts.xmlReadinessReports} XML report(s)`,
+    `${counts.invoiceExports} invoice export(s)`,
+    `${counts.apiRequests} API request(s)`,
+    `${counts.webhookDeliveries} webhook delivery log(s)`,
+    `${counts.viesEvidenceChecks} VIES evidence record(s)`,
+    `${counts.vidaSimulationRuns} ViDA run(s)`,
+    `${counts.legalAcceptances} legal acceptance(s)`,
     `${counts.privacyRequests} privacy request(s)`,
+    `${counts.retentionRuns} retention run(s)`,
+    `${counts.deletionRuns} deletion run(s)`,
     `${counts.activityEvents} activity event(s)`
-  ].join(" · ");
+  ].join(" - ");
 }
 
 function formatRetentionRunCounts(record: WorkspaceRetentionRun) {
   return [
     `${record.invoiceDrafts.affectedCount} draft(s)`,
     `${record.validationRuns.affectedCount} validation run(s)`,
+    `${record.xmlValidationJobs.affectedCount} XML job(s)`,
     `${record.xmlReadinessReports.affectedCount} XML report(s)`,
-    `${record.activityEvents.affectedCount} activity event(s)`
-  ].join(" · ");
+    `${record.invoiceExports.affectedCount} invoice export(s)`,
+    `${record.apiRequests.affectedCount} API log(s)`,
+    `${record.webhookDeliveries.affectedCount} webhook log(s)`,
+    `${record.viesEvidenceChecks.affectedCount} VIES evidence record(s)`,
+    `${record.vidaSimulationRuns.affectedCount} ViDA run(s)`,
+    `${record.activityEvents.affectedCount} activity event(s)`,
+    `${record.privacyRequests.affectedCount} privacy request(s)`,
+    `${record.legalAcceptances.affectedCount} legal acceptance(s)`
+  ].join(" - ");
 }
 
 function formatRetentionRunExecutedCounts(record: WorkspaceRetentionRun) {
   return [
     `${record.invoiceDrafts.executedCount} draft(s)`,
     `${record.validationRuns.executedCount} validation run(s)`,
+    `${record.xmlValidationJobs.executedCount} XML job(s)`,
     `${record.xmlReadinessReports.executedCount} XML report(s)`,
-    `${record.activityEvents.executedCount} activity event(s)`
-  ].join(" · ");
+    `${record.invoiceExports.executedCount} invoice export(s)`,
+    `${record.apiRequests.executedCount} API log(s)`,
+    `${record.webhookDeliveries.executedCount} webhook log(s)`,
+    `${record.viesEvidenceChecks.executedCount} VIES evidence record(s)`,
+    `${record.vidaSimulationRuns.executedCount} ViDA run(s)`,
+    `${record.activityEvents.executedCount} activity event(s)`,
+    `${record.privacyRequests.executedCount} privacy request(s)`,
+    `${record.legalAcceptances.executedCount} legal acceptance(s)`
+  ].join(" - ");
 }
 
 function formatDeletionRunRecordCounts(counts: WorkspaceDeletionRunRecordCounts) {
@@ -875,8 +1598,23 @@ function formatDeletionRunRecordCounts(counts: WorkspaceDeletionRunRecordCounts)
     `${counts.validationRuns} validation run(s)`,
     `${counts.xmlReadinessReports} XML report(s)`,
     `${counts.workspaceExportPackages} export package(s)`,
+    `${counts.productionInvoices} production invoice(s)`,
+    `${counts.businessProfiles} business profile(s)`,
+    `${counts.contacts} contact(s)`,
+    `${counts.invoiceExports} invoice export(s)`,
+    `${counts.vatNumberChecks} VAT check(s)`,
+    `${counts.xmlValidationJobs} XML job(s)`,
+    `${counts.apiKeys} API key record(s)`,
+    `${counts.apiRequests} API request(s)`,
+    `${counts.webhookEndpoints} webhook endpoint(s)`,
+    `${counts.webhookDeliveries} webhook delivery log(s)`,
+    `${counts.viesEvidenceChecks} VIES evidence record(s)`,
+    `${counts.vidaSimulationRuns} ViDA run(s)`,
+    `${counts.legalAcceptances} preserved legal acceptance(s)`,
+    `${counts.privacyRequestEvents} privacy request event(s)`,
+    `${counts.privacyAuditEvents} privacy audit event(s)`,
     `${counts.activityEvents} activity event(s)`
-  ].join(" · ");
+  ].join(" - ");
 }
 
 function downloadJsonFile(fileName: string, payload: unknown) {
@@ -912,6 +1650,18 @@ export default function WorkspacePrivacyPage() {
   const [exportPackages, setExportPackages] = useState<WorkspaceExportPackage[]>(
     []
   );
+  const [privacyDataMapRecords, setPrivacyDataMapRecords] = useState<
+    PrivacyDataMapRecord[]
+  >([]);
+  const [subprocessors, setSubprocessors] = useState<SubprocessorRecord[]>([]);
+  const [cookieTrackingStance, setCookieTrackingStance] =
+    useState<CookieTrackingStanceRecord | null>(null);
+  const [myLegalAcceptances, setMyLegalAcceptances] = useState<
+    LegalAcceptanceRecord[]
+  >([]);
+  const [workspaceLegalAcceptances, setWorkspaceLegalAcceptances] = useState<
+    LegalAcceptanceRecord[]
+  >([]);
   const [exportName, setExportName] = useState(buildDefaultExportName);
   const [sourcePrivacyRequestId, setSourcePrivacyRequestId] = useState("");
   const [sourceDeletionPrivacyRequestId, setSourceDeletionPrivacyRequestId] =
@@ -929,6 +1679,9 @@ export default function WorkspacePrivacyPage() {
   const [isLoadingDeletionRuns, setIsLoadingDeletionRuns] = useState(true);
   const [isLoadingRequests, setIsLoadingRequests] = useState(true);
   const [isLoadingExportPackages, setIsLoadingExportPackages] = useState(true);
+  const [isLoadingPrivacyOverview, setIsLoadingPrivacyOverview] = useState(true);
+  const [isLoadingLegalAcceptances, setIsLoadingLegalAcceptances] =
+    useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isPreparingRetentionRun, setIsPreparingRetentionRun] = useState(false);
   const [isPreparingDeletionRun, setIsPreparingDeletionRun] = useState(false);
@@ -953,6 +1706,14 @@ export default function WorkspacePrivacyPage() {
   const [requestErrorMessage, setRequestErrorMessage] = useState("");
   const [exportStatusMessage, setExportStatusMessage] = useState("");
   const [exportErrorMessage, setExportErrorMessage] = useState("");
+  const [privacyOverviewStatusMessage, setPrivacyOverviewStatusMessage] =
+    useState("");
+  const [privacyOverviewErrorMessage, setPrivacyOverviewErrorMessage] =
+    useState("");
+  const [legalAcceptanceStatusMessage, setLegalAcceptanceStatusMessage] =
+    useState("");
+  const [legalAcceptanceErrorMessage, setLegalAcceptanceErrorMessage] =
+    useState("");
 
   async function loadSettings() {
     setIsLoading(true);
@@ -1178,6 +1939,119 @@ export default function WorkspacePrivacyPage() {
       setExportPackages([]);
       setExportErrorMessage("Could not load workspace export packages.");
       setIsLoadingExportPackages(false);
+    }
+  }
+
+  async function loadPrivacyOverview() {
+    setIsLoadingPrivacyOverview(true);
+    setPrivacyOverviewStatusMessage("");
+    setPrivacyOverviewErrorMessage("");
+
+    try {
+      const [dataMapResponse, subprocessorsResponse, cookieResponse] =
+        await Promise.all([
+          fetch("/api/local/workspace/privacy/data-map", {
+            method: "GET",
+            cache: "no-store"
+          }),
+          fetch("/api/local/workspace/privacy/subprocessors", {
+            method: "GET",
+            cache: "no-store"
+          }),
+          fetch("/api/local/workspace/privacy/cookie-stance", {
+            method: "GET",
+            cache: "no-store"
+          })
+        ]);
+
+      const dataMapData = await readResponseBody(dataMapResponse);
+      const subprocessorsData = await readResponseBody(subprocessorsResponse);
+      const cookieData = await readResponseBody(cookieResponse);
+
+      if (!dataMapResponse.ok || !subprocessorsResponse.ok || !cookieResponse.ok) {
+        setPrivacyDataMapRecords([]);
+        setSubprocessors([]);
+        setCookieTrackingStance(null);
+        setPrivacyOverviewErrorMessage(
+          readErrorMessage(
+            dataMapData ?? subprocessorsData ?? cookieData,
+            "Could not load privacy data map, subprocessor, or cookie stance. Owner or admin role may be required."
+          )
+        );
+        setIsLoadingPrivacyOverview(false);
+        return;
+      }
+
+      const dataMapRecords = getRecordsFromResponse(dataMapData)
+        .map((record) => normalizePrivacyDataMapRecord(record))
+        .filter((record): record is PrivacyDataMapRecord => record !== null);
+      const subprocessorRecords = getRecordsFromResponse(subprocessorsData)
+        .map((record) => normalizeSubprocessorRecord(record))
+        .filter((record): record is SubprocessorRecord => record !== null);
+
+      setPrivacyDataMapRecords(dataMapRecords);
+      setSubprocessors(subprocessorRecords);
+      setCookieTrackingStance(normalizeCookieTrackingStanceRecord(cookieData));
+      setPrivacyOverviewStatusMessage("Privacy overview loaded.");
+      setIsLoadingPrivacyOverview(false);
+    } catch {
+      setPrivacyDataMapRecords([]);
+      setSubprocessors([]);
+      setCookieTrackingStance(null);
+      setPrivacyOverviewErrorMessage("Could not load privacy overview.");
+      setIsLoadingPrivacyOverview(false);
+    }
+  }
+
+  async function loadLegalAcceptances() {
+    setIsLoadingLegalAcceptances(true);
+    setLegalAcceptanceStatusMessage("");
+    setLegalAcceptanceErrorMessage("");
+
+    try {
+      const [myResponse, workspaceResponse] = await Promise.all([
+        fetch("/api/local/legal/acceptances/me", {
+          method: "GET",
+          cache: "no-store"
+        }),
+        fetch("/api/local/legal/acceptances/workspace", {
+          method: "GET",
+          cache: "no-store"
+        })
+      ]);
+
+      const myData = await readResponseBody(myResponse);
+      const workspaceData = await readResponseBody(workspaceResponse);
+
+      if (!myResponse.ok || !workspaceResponse.ok) {
+        setMyLegalAcceptances([]);
+        setWorkspaceLegalAcceptances([]);
+        setLegalAcceptanceErrorMessage(
+          readErrorMessage(
+            myData ?? workspaceData,
+            "Could not load legal acceptance status. Signed-in owner/admin access may be required."
+          )
+        );
+        setIsLoadingLegalAcceptances(false);
+        return;
+      }
+
+      const myRecords = getRecordsFromResponse(myData)
+        .map((record) => normalizeLegalAcceptanceRecord(record))
+        .filter((record): record is LegalAcceptanceRecord => record !== null);
+      const workspaceRecords = getRecordsFromResponse(workspaceData)
+        .map((record) => normalizeLegalAcceptanceRecord(record))
+        .filter((record): record is LegalAcceptanceRecord => record !== null);
+
+      setMyLegalAcceptances(myRecords);
+      setWorkspaceLegalAcceptances(workspaceRecords);
+      setLegalAcceptanceStatusMessage("Legal acceptance status loaded.");
+      setIsLoadingLegalAcceptances(false);
+    } catch {
+      setMyLegalAcceptances([]);
+      setWorkspaceLegalAcceptances([]);
+      setLegalAcceptanceErrorMessage("Could not load legal acceptance status.");
+      setIsLoadingLegalAcceptances(false);
     }
   }
 
@@ -1453,7 +2327,10 @@ export default function WorkspacePrivacyPage() {
       return;
     }
 
-    if (requestType === "data_export" && !settings.allowDataExportRequests) {
+    if (
+      (requestType === "data_export" || requestType === "export") &&
+      !settings.allowDataExportRequests
+    ) {
       setRequestErrorMessage("Data export requests are disabled in workspace settings.");
       return;
     }
@@ -1508,7 +2385,10 @@ export default function WorkspacePrivacyPage() {
           }
         }));
 
-        if (createdRecord.requestType === "data_export") {
+        if (
+          createdRecord.requestType === "data_export" ||
+          createdRecord.requestType === "export"
+        ) {
           setSourcePrivacyRequestId(createdRecord.id);
         }
 
@@ -1710,6 +2590,8 @@ export default function WorkspacePrivacyPage() {
     void loadDeletionRuns();
     void loadPrivacyRequests();
     void loadExportPackages();
+    void loadPrivacyOverview();
+    void loadLegalAcceptances();
   }, []);
 
   const retentionRows = useMemo(() => {
@@ -1731,8 +2613,40 @@ export default function WorkspacePrivacyPage() {
         value: `${settings.xmlReportRetentionDays} days`
       },
       {
+        label: "XML validation job retention",
+        value: `${settings.xmlValidationJobRetentionDays} days`
+      },
+      {
+        label: "Invoice export retention",
+        value: `${settings.invoiceExportRetentionDays} days`
+      },
+      {
+        label: "API request log retention",
+        value: `${settings.apiRequestLogRetentionDays} days`
+      },
+      {
+        label: "Webhook delivery log retention",
+        value: `${settings.webhookDeliveryLogRetentionDays} days`
+      },
+      {
+        label: "VIES evidence retention",
+        value: `${settings.viesEvidenceRetentionDays} days`
+      },
+      {
+        label: "ViDA simulation retention",
+        value: `${settings.vidaSimulationRetentionDays} days`
+      },
+      {
         label: "Activity log retention",
         value: `${settings.activityLogRetentionDays} days`
+      },
+      {
+        label: "Legal acceptance retention",
+        value: `${settings.legalAcceptanceRetentionDays} days`
+      },
+      {
+        label: "Data minimization mode",
+        value: settings.dataMinimizationMode
       },
       {
         label: "Data export requests",
@@ -1741,6 +2655,18 @@ export default function WorkspacePrivacyPage() {
       {
         label: "Deletion requests",
         value: settings.allowDeletionRequests ? "Allowed" : "Disabled"
+      },
+      {
+        label: "API logs in exports",
+        value: settings.includeApiLogsInExports ? "Included" : "Excluded"
+      },
+      {
+        label: "Webhook logs in exports",
+        value: settings.includeWebhookLogsInExports ? "Included" : "Excluded"
+      },
+      {
+        label: "Legal acceptances in exports",
+        value: settings.includeLegalAcceptancesInExports ? "Included" : "Excluded"
       },
       {
         label: "Last updated",
@@ -1772,15 +2698,54 @@ export default function WorkspacePrivacyPage() {
         description: "XML readiness records older than the XML report retention window."
       },
       {
+        label: "XML validation jobs",
+        bucket: retentionPreview.xmlValidationJobs,
+        description: "XML validation jobs older than the XML job retention window."
+      },
+      {
+        label: "Invoice exports",
+        bucket: retentionPreview.invoiceExports,
+        description: "Generated invoice export metadata older than the export retention window."
+      },
+      {
+        label: "API request logs",
+        bucket: retentionPreview.apiRequests,
+        description: "Developer API request metadata older than the API log retention window."
+      },
+      {
+        label: "Webhook delivery logs",
+        bucket: retentionPreview.webhookDeliveries,
+        description: "Webhook simulator delivery metadata older than the webhook log window."
+      },
+      {
+        label: "VIES evidence",
+        bucket: retentionPreview.viesEvidenceChecks,
+        description: "VIES evidence metadata older than the VIES evidence window."
+      },
+      {
+        label: "ViDA simulation runs",
+        bucket: retentionPreview.vidaSimulationRuns,
+        description: "Saved ViDA-readiness simulation runs older than the simulation window."
+      },
+      {
         label: "Workspace activity events",
         bucket: retentionPreview.activityEvents,
         description: "Audit/activity records older than the activity log retention window."
+      },
+      {
+        label: "Legal acceptance records",
+        bucket: retentionPreview.legalAcceptances,
+        description:
+          "Acceptance records are counted for policy review and preserved by default."
       }
     ];
   }, [retentionPreview]);
 
   const dataExportPrivacyRequests = useMemo(() => {
-    return privacyRequests.filter((request) => request.requestType === "data_export");
+    return privacyRequests.filter(
+      (request) =>
+        request.requestType === "data_export" || request.requestType === "export"
+    );
   }, [privacyRequests]);
 
   const deletionPrivacyRequests = useMemo(() => {
@@ -1788,7 +2753,7 @@ export default function WorkspacePrivacyPage() {
   }, [privacyRequests]);
 
   const selectedRequestTypeAllowed =
-    requestType === "data_export"
+    requestType === "data_export" || requestType === "export"
       ? settings.allowDataExportRequests
       : requestType === "deletion"
         ? settings.allowDeletionRequests
@@ -1859,6 +2824,320 @@ export default function WorkspacePrivacyPage() {
               professional or legal assessment.
             </p>
           </div>
+        </div>
+      </section>
+
+      <section className="privacy-retention">
+        <div className="privacy-retention-head">
+          <div>
+            <p>Privacy dashboard overview</p>
+            <h3>Data map, subprocessors, cookie stance, and legal status</h3>
+          </div>
+
+          <ShieldCheck size={26} />
+        </div>
+
+        <div className="workspace-row-actions">
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={isLoadingPrivacyOverview}
+            onClick={() => {
+              void loadPrivacyOverview();
+            }}
+          >
+            <RefreshCcw size={16} />
+            {isLoadingPrivacyOverview ? "Loading" : "Reload overview"}
+          </button>
+
+          <button
+            type="button"
+            className="workspace-auth-action"
+            disabled={isLoadingLegalAcceptances}
+            onClick={() => {
+              void loadLegalAcceptances();
+            }}
+          >
+            <RefreshCcw size={16} />
+            {isLoadingLegalAcceptances ? "Loading" : "Reload acceptances"}
+          </button>
+        </div>
+
+        <div className="retention-list">
+          <div className="retention-row">
+            <div>
+              <Database size={16} />
+              <span>Privacy data map datasets</span>
+            </div>
+
+            <strong>
+              {isLoadingPrivacyOverview
+                ? "Loading"
+                : `${privacyDataMapRecords.length} records`}
+            </strong>
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <ShieldCheck size={16} />
+              <span>Subprocessors requiring review</span>
+            </div>
+
+            <strong>
+              {isLoadingPrivacyOverview
+                ? "Loading"
+                : `${subprocessors.length} entries`}
+            </strong>
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <EyeOff size={16} />
+              <span>Cookie/tracking stance</span>
+            </div>
+
+            <strong>
+              {cookieTrackingStance
+                ? cookieTrackingStance.nonEssentialCookiesUsed
+                  ? "Review tracking"
+                  : "Essential-only"
+                : isLoadingPrivacyOverview
+                  ? "Loading"
+                  : "Unavailable"}
+            </strong>
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <Scale size={16} />
+              <span>My legal acceptances</span>
+            </div>
+
+            <strong>
+              {isLoadingLegalAcceptances
+                ? "Loading"
+                : `${myLegalAcceptances.length} version(s)`}
+            </strong>
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <Scale size={16} />
+              <span>Workspace legal acceptance records</span>
+            </div>
+
+            <strong>
+              {isLoadingLegalAcceptances
+                ? "Loading"
+                : `${workspaceLegalAcceptances.length} record(s)`}
+            </strong>
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <LockKeyhole size={16} />
+              <span>Privacy contact</span>
+            </div>
+
+            <strong>
+              {settings.privacyContactEmail || "Placeholder pending review"}
+            </strong>
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <LockKeyhole size={16} />
+              <span>Security contact</span>
+            </div>
+
+            <strong>
+              {settings.securityContactEmail || "Placeholder pending review"}
+            </strong>
+          </div>
+        </div>
+
+        {privacyOverviewStatusMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <CheckCircle2 size={16} />
+                <span>{privacyOverviewStatusMessage}</span>
+              </div>
+
+              <strong>OK</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {privacyOverviewErrorMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>{privacyOverviewErrorMessage}</span>
+              </div>
+
+              <strong>Review</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {legalAcceptanceStatusMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <CheckCircle2 size={16} />
+                <span>{legalAcceptanceStatusMessage}</span>
+              </div>
+
+              <strong>OK</strong>
+            </div>
+          </div>
+        ) : null}
+
+        {legalAcceptanceErrorMessage ? (
+          <div className="retention-list">
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>{legalAcceptanceErrorMessage}</span>
+              </div>
+
+              <strong>Review</strong>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="privacy-retention">
+        <div className="privacy-retention-head">
+          <div>
+            <p>Privacy data map</p>
+            <h3>Datasets and minimization notes</h3>
+          </div>
+
+          <Database size={26} />
+        </div>
+
+        <div className="retention-list">
+          {isLoadingPrivacyOverview ? (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>Loading data map</span>
+              </div>
+
+              <strong>Loading</strong>
+            </div>
+          ) : privacyDataMapRecords.length > 0 ? (
+            privacyDataMapRecords.map((record) => (
+              <div className="retention-row" key={record.datasetKey}>
+                <div>
+                  <Database size={16} />
+                  <span>
+                    {record.dataCategory}
+                    <br />
+                    {record.userFacingDescription || record.purpose}
+                    <br />
+                    Source: {record.tableOrSource}
+                    <br />
+                    Raw payload stored: {record.rawPayloadStored ? "Review" : "No"}
+                    {" - "}
+                    Exportable: {record.exportable ? "Yes" : "No"}
+                    {" - "}
+                    Deletable: {record.deletable ? "Yes" : "Preserve/minimize"}
+                    <br />
+                    {record.riskNote}
+                  </span>
+                </div>
+
+                <strong>
+                  {record.legalReviewRequired ? "Review required" : "Mapped"}
+                </strong>
+              </div>
+            ))
+          ) : (
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>Data map is unavailable or empty.</span>
+              </div>
+
+              <strong>Empty</strong>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="privacy-retention">
+        <div className="privacy-retention-head">
+          <div>
+            <p>Subprocessors and cookies</p>
+            <h3>Review-required provider and tracking stance</h3>
+          </div>
+
+          <EyeOff size={26} />
+        </div>
+
+        <div className="retention-list">
+          {cookieTrackingStance ? (
+            <div className="retention-row">
+              <div>
+                <EyeOff size={16} />
+                <span>
+                  {cookieTrackingStance.summary || "Essential-only cookie stance."}
+                  <br />
+                  Non-essential cookies:{" "}
+                  {cookieTrackingStance.nonEssentialCookiesUsed ? "Yes" : "No"}
+                  {" - "}
+                  Analytics configured:{" "}
+                  {cookieTrackingStance.analyticsConfigured ? "Yes" : "No"}
+                </span>
+              </div>
+
+              <strong>Essential-only</strong>
+            </div>
+          ) : null}
+
+          {isLoadingPrivacyOverview ? (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>Loading subprocessors</span>
+              </div>
+
+              <strong>Loading</strong>
+            </div>
+          ) : subprocessors.length > 0 ? (
+            subprocessors.map((record) => (
+              <div className="retention-row" key={record.providerKey}>
+                <div>
+                  <ShieldCheck size={16} />
+                  <span>
+                    {record.provider}
+                    <br />
+                    {record.purpose}
+                    <br />
+                    Region: {record.region} - Categories:{" "}
+                    {record.dataCategories.join(", ") || "review required"}
+                    <br />
+                    {record.notes}
+                  </span>
+                </div>
+
+                <strong>{record.status.replace(/_/g, " ")}</strong>
+              </div>
+            ))
+          ) : (
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>Subprocessor list is unavailable or empty.</span>
+              </div>
+
+              <strong>Empty</strong>
+            </div>
+          )}
         </div>
       </section>
 
@@ -1946,6 +3225,101 @@ export default function WorkspacePrivacyPage() {
           </label>
 
           <label>
+            <span>XML validation jobs</span>
+            <input
+              type="number"
+              min="0"
+              max="3650"
+              value={settings.xmlValidationJobRetentionDays}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  xmlValidationJobRetentionDays: clampRetentionDays(
+                    Number(event.target.value)
+                  )
+                }));
+              }}
+            />
+          </label>
+
+          <label>
+            <span>API logs</span>
+            <input
+              type="number"
+              min="0"
+              max="3650"
+              value={settings.apiRequestLogRetentionDays}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  apiRequestLogRetentionDays: clampRetentionDays(
+                    Number(event.target.value)
+                  )
+                }));
+              }}
+            />
+          </label>
+
+          <label>
+            <span>Webhook logs</span>
+            <input
+              type="number"
+              min="0"
+              max="3650"
+              value={settings.webhookDeliveryLogRetentionDays}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  webhookDeliveryLogRetentionDays: clampRetentionDays(
+                    Number(event.target.value)
+                  )
+                }));
+              }}
+            />
+          </label>
+
+          <label>
+            <span>VIES evidence</span>
+            <input
+              type="number"
+              min="0"
+              max="3650"
+              value={settings.viesEvidenceRetentionDays}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  viesEvidenceRetentionDays: clampRetentionDays(
+                    Number(event.target.value)
+                  )
+                }));
+              }}
+            />
+          </label>
+
+          <label>
+            <span>ViDA simulations</span>
+            <input
+              type="number"
+              min="0"
+              max="3650"
+              value={settings.vidaSimulationRetentionDays}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  vidaSimulationRetentionDays: clampRetentionDays(
+                    Number(event.target.value)
+                  )
+                }));
+              }}
+            />
+          </label>
+
+          <label>
             <span>Activity logs</span>
             <input
               type="number"
@@ -1959,6 +3333,60 @@ export default function WorkspacePrivacyPage() {
                   activityLogRetentionDays: clampRetentionDays(
                     Number(event.target.value)
                   )
+                }));
+              }}
+            />
+          </label>
+
+          <label>
+            <span>Data minimization</span>
+            <select
+              value={settings.dataMinimizationMode}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  dataMinimizationMode: normalizeDataMinimizationMode(
+                    event.target.value
+                  )
+                }));
+              }}
+            >
+              <option value="standard">Standard</option>
+              <option value="reduced">Reduced</option>
+              <option value="strict">Strict</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Privacy contact</span>
+            <input
+              type="email"
+              maxLength={320}
+              value={settings.privacyContactEmail}
+              disabled={isLoading || isSaving}
+              placeholder="privacy@example.test"
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  privacyContactEmail: event.target.value
+                }));
+              }}
+            />
+          </label>
+
+          <label>
+            <span>Security contact</span>
+            <input
+              type="email"
+              maxLength={320}
+              value={settings.securityContactEmail}
+              disabled={isLoading || isSaving}
+              placeholder="security@example.test"
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  securityContactEmail: event.target.value
                 }));
               }}
             />
@@ -1999,6 +3427,63 @@ export default function WorkspacePrivacyPage() {
                 setSettings((currentSettings) => ({
                   ...currentSettings,
                   allowDeletionRequests: event.target.checked
+                }));
+              }}
+            />
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <Database size={16} />
+              <span>Include API log metadata in exports</span>
+            </div>
+
+            <input
+              type="checkbox"
+              checked={settings.includeApiLogsInExports}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  includeApiLogsInExports: event.target.checked
+                }));
+              }}
+            />
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <Database size={16} />
+              <span>Include webhook log metadata in exports</span>
+            </div>
+
+            <input
+              type="checkbox"
+              checked={settings.includeWebhookLogsInExports}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  includeWebhookLogsInExports: event.target.checked
+                }));
+              }}
+            />
+          </div>
+
+          <div className="retention-row">
+            <div>
+              <Scale size={16} />
+              <span>Include legal acceptance records in exports</span>
+            </div>
+
+            <input
+              type="checkbox"
+              checked={settings.includeLegalAcceptancesInExports}
+              disabled={isLoading || isSaving}
+              onChange={(event) => {
+                setSettings((currentSettings) => ({
+                  ...currentSettings,
+                  includeLegalAcceptancesInExports: event.target.checked
                 }));
               }}
             />
@@ -2333,8 +3818,15 @@ export default function WorkspacePrivacyPage() {
               }}
             >
               <option value="data_export">Data export</option>
+              <option value="export">Export</option>
               <option value="deletion">Deletion request</option>
+              <option value="access">Access request</option>
+              <option value="correction">Correction request</option>
+              <option value="objection">Objection request</option>
+              <option value="restriction">Restriction request</option>
+              <option value="portability">Portability request</option>
               <option value="retention_review">Retention review</option>
+              <option value="other">Other</option>
             </select>
           </label>
 
@@ -2871,6 +4363,12 @@ export default function WorkspacePrivacyPage() {
                       >
                         <option value="submitted">Submitted</option>
                         <option value="in_review">In review</option>
+                        <option value="awaiting_verification">
+                          Awaiting verification
+                        </option>
+                        <option value="approved">Approved</option>
+                        <option value="fulfilled">Fulfilled</option>
+                        <option value="cancelled">Cancelled</option>
                         <option value="completed">Completed</option>
                         <option value="rejected">Rejected</option>
                       </select>
@@ -2916,6 +4414,63 @@ export default function WorkspacePrivacyPage() {
               <div>
                 <FileClock size={16} />
                 <span>No privacy requests have been submitted yet.</span>
+              </div>
+
+              <strong>Empty</strong>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="privacy-retention">
+        <div className="privacy-retention-head">
+          <div>
+            <p>Legal acceptance status</p>
+            <h3>Versioned policy acceptance records</h3>
+          </div>
+
+          <Scale size={26} />
+        </div>
+
+        <div className="retention-list">
+          {isLoadingLegalAcceptances ? (
+            <div className="retention-row">
+              <div>
+                <FileClock size={16} />
+                <span>Loading legal acceptance records</span>
+              </div>
+
+              <strong>Loading</strong>
+            </div>
+          ) : myLegalAcceptances.length > 0 || workspaceLegalAcceptances.length > 0 ? (
+            [...myLegalAcceptances, ...workspaceLegalAcceptances]
+              .slice(0, 12)
+              .map((record) => (
+                <div className="retention-row" key={`${record.id}-${record.userId}`}>
+                  <div>
+                    <Scale size={16} />
+                    <span>
+                      {record.title} version {record.version}
+                      <br />
+                      Context: {record.acceptanceContext || "workspace"} - User:{" "}
+                      {record.userId || "not shown"}
+                      <br />
+                      Accepted: {formatUpdatedAt(record.acceptedAt)}
+                    </span>
+                  </div>
+
+                  <strong>{record.documentKey}</strong>
+                </div>
+              ))
+          ) : (
+            <div className="retention-row">
+              <div>
+                <AlertTriangle size={16} />
+                <span>
+                  No legal acceptance records are visible for this workspace.
+                  Required document acceptance should be completed by signed-in
+                  users where applicable.
+                </span>
               </div>
 
               <strong>Empty</strong>

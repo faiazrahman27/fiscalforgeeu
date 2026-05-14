@@ -20,9 +20,21 @@ export type WorkspaceRetentionRunRecord = {
   invoiceDrafts: WorkspaceRetentionRunBucket;
   validationRuns: WorkspaceRetentionRunBucket;
   xmlReadinessReports: WorkspaceRetentionRunBucket;
+  xmlValidationJobs: WorkspaceRetentionRunBucket;
+  invoiceExports: WorkspaceRetentionRunBucket;
+  apiRequests: WorkspaceRetentionRunBucket;
+  webhookDeliveries: WorkspaceRetentionRunBucket;
+  viesEvidenceChecks: WorkspaceRetentionRunBucket;
+  vidaSimulationRuns: WorkspaceRetentionRunBucket;
   activityEvents: WorkspaceRetentionRunBucket;
+  privacyRequests: WorkspaceRetentionRunBucket;
+  retentionRuns: WorkspaceRetentionRunBucket;
+  deletionRuns: WorkspaceRetentionRunBucket;
+  legalAcceptances: WorkspaceRetentionRunBucket;
   totalAffectedCount: number;
   totalExecutedCount: number;
+  warnings: string[];
+  disclaimer: string;
   errorMessage: string;
   executedAt: string;
   createdAt: string;
@@ -47,36 +59,42 @@ type WorkspaceSettingsRecord = {
   invoiceDraftRetentionDays: number;
   validationRunRetentionDays: number;
   xmlReportRetentionDays: number;
+  xmlValidationJobRetentionDays: number;
+  invoiceExportRetentionDays: number;
+  apiRequestLogRetentionDays: number;
+  webhookDeliveryLogRetentionDays: number;
+  viesEvidenceRetentionDays: number;
+  vidaSimulationRetentionDays: number;
   activityLogRetentionDays: number;
+  privacyRequestRetentionDays: number;
+  retentionRunRetentionDays: number;
+  deletionRunRetentionDays: number;
+  legalAcceptanceRetentionDays: number;
 };
 
-type SupabaseWorkspaceRetentionRunRow = {
-  id: string;
-  organization_id: string;
-  initiated_by: string | null;
-  run_type: string;
-  status: string;
-  retention_mode: string;
-  invoice_draft_retention_days: number;
-  validation_run_retention_days: number;
-  xml_report_retention_days: number;
-  activity_log_retention_days: number;
-  invoice_draft_cutoff_date: string;
-  validation_run_cutoff_date: string;
-  xml_report_cutoff_date: string;
-  activity_log_cutoff_date: string;
-  invoice_draft_affected_count: number;
-  validation_run_affected_count: number;
-  xml_report_affected_count: number;
-  activity_event_affected_count: number;
-  invoice_draft_executed_count: number;
-  validation_run_executed_count: number;
-  xml_report_executed_count: number;
-  activity_event_executed_count: number;
-  error_message: string;
-  executed_at: string | null;
-  created_at: string;
-  updated_at: string;
+type RetentionDatasetConfig = {
+  responseKey: keyof Pick<
+    WorkspaceRetentionRunRecord,
+    | "invoiceDrafts"
+    | "validationRuns"
+    | "xmlReadinessReports"
+    | "xmlValidationJobs"
+    | "invoiceExports"
+    | "apiRequests"
+    | "webhookDeliveries"
+    | "viesEvidenceChecks"
+    | "vidaSimulationRuns"
+    | "activityEvents"
+    | "privacyRequests"
+    | "retentionRuns"
+    | "deletionRuns"
+    | "legalAcceptances"
+  >;
+  settingKey: keyof Omit<WorkspaceSettingsRecord, "retentionMode">;
+  tableName: string;
+  dateColumn: string;
+  columnPrefix: string;
+  preservedByDefault?: boolean;
 };
 
 type WorkspaceActivityEventInput = {
@@ -94,18 +112,133 @@ type WorkspaceActivityEventInput = {
 const MAX_WORKSPACE_RETENTION_RUNS = 250;
 
 const WORKSPACE_RETENTION_RUN_SELECT_FIELDS =
-  "id, organization_id, initiated_by, run_type, status, retention_mode, invoice_draft_retention_days, validation_run_retention_days, xml_report_retention_days, activity_log_retention_days, invoice_draft_cutoff_date, validation_run_cutoff_date, xml_report_cutoff_date, activity_log_cutoff_date, invoice_draft_affected_count, validation_run_affected_count, xml_report_affected_count, activity_event_affected_count, invoice_draft_executed_count, validation_run_executed_count, xml_report_executed_count, activity_event_executed_count, error_message, executed_at, created_at, updated_at";
+  "id, organization_id, initiated_by, run_type, status, retention_mode, invoice_draft_retention_days, validation_run_retention_days, xml_report_retention_days, xml_validation_job_retention_days, invoice_export_retention_days, api_request_log_retention_days, webhook_delivery_log_retention_days, vies_evidence_retention_days, vida_simulation_retention_days, activity_log_retention_days, privacy_request_retention_days, retention_run_retention_days, deletion_run_retention_days, legal_acceptance_retention_days, invoice_draft_cutoff_date, validation_run_cutoff_date, xml_report_cutoff_date, xml_validation_job_cutoff_date, invoice_export_cutoff_date, api_request_log_cutoff_date, webhook_delivery_log_cutoff_date, vies_evidence_cutoff_date, vida_simulation_cutoff_date, activity_log_cutoff_date, privacy_request_cutoff_date, retention_run_cutoff_date, deletion_run_cutoff_date, legal_acceptance_cutoff_date, invoice_draft_affected_count, validation_run_affected_count, xml_report_affected_count, xml_validation_job_affected_count, invoice_export_affected_count, api_request_log_affected_count, webhook_delivery_log_affected_count, vies_evidence_affected_count, vida_simulation_affected_count, activity_event_affected_count, privacy_request_affected_count, retention_run_affected_count, deletion_run_affected_count, legal_acceptance_affected_count, invoice_draft_executed_count, validation_run_executed_count, xml_report_executed_count, xml_validation_job_executed_count, invoice_export_executed_count, api_request_log_executed_count, webhook_delivery_log_executed_count, vies_evidence_executed_count, vida_simulation_executed_count, activity_event_executed_count, privacy_request_executed_count, retention_run_executed_count, deletion_run_executed_count, legal_acceptance_executed_count, error_message, executed_at, created_at, updated_at";
 
 const WORKSPACE_SETTINGS_SELECT_FIELDS =
-  "retention_mode, invoice_draft_retention_days, validation_run_retention_days, xml_report_retention_days, activity_log_retention_days";
+  "retention_mode, invoice_draft_retention_days, validation_run_retention_days, xml_report_retention_days, xml_validation_job_retention_days, invoice_export_retention_days, api_request_log_retention_days, webhook_delivery_log_retention_days, vies_evidence_retention_days, vida_simulation_retention_days, activity_log_retention_days, privacy_request_retention_days, retention_run_retention_days, deletion_run_retention_days, legal_acceptance_retention_days";
 
 const defaultWorkspaceSettings: WorkspaceSettingsRecord = {
   retentionMode: "manual",
   invoiceDraftRetentionDays: 365,
   validationRunRetentionDays: 365,
   xmlReportRetentionDays: 180,
-  activityLogRetentionDays: 365
+  xmlValidationJobRetentionDays: 180,
+  invoiceExportRetentionDays: 365,
+  apiRequestLogRetentionDays: 180,
+  webhookDeliveryLogRetentionDays: 180,
+  viesEvidenceRetentionDays: 365,
+  vidaSimulationRetentionDays: 365,
+  activityLogRetentionDays: 365,
+  privacyRequestRetentionDays: 1095,
+  retentionRunRetentionDays: 1095,
+  deletionRunRetentionDays: 1095,
+  legalAcceptanceRetentionDays: 2555
 };
+
+export const RETENTION_RUN_DATASETS: readonly RetentionDatasetConfig[] = [
+  {
+    responseKey: "invoiceDrafts",
+    settingKey: "invoiceDraftRetentionDays",
+    tableName: "invoice_drafts",
+    dateColumn: "updated_at",
+    columnPrefix: "invoice_draft"
+  },
+  {
+    responseKey: "validationRuns",
+    settingKey: "validationRunRetentionDays",
+    tableName: "validation_runs",
+    dateColumn: "created_at",
+    columnPrefix: "validation_run"
+  },
+  {
+    responseKey: "xmlReadinessReports",
+    settingKey: "xmlReportRetentionDays",
+    tableName: "xml_readiness_reports",
+    dateColumn: "uploaded_at",
+    columnPrefix: "xml_report"
+  },
+  {
+    responseKey: "xmlValidationJobs",
+    settingKey: "xmlValidationJobRetentionDays",
+    tableName: "xml_validation_jobs",
+    dateColumn: "created_at",
+    columnPrefix: "xml_validation_job"
+  },
+  {
+    responseKey: "invoiceExports",
+    settingKey: "invoiceExportRetentionDays",
+    tableName: "invoice_exports",
+    dateColumn: "created_at",
+    columnPrefix: "invoice_export"
+  },
+  {
+    responseKey: "apiRequests",
+    settingKey: "apiRequestLogRetentionDays",
+    tableName: "api_requests",
+    dateColumn: "created_at",
+    columnPrefix: "api_request_log"
+  },
+  {
+    responseKey: "webhookDeliveries",
+    settingKey: "webhookDeliveryLogRetentionDays",
+    tableName: "webhook_deliveries",
+    dateColumn: "created_at",
+    columnPrefix: "webhook_delivery_log"
+  },
+  {
+    responseKey: "viesEvidenceChecks",
+    settingKey: "viesEvidenceRetentionDays",
+    tableName: "vies_evidence_checks",
+    dateColumn: "created_at",
+    columnPrefix: "vies_evidence"
+  },
+  {
+    responseKey: "vidaSimulationRuns",
+    settingKey: "vidaSimulationRetentionDays",
+    tableName: "vida_simulation_runs",
+    dateColumn: "created_at",
+    columnPrefix: "vida_simulation"
+  },
+  {
+    responseKey: "activityEvents",
+    settingKey: "activityLogRetentionDays",
+    tableName: "workspace_activity_events",
+    dateColumn: "created_at",
+    columnPrefix: "activity_event"
+  },
+  {
+    responseKey: "privacyRequests",
+    settingKey: "privacyRequestRetentionDays",
+    tableName: "workspace_privacy_requests",
+    dateColumn: "created_at",
+    columnPrefix: "privacy_request",
+    preservedByDefault: true
+  },
+  {
+    responseKey: "retentionRuns",
+    settingKey: "retentionRunRetentionDays",
+    tableName: "workspace_retention_runs",
+    dateColumn: "created_at",
+    columnPrefix: "retention_run",
+    preservedByDefault: true
+  },
+  {
+    responseKey: "deletionRuns",
+    settingKey: "deletionRunRetentionDays",
+    tableName: "workspace_deletion_runs",
+    dateColumn: "created_at",
+    columnPrefix: "deletion_run",
+    preservedByDefault: true
+  },
+  {
+    responseKey: "legalAcceptances",
+    settingKey: "legalAcceptanceRetentionDays",
+    tableName: "legal_document_acceptances",
+    dateColumn: "accepted_at",
+    columnPrefix: "legal_acceptance",
+    preservedByDefault: true
+  }
+];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -131,13 +264,13 @@ function readNumberField(
   const value = record[key];
 
   if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+    return Math.max(0, Math.round(value));
   }
 
   if (typeof value === "string" && value.trim()) {
     const parsedValue = Number(value);
 
-    return Number.isFinite(parsedValue) ? parsedValue : fallback;
+    return Number.isFinite(parsedValue) ? Math.max(0, Math.round(parsedValue)) : fallback;
   }
 
   return fallback;
@@ -197,32 +330,46 @@ function normalizeWorkspaceSettingsRow(value: unknown): WorkspaceSettingsRecord 
   return {
     retentionMode: normalizeRetentionMode(readStringField(value, "retention_mode")),
     invoiceDraftRetentionDays: clampRetentionDays(
-      readNumberField(
-        value,
-        "invoice_draft_retention_days",
-        defaultWorkspaceSettings.invoiceDraftRetentionDays
-      )
+      readNumberField(value, "invoice_draft_retention_days", 365)
     ),
     validationRunRetentionDays: clampRetentionDays(
-      readNumberField(
-        value,
-        "validation_run_retention_days",
-        defaultWorkspaceSettings.validationRunRetentionDays
-      )
+      readNumberField(value, "validation_run_retention_days", 365)
     ),
     xmlReportRetentionDays: clampRetentionDays(
-      readNumberField(
-        value,
-        "xml_report_retention_days",
-        defaultWorkspaceSettings.xmlReportRetentionDays
-      )
+      readNumberField(value, "xml_report_retention_days", 180)
+    ),
+    xmlValidationJobRetentionDays: clampRetentionDays(
+      readNumberField(value, "xml_validation_job_retention_days", 180)
+    ),
+    invoiceExportRetentionDays: clampRetentionDays(
+      readNumberField(value, "invoice_export_retention_days", 365)
+    ),
+    apiRequestLogRetentionDays: clampRetentionDays(
+      readNumberField(value, "api_request_log_retention_days", 180)
+    ),
+    webhookDeliveryLogRetentionDays: clampRetentionDays(
+      readNumberField(value, "webhook_delivery_log_retention_days", 180)
+    ),
+    viesEvidenceRetentionDays: clampRetentionDays(
+      readNumberField(value, "vies_evidence_retention_days", 365)
+    ),
+    vidaSimulationRetentionDays: clampRetentionDays(
+      readNumberField(value, "vida_simulation_retention_days", 365)
     ),
     activityLogRetentionDays: clampRetentionDays(
-      readNumberField(
-        value,
-        "activity_log_retention_days",
-        defaultWorkspaceSettings.activityLogRetentionDays
-      )
+      readNumberField(value, "activity_log_retention_days", 365)
+    ),
+    privacyRequestRetentionDays: clampRetentionDays(
+      readNumberField(value, "privacy_request_retention_days", 1095)
+    ),
+    retentionRunRetentionDays: clampRetentionDays(
+      readNumberField(value, "retention_run_retention_days", 1095)
+    ),
+    deletionRunRetentionDays: clampRetentionDays(
+      readNumberField(value, "deletion_run_retention_days", 1095)
+    ),
+    legalAcceptanceRetentionDays: clampRetentionDays(
+      readNumberField(value, "legal_acceptance_retention_days", 2555)
     )
   };
 }
@@ -230,65 +377,87 @@ function normalizeWorkspaceSettingsRow(value: unknown): WorkspaceSettingsRecord 
 function calculateCutoffDate(retentionDays: number) {
   const cutoffDate = new Date();
 
-  cutoffDate.setDate(cutoffDate.getDate() - clampRetentionDays(retentionDays));
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - clampRetentionDays(retentionDays));
 
   return cutoffDate.toISOString();
 }
 
-function normalizeRetentionRunRow(
-  row: SupabaseWorkspaceRetentionRunRow
-): WorkspaceRetentionRunRecord {
-  const invoiceDrafts = {
-    retentionDays: row.invoice_draft_retention_days,
-    cutoffDate: row.invoice_draft_cutoff_date,
-    affectedCount: row.invoice_draft_affected_count,
-    executedCount: row.invoice_draft_executed_count
-  };
+function getRetentionWarnings() {
+  return RETENTION_RUN_DATASETS.filter((dataset) => dataset.preservedByDefault).map(
+    (dataset) =>
+      `${dataset.tableName} is counted for retention review, but required privacy, legal, security, or audit evidence is preserved by default unless a future reviewed policy explicitly permits minimization.`
+  );
+}
 
-  const validationRuns = {
-    retentionDays: row.validation_run_retention_days,
-    cutoffDate: row.validation_run_cutoff_date,
-    affectedCount: row.validation_run_affected_count,
-    executedCount: row.validation_run_executed_count
+function normalizeRetentionBucket(
+  row: Record<string, unknown>,
+  dataset: RetentionDatasetConfig
+): WorkspaceRetentionRunBucket {
+  return {
+    retentionDays: readNumberField(
+      row,
+      `${dataset.columnPrefix}_retention_days`,
+      0
+    ),
+    cutoffDate: readStringField(row, `${dataset.columnPrefix}_cutoff_date`),
+    affectedCount: readNumberField(
+      row,
+      `${dataset.columnPrefix}_affected_count`,
+      0
+    ),
+    executedCount: readNumberField(
+      row,
+      `${dataset.columnPrefix}_executed_count`,
+      0
+    )
   };
+}
 
-  const xmlReadinessReports = {
-    retentionDays: row.xml_report_retention_days,
-    cutoffDate: row.xml_report_cutoff_date,
-    affectedCount: row.xml_report_affected_count,
-    executedCount: row.xml_report_executed_count
-  };
-
-  const activityEvents = {
-    retentionDays: row.activity_log_retention_days,
-    cutoffDate: row.activity_log_cutoff_date,
-    affectedCount: row.activity_event_affected_count,
-    executedCount: row.activity_event_executed_count
-  };
+function normalizeRetentionRunRow(value: unknown): WorkspaceRetentionRunRecord {
+  const row = isPlainObject(value) ? value : {};
+  const buckets = Object.fromEntries(
+    RETENTION_RUN_DATASETS.map((dataset) => [
+      dataset.responseKey,
+      normalizeRetentionBucket(row, dataset)
+    ])
+  ) as Record<RetentionDatasetConfig["responseKey"], WorkspaceRetentionRunBucket>;
+  const totalAffectedCount = Object.values(buckets).reduce(
+    (total, bucket) => total + bucket.affectedCount,
+    0
+  );
+  const totalExecutedCount = Object.values(buckets).reduce(
+    (total, bucket) => total + bucket.executedCount,
+    0
+  );
 
   return {
-    id: row.id,
+    id: readStringField(row, "id"),
     runType: "manual_retention_review",
-    status: normalizeRetentionRunStatus(row.status),
-    retentionMode: normalizeRetentionMode(row.retention_mode),
-    invoiceDrafts,
-    validationRuns,
-    xmlReadinessReports,
-    activityEvents,
-    totalAffectedCount:
-      invoiceDrafts.affectedCount +
-      validationRuns.affectedCount +
-      xmlReadinessReports.affectedCount +
-      activityEvents.affectedCount,
-    totalExecutedCount:
-      invoiceDrafts.executedCount +
-      validationRuns.executedCount +
-      xmlReadinessReports.executedCount +
-      activityEvents.executedCount,
-    errorMessage: row.error_message,
-    executedAt: row.executed_at ?? "",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
+    status: normalizeRetentionRunStatus(readStringField(row, "status")),
+    retentionMode: normalizeRetentionMode(readStringField(row, "retention_mode")),
+    invoiceDrafts: buckets.invoiceDrafts,
+    validationRuns: buckets.validationRuns,
+    xmlReadinessReports: buckets.xmlReadinessReports,
+    xmlValidationJobs: buckets.xmlValidationJobs,
+    invoiceExports: buckets.invoiceExports,
+    apiRequests: buckets.apiRequests,
+    webhookDeliveries: buckets.webhookDeliveries,
+    viesEvidenceChecks: buckets.viesEvidenceChecks,
+    vidaSimulationRuns: buckets.vidaSimulationRuns,
+    activityEvents: buckets.activityEvents,
+    privacyRequests: buckets.privacyRequests,
+    retentionRuns: buckets.retentionRuns,
+    deletionRuns: buckets.deletionRuns,
+    legalAcceptances: buckets.legalAcceptances,
+    totalAffectedCount,
+    totalExecutedCount,
+    warnings: getRetentionWarnings(),
+    disclaimer:
+      "Retention runs are GDPR-aware privacy-support tooling only. Execution does not decide statutory legal, tax, accounting, filing, privacy, or audit-retention duties and is not a GDPR compliance guarantee.",
+    errorMessage: readStringField(row, "error_message"),
+    executedAt: readStringField(row, "executed_at"),
+    createdAt: readStringField(row, "created_at"),
+    updatedAt: readStringField(row, "updated_at")
   };
 }
 
@@ -378,10 +547,6 @@ async function recordWorkspaceActivityEvent(
   });
 
   if (error) {
-    /*
-     * Activity logging must not break retention-run preparation.
-     * The retention-run row remains the authoritative record.
-     */
     console.warn(`Workspace activity event was not recorded: ${error.message}`);
   }
 }
@@ -408,26 +573,23 @@ async function insertRetentionRunPreparedActivityEvent({
     metadata: {
       retentionMode: record.retentionMode,
       totalAffectedCount: record.totalAffectedCount,
-      invoiceDrafts: record.invoiceDrafts,
-      validationRuns: record.validationRuns,
-      xmlReadinessReports: record.xmlReadinessReports,
-      activityEvents: record.activityEvents
+      affectedDatasets: RETENTION_RUN_DATASETS.map((dataset) => ({
+        dataset: dataset.responseKey,
+        affectedCount: record[dataset.responseKey].affectedCount,
+        preservedByDefault: Boolean(dataset.preservedByDefault)
+      })),
+      legalAdvice: false,
+      privacyComplianceGuarantee: false
     }
   });
 }
 
-function normalizeRpcRetentionRunResult(
-  value: unknown
-): SupabaseWorkspaceRetentionRunRow | null {
+function normalizeRpcRetentionRunResult(value: unknown) {
   if (Array.isArray(value)) {
-    const firstRecord = value[0];
-
-    return isPlainObject(firstRecord)
-      ? (firstRecord as SupabaseWorkspaceRetentionRunRow)
-      : null;
+    return value[0] ?? null;
   }
 
-  return isPlainObject(value) ? (value as SupabaseWorkspaceRetentionRunRow) : null;
+  return isPlainObject(value) ? value : null;
 }
 
 function isRetentionRunNotFoundError(message: string) {
@@ -463,9 +625,7 @@ export async function listAuthenticatedWorkspaceRetentionRuns(
     throw new Error(`Could not list retention runs: ${error.message}`);
   }
 
-  return ((data ?? []) as SupabaseWorkspaceRetentionRunRow[]).map((row) =>
-    normalizeRetentionRunRow(row)
-  );
+  return (data ?? []).map((row) => normalizeRetentionRunRow(row));
 }
 
 export async function createAuthenticatedWorkspaceRetentionRun(
@@ -474,78 +634,35 @@ export async function createAuthenticatedWorkspaceRetentionRun(
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
   const settings = await getWorkspaceSettings(supabase, workspace.organizationId);
+  const insertValues: Record<string, unknown> = {
+    organization_id: workspace.organizationId,
+    initiated_by: context.userId,
+    run_type: "manual_retention_review",
+    status: "prepared",
+    retention_mode: settings.retentionMode
+  };
 
-  const invoiceDraftCutoffDate = calculateCutoffDate(
-    settings.invoiceDraftRetentionDays
-  );
-  const validationRunCutoffDate = calculateCutoffDate(
-    settings.validationRunRetentionDays
-  );
-  const xmlReportCutoffDate = calculateCutoffDate(settings.xmlReportRetentionDays);
-  const activityLogCutoffDate = calculateCutoffDate(
-    settings.activityLogRetentionDays
-  );
+  await Promise.all(
+    RETENTION_RUN_DATASETS.map(async (dataset) => {
+      const retentionDays = clampRetentionDays(settings[dataset.settingKey]);
+      const cutoffDate = calculateCutoffDate(retentionDays);
+      const affectedCount = await countRowsOlderThan({
+        supabase,
+        tableName: dataset.tableName,
+        organizationId: workspace.organizationId,
+        dateColumn: dataset.dateColumn,
+        cutoffDate
+      });
 
-  const [
-    invoiceDraftAffectedCount,
-    validationRunAffectedCount,
-    xmlReportAffectedCount,
-    activityEventAffectedCount
-  ] = await Promise.all([
-    countRowsOlderThan({
-      supabase,
-      tableName: "invoice_drafts",
-      organizationId: workspace.organizationId,
-      dateColumn: "updated_at",
-      cutoffDate: invoiceDraftCutoffDate
-    }),
-    countRowsOlderThan({
-      supabase,
-      tableName: "validation_runs",
-      organizationId: workspace.organizationId,
-      dateColumn: "created_at",
-      cutoffDate: validationRunCutoffDate
-    }),
-    countRowsOlderThan({
-      supabase,
-      tableName: "xml_readiness_reports",
-      organizationId: workspace.organizationId,
-      dateColumn: "uploaded_at",
-      cutoffDate: xmlReportCutoffDate
-    }),
-    countRowsOlderThan({
-      supabase,
-      tableName: "workspace_activity_events",
-      organizationId: workspace.organizationId,
-      dateColumn: "created_at",
-      cutoffDate: activityLogCutoffDate
+      insertValues[`${dataset.columnPrefix}_retention_days`] = retentionDays;
+      insertValues[`${dataset.columnPrefix}_cutoff_date`] = cutoffDate;
+      insertValues[`${dataset.columnPrefix}_affected_count`] = affectedCount;
     })
-  ]);
+  );
 
   const { data, error } = await supabase
     .from("workspace_retention_runs")
-    .insert({
-      organization_id: workspace.organizationId,
-      initiated_by: context.userId,
-      run_type: "manual_retention_review",
-      status: "prepared",
-      retention_mode: settings.retentionMode,
-
-      invoice_draft_retention_days: settings.invoiceDraftRetentionDays,
-      validation_run_retention_days: settings.validationRunRetentionDays,
-      xml_report_retention_days: settings.xmlReportRetentionDays,
-      activity_log_retention_days: settings.activityLogRetentionDays,
-
-      invoice_draft_cutoff_date: invoiceDraftCutoffDate,
-      validation_run_cutoff_date: validationRunCutoffDate,
-      xml_report_cutoff_date: xmlReportCutoffDate,
-      activity_log_cutoff_date: activityLogCutoffDate,
-
-      invoice_draft_affected_count: invoiceDraftAffectedCount,
-      validation_run_affected_count: validationRunAffectedCount,
-      xml_report_affected_count: xmlReportAffectedCount,
-      activity_event_affected_count: activityEventAffectedCount
-    })
+    .insert(insertValues)
     .select(WORKSPACE_RETENTION_RUN_SELECT_FIELDS)
     .single();
 
@@ -553,7 +670,7 @@ export async function createAuthenticatedWorkspaceRetentionRun(
     throw new Error(`Could not create retention run: ${error.message}`);
   }
 
-  const record = normalizeRetentionRunRow(data as SupabaseWorkspaceRetentionRunRow);
+  const record = normalizeRetentionRunRow(data);
 
   try {
     await insertRetentionRunPreparedActivityEvent({
@@ -576,13 +693,6 @@ export async function executeAuthenticatedWorkspaceRetentionRun(
   id: string
 ) {
   const supabase = createAuthenticatedSupabaseClient(context);
-
-  /*
-   * Destructive cleanup is intentionally executed through a Postgres RPC.
-   * The RPC performs the delete/update/activity-log sequence inside the database
-   * so the operation is atomic and does not partially delete records if a later
-   * step fails.
-   */
   const { data, error } = await supabase.rpc("execute_workspace_retention_run", {
     retention_run_id: id
   });

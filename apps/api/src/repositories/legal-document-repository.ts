@@ -377,6 +377,63 @@ async function readPublishedDocumentFromSupabase(documentKey: string) {
   );
 }
 
+async function listPublishedDocumentsFromSupabase() {
+  const supabase = getSupabaseServiceRoleClient();
+  const { data: documentData, error: documentError } = await supabase
+    .from("legal_documents")
+    .select(LEGAL_DOCUMENT_SELECT_FIELDS)
+    .eq("status", "published")
+    .order("title", {
+      ascending: true
+    });
+
+  if (documentError) {
+    throw new LegalDocumentRepositoryError(
+      "LEGAL_DOCUMENT_LIST_FAILED",
+      `Could not list legal documents: ${documentError.message}`,
+      500
+    );
+  }
+
+  const documentRows = (documentData ?? []) as SupabaseLegalDocumentRow[];
+  const documents: LegalDocumentDefinition[] = [];
+
+  for (const documentRow of documentRows) {
+    if (!documentRow.current_version_id) {
+      continue;
+    }
+
+    const { data: versionData, error: versionError } = await supabase
+      .from("legal_document_versions")
+      .select(LEGAL_DOCUMENT_VERSION_SELECT_FIELDS)
+      .eq("legal_document_id", documentRow.id)
+      .eq("status", "published")
+      .eq("id", documentRow.current_version_id)
+      .maybeSingle();
+
+    if (versionError) {
+      throw new LegalDocumentRepositoryError(
+        "LEGAL_DOCUMENT_VERSION_LIST_FAILED",
+        `Could not list legal document versions: ${versionError.message}`,
+        500
+      );
+    }
+
+    if (versionData) {
+      documents.push(
+        toLegalDocumentDefinition(
+          documentRow,
+          versionData as SupabaseLegalDocumentVersionRow
+        )
+      );
+    }
+  }
+
+  return documents.sort((first, second) =>
+    first.title.localeCompare(second.title)
+  );
+}
+
 async function resolveSupabasePublishedDocument(input: {
   supabase: SupabaseClient;
   documentKey: string;
@@ -445,15 +502,9 @@ export async function listLegalDocuments() {
   }
 
   try {
-    const documents = await Promise.all(
-      legalDocumentRegistry.map((document) =>
-        readPublishedDocumentFromSupabase(document.documentKey)
-      )
-    );
+    const documents = await listPublishedDocumentsFromSupabase();
 
-    return documents
-      .filter((document): document is LegalDocumentDefinition => document !== null)
-      .sort((first, second) => first.title.localeCompare(second.title));
+    return documents.length > 0 ? documents : listPublishedLegalDocuments();
   } catch {
     return listPublishedLegalDocuments();
   }
@@ -569,6 +620,31 @@ export async function acceptLegalDocument(
       `Could not save legal document acceptance: ${error.message}`,
       500
     );
+  }
+
+  try {
+    await getSupabaseServiceRoleClient()
+      .from("legal_document_lifecycle_events")
+      .insert({
+        legal_document_id: resolved.documentRow.id,
+        legal_document_version_id: resolved.versionRow.id,
+        actor_user_id: input.userId,
+        event_type: "acceptance.recorded",
+        metadata: {
+          acceptanceContext,
+          organizationId: workspace.organizationId,
+          storesRawIpAddress: false,
+          storesRawUserAgent: false,
+          legalAdviceCreated: false,
+          officialComplianceCreated: false
+        }
+      });
+  } catch {
+    /*
+     * Acceptance persistence is the source of truth. Lifecycle logging can be
+     * repaired separately if a deployment has not applied the additive table
+     * yet or service-role logging is unavailable.
+     */
   }
 
   return {

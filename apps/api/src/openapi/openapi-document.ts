@@ -559,6 +559,16 @@ const openApiDocument = {
       name: "Reports",
       description:
         "Signed-in workspace report downloads. Reports are non-official technical sandbox outputs."
+    },
+    {
+      name: "Legal Documents",
+      description:
+        "Versioned public legal document notices and signed-user acceptance records. Documents and acceptances are product policy evidence only, not legal advice, not privacy advice, not official affiliation, and not a compliance guarantee."
+    },
+    {
+      name: "Workspace Privacy",
+      description:
+        "Signed-user owner/admin privacy-support endpoints for GDPR-aware data maps, export packages, deletion reviews, retention reviews, privacy requests, subprocessors, and cookie stance. These controls require professional review and do not guarantee GDPR compliance."
     }
   ],
   paths: {
@@ -575,6 +585,342 @@ const openApiDocument = {
           "500": commonErrorResponses["500"]
         }
       }
+    },
+    "/legal/documents": {
+      get: {
+        tags: ["Legal Documents"],
+        summary: "List published legal documents",
+        description:
+          "Lists published Invoice Lantern platform policy notices. Draft and review documents are hidden. Documents require professional review and are not legal, tax, accounting, privacy, filing-with-authorities, authority, EU, OpenPeppol, Peppol authority, or standards-body advice or certification.",
+        responses: {
+          "200": response("Published legal document list.", ref("LegalDocumentListResponse")),
+          "500": commonErrorResponses["500"]
+        }
+      }
+    },
+    "/legal/documents/{documentKey}": {
+      get: {
+        tags: ["Legal Documents"],
+        summary: "Get one published legal document",
+        description:
+          "Returns one published versioned legal document body as markdown. The API does not expose draft/review legal documents and does not return unsafe rendered HTML.",
+        parameters: [
+          {
+            name: "documentKey",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              example: "api-terms"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Published legal document.", ref("LegalDocumentDetailResponse")),
+          "404": commonErrorResponses["404"],
+          "500": commonErrorResponses["500"]
+        }
+      }
+    },
+    "/legal/documents/{documentKey}/accept": {
+      post: bearerOperation({
+        tags: ["Legal Documents"],
+        summary: "Accept latest published legal document version",
+        description:
+          "Records a signed-user acceptance for a published required legal document version. Organization API keys are rejected. Acceptance records store document/version/context and hashed request evidence only when captured; they do not store raw IP addresses or raw user agents and do not create legal, tax, accounting, privacy, authority-filing, or compliance status.",
+        parameters: [
+          {
+            name: "documentKey",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              example: "terms"
+            }
+          }
+        ],
+        requestBody: {
+          required: false,
+          content: jsonContent(ref("LegalAcceptanceRequest"))
+        },
+        responses: {
+          "200": response("Already accepted current version.", ref("LegalAcceptanceResponse")),
+          "201": response("Accepted current version.", ref("LegalAcceptanceResponse"))
+        }
+      })
+    },
+    "/legal/acceptances/me": {
+      get: bearerOperation({
+        tags: ["Legal Documents"],
+        summary: "List my legal acceptances",
+        description:
+          "Lists versioned legal document acceptances for the signed-in user. These records are audit-support metadata only and are not legal, tax, accounting, privacy, filing, authority, or compliance advice.",
+        responses: {
+          "200": response("Signed-in user legal acceptances.", ref("LegalAcceptanceListResponse"))
+        }
+      })
+    },
+    "/legal/acceptances/workspace": {
+      get: bearerOperation({
+        tags: ["Legal Documents"],
+        summary: "List workspace legal acceptances",
+        description:
+          "Lists workspace-visible legal acceptance records for owner/admin privacy managers. Organization API keys are rejected. Visibility supports review workflows and does not create official compliance or legal advice.",
+        responses: {
+          "200": response("Workspace legal acceptances.", ref("LegalAcceptanceListResponse"))
+        }
+      })
+    },
+    "/workspace/settings": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Read workspace privacy settings",
+        description:
+          "Owner/admin signed-user endpoint for retention, export, deletion, contact, and minimization settings. Organization API keys are rejected. Settings support privacy workflows and do not decide statutory retention, legal, tax, accounting, or GDPR duties.",
+        responses: {
+          "200": response("Workspace privacy settings.", ref("WorkspacePrivacySettingsResponse"))
+        }
+      }),
+      put: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Update workspace privacy settings",
+        description:
+          "Updates retention, export, deletion, contact, and minimization settings. Owner/admin signed-user access is required; organization API keys are rejected.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspacePrivacySettings"))
+        },
+        responses: {
+          "200": response("Workspace privacy settings.", ref("WorkspacePrivacySettingsResponse"))
+        }
+      })
+    },
+    "/workspace/settings/privacy": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Read privacy settings with data map",
+        description:
+          "Returns workspace privacy settings together with data map, subprocessors, and cookie stance. This is GDPR-aware support metadata only and not a GDPR compliance guarantee.",
+        responses: {
+          "200": response("Workspace privacy bundle.", ref("WorkspacePrivacyBundleResponse"))
+        }
+      }),
+      patch: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Update privacy settings with data map response",
+        description:
+          "Updates workspace privacy settings and returns the latest privacy-support bundle. Owner/admin signed-user access is required; organization API keys are rejected.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspacePrivacySettings"))
+        },
+        responses: {
+          "200": response("Updated workspace privacy bundle.", ref("WorkspacePrivacyBundleResponse"))
+        }
+      })
+    },
+    "/workspace/privacy/data-map": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Read workspace privacy data map",
+        description:
+          "Returns GDPR-aware data map metadata for validation reports, transient XML metadata, XML jobs, invoice exports, API request logs, webhook logs, VIES evidence, ViDA simulation runs, rule lifecycle logs, activity logs, legal acceptances, and minimization settings. It excludes secrets, raw XML/SOAP payload bodies, API key hashes, service-role keys, local paths, and stack traces.",
+        responses: {
+          "200": response("Privacy data map.", ref("PrivacyDataMapResponse"))
+        }
+      })
+    },
+    "/workspace/privacy/subprocessors": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Read subprocessor list",
+        description:
+          "Returns known, configured, not-configured, and review-required subprocessor entries only. Provider status, DPA, region, and transfer analysis require professional review.",
+        responses: {
+          "200": response("Subprocessor list.", ref("SubprocessorListResponse"))
+        }
+      })
+    },
+    "/workspace/privacy/cookie-stance": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Read cookie and tracking stance",
+        description:
+          "Returns the current essential-only cookie/tracking stance. It documents no non-essential analytics, advertising, or behavioral tracking cookies introduced by this implementation step and still requires professional review.",
+        responses: {
+          "200": response("Cookie and tracking stance.", ref("CookieTrackingStanceResponse"))
+        }
+      })
+    },
+    "/workspace/privacy-requests": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "List workspace privacy requests",
+        description:
+          "Lists owner/admin-managed privacy request workflows for access, export, deletion, correction, objection, restriction, portability, retention review, and other requests.",
+        responses: {
+          "200": response("Privacy request list.", ref("WorkspacePrivacyRequestListResponse"))
+        }
+      }),
+      post: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Create workspace privacy request",
+        description:
+          "Creates a privacy-support workflow record. It does not provide legal advice, verify statutory deadlines, or guarantee GDPR compliance.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspacePrivacyRequestCreate"))
+        },
+        responses: {
+          "201": response("Created privacy request.", ref("WorkspacePrivacyRequestResponse"))
+        }
+      })
+    },
+    "/workspace/privacy-requests/{id}": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Get workspace privacy request",
+        description:
+          "Reads one tenant-scoped privacy request workflow record. Owner/admin signed-user access is required.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: {
+          "200": response("Privacy request detail.", ref("WorkspacePrivacyRequestResponse")),
+          "404": commonErrorResponses["404"]
+        }
+      }),
+      patch: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Review workspace privacy request",
+        description:
+          "Updates privacy request status using safe lifecycle states. Review notes must stay minimized and should not contain legal advice, secrets, raw XML, or raw SOAP.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspacePrivacyRequestReview"))
+        },
+        responses: {
+          "200": response("Updated privacy request.", ref("WorkspacePrivacyRequestResponse")),
+          "404": commonErrorResponses["404"]
+        }
+      })
+    },
+    "/workspace/export-packages": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "List workspace export packages",
+        description:
+          "Lists tenant-scoped export packages. Export packages include a manifest, generatedAt, organizationId, schema version, redaction notice, retention/deletion notes, warnings, and legal/privacy disclaimers.",
+        responses: {
+          "200": response("Export package list.", ref("WorkspaceExportPackageListResponse"))
+        }
+      }),
+      post: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Create workspace export package",
+        description:
+          "Creates a JSON data export package with redaction of service-role keys, secrets, API key hashes/secrets, webhook raw secret material, raw SOAP, raw XML unless future reviewed policy allows it, expired transient payloads, local paths, stack traces, platform admin allowlists, and environment/config secrets.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspaceExportPackageCreate"))
+        },
+        responses: {
+          "201": response("Created export package.", ref("WorkspaceExportPackageResponse"))
+        }
+      })
+    },
+    "/workspace/export-packages/{id}": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Get workspace export package detail",
+        description:
+          "Returns one tenant-scoped export package detail and payload. The payload is redacted and includes manifest, warnings, retention/deletion notes, and non-advice disclaimers.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: {
+          "200": response("Export package detail.", ref("WorkspaceExportPackageResponse")),
+          "404": commonErrorResponses["404"]
+        }
+      })
+    },
+    "/workspace/retention-preview": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Preview workspace retention impact",
+        description:
+          "Returns non-destructive eligible counts by retention policy for API logs, webhook logs, VIES evidence, XML jobs, validation runs, invoice exports, ViDA runs, workspace activity, privacy requests, retention/deletion runs, and legal acceptances. Preserved datasets include warnings.",
+        responses: {
+          "200": response("Retention preview.", ref("WorkspaceRetentionPreviewResponse"))
+        }
+      })
+    },
+    "/workspace/retention-runs": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "List retention runs",
+        description:
+          "Lists prepared/executed retention review runs for the signed-in owner/admin workspace.",
+        responses: {
+          "200": response("Retention run list.", ref("WorkspaceRetentionRunListResponse"))
+        }
+      }),
+      post: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Prepare retention run",
+        description:
+          "Creates a non-destructive retention run snapshot with affected counts. Execution is a separate owner/admin action and remains tenant-scoped and idempotent.",
+        responses: {
+          "201": response("Prepared retention run.", ref("WorkspaceRetentionRunResponse"))
+        }
+      })
+    },
+    "/workspace/retention-runs/{id}/execute": {
+      post: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Execute prepared retention run",
+        description:
+          "Executes a prepared tenant-scoped retention run. Required audit/security/legal records are preserved or explicitly warned. Public legal documents, platform rule sources, and country packs are not deleted.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: {
+          "200": response("Executed retention run.", ref("WorkspaceRetentionRunResponse")),
+          "409": commonErrorResponses["409"]
+        }
+      })
+    },
+    "/workspace/deletion-runs": {
+      get: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "List deletion runs",
+        description:
+          "Lists prepared/executed deletion review runs for the signed-in owner/admin workspace.",
+        responses: {
+          "200": response("Deletion run list.", ref("WorkspaceDeletionRunListResponse"))
+        }
+      }),
+      post: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Prepare deletion run",
+        description:
+          "Creates a non-destructive deletion run from a linked deletion privacy request. The preview shows affected counts and warns that legal, audit, security, and platform records may be preserved or minimized.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspaceDeletionRunCreate"))
+        },
+        responses: {
+          "201": response("Prepared deletion run.", ref("WorkspaceDeletionRunResponse"))
+        }
+      })
+    },
+    "/workspace/deletion-runs/{id}/execute": {
+      post: bearerOperation({
+        tags: ["Workspace Privacy"],
+        summary: "Execute prepared deletion run",
+        description:
+          "Executes a prepared tenant-scoped deletion run. API keys are revoked/minimized, webhook endpoint secrets are nulled and disabled, and public legal documents, platform rules, source registers, and country packs are not deleted.",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+        responses: {
+          "200": response("Executed deletion run.", ref("WorkspaceDeletionRunResponse")),
+          "409": commonErrorResponses["409"]
+        }
+      })
     },
     "/admin/context": {
       get: bearerOperation({
@@ -2707,6 +3053,1130 @@ const openApiDocument = {
                 type: "integer"
               }
             }
+          }
+        }
+      },
+      LegalDocument: {
+        type: "object",
+        description:
+          "Versioned Invoice Lantern legal or policy notice. Published documents are public product-policy text only; they require professional legal/privacy review and are not legal, tax, accounting, privacy, filing, official, authority, Peppol, EN 16931, ViDA, or GDPR compliance advice or guarantees.",
+        required: [
+          "documentKey",
+          "title",
+          "category",
+          "audience",
+          "status",
+          "version",
+          "effectiveFrom",
+          "isRequired",
+          "requiresAcceptance",
+          "legalReviewRequired",
+          "professionalReviewRequired",
+          "summary",
+          "disclaimers"
+        ],
+        properties: {
+          documentKey: {
+            type: "string",
+            example: "terms-of-service"
+          },
+          title: {
+            type: "string",
+            example: "Terms of Service"
+          },
+          category: {
+            type: "string",
+            enum: [
+              "terms",
+              "privacy",
+              "security",
+              "developer",
+              "simulation",
+              "brand",
+              "operations"
+            ]
+          },
+          audience: {
+            type: "string",
+            enum: [
+              "public",
+              "workspace",
+              "developer",
+              "admin",
+              "processor",
+              "security"
+            ]
+          },
+          status: {
+            type: "string",
+            enum: [
+              "draft",
+              "review",
+              "published",
+              "deprecated",
+              "archived",
+              "suspended"
+            ]
+          },
+          version: {
+            type: "string",
+            example: "2026.05.1"
+          },
+          effectiveFrom: {
+            type: "string",
+            format: "date-time"
+          },
+          reviewedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          reviewerLabel: {
+            type: ["string", "null"],
+            description:
+              "Optional safe reviewer label. No legal-professional approval or official endorsement is implied."
+          },
+          isRequired: {
+            type: "boolean"
+          },
+          requiresAcceptance: {
+            type: "boolean"
+          },
+          legalReviewRequired: {
+            type: "boolean",
+            const: true
+          },
+          professionalReviewRequired: {
+            type: "boolean",
+            const: true
+          },
+          summary: {
+            type: "string"
+          },
+          bodyMd: {
+            type: "string",
+            description:
+              "Markdown policy body returned by detail endpoints. Clients must render it safely; the API does not return rendered HTML."
+          },
+          sourceRefs: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          changeNotes: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          disclaimers: {
+            type: "array",
+            items: {
+              type: "string"
+            },
+            example: [
+              "Professional review required.",
+              "Not legal, tax, accounting, privacy, filing, official, or compliance advice."
+            ]
+          }
+        }
+      },
+      LegalDocumentListResponse: {
+        type: "object",
+        required: ["documents", "disclaimer"],
+        properties: {
+          documents: {
+            type: "array",
+            items: ref("LegalDocument")
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "Legal documents are product policy drafts and notices. They are not legal advice, do not create official compliance, and require professional review."
+          }
+        }
+      },
+      LegalDocumentDetailResponse: {
+        type: "object",
+        required: ["document"],
+        properties: {
+          document: ref("LegalDocument")
+        }
+      },
+      LegalAcceptanceRequest: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          acceptanceContext: {
+            type: "string",
+            enum: [
+              "workspace",
+              "developer",
+              "api_terms",
+              "webhook",
+              "privacy",
+              "public",
+              "country_pack"
+            ],
+            default: "workspace"
+          },
+          metadata: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Minimized safe metadata only. Do not include secrets, raw XML, raw SOAP, raw IP addresses, raw user agents, legal advice, or official compliance assertions."
+          }
+        }
+      },
+      LegalAcceptance: {
+        type: "object",
+        additionalProperties: true,
+        required: [
+          "id",
+          "documentKey",
+          "documentVersion",
+          "acceptanceContext",
+          "acceptedAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          documentId: {
+            type: "string",
+            format: "uuid"
+          },
+          documentKey: {
+            type: "string",
+            example: "api-terms"
+          },
+          documentVersion: {
+            type: "string"
+          },
+          acceptanceContext: {
+            type: "string"
+          },
+          organizationId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          acceptedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          ipAddressHash: {
+            type: ["string", "null"],
+            description:
+              "Optional hash evidence only. Raw IP addresses are not stored or returned."
+          },
+          userAgentHash: {
+            type: ["string", "null"],
+            description:
+              "Optional hash evidence only. Raw user agents are not stored or returned."
+          },
+          metadata: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Minimized metadata without secrets, raw XML, raw SOAP, raw IP addresses, raw user agents, or official/compliance claims."
+          }
+        }
+      },
+      LegalAcceptanceResponse: {
+        type: "object",
+        required: ["record", "alreadyAccepted", "disclaimer"],
+        properties: {
+          record: ref("LegalAcceptance"),
+          alreadyAccepted: {
+            type: "boolean",
+            description:
+              "True when the latest published required version had already been accepted."
+          },
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
+      LegalAcceptanceListResponse: {
+        type: "object",
+        required: ["records", "disclaimer"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("LegalAcceptance")
+          },
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
+      WorkspacePrivacySettings: {
+        type: "object",
+        description:
+          "Workspace privacy-support settings. These settings support retention, export, deletion, and minimization workflows; they do not determine legal, tax, accounting, statutory retention, or GDPR duties and are not a GDPR compliance guarantee. Professional review is required.",
+        required: [
+          "retentionMode",
+          "invoiceDraftRetentionDays",
+          "validationRunRetentionDays",
+          "xmlReportRetentionDays",
+          "activityLogRetentionDays",
+          "allowDataExportRequests",
+          "allowDeletionRequests"
+        ],
+        properties: {
+          retentionMode: {
+            type: "string",
+            enum: ["manual", "scheduled"]
+          },
+          invoiceDraftRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          validationRunRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          xmlReportRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          xmlValidationJobRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          invoiceExportRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          apiRequestLogRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          webhookDeliveryLogRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          viesEvidenceRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          vidaSimulationRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          activityLogRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          privacyRequestRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          retentionRunRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          deletionRunRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          legalAcceptanceRetentionDays: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3650
+          },
+          storeUploadedXmlAfterValidation: {
+            type: "boolean",
+            description:
+              "False keeps raw XML transient unless a future reviewed policy explicitly allows retention."
+          },
+          retainValidationReports: {
+            type: "boolean"
+          },
+          retainViesEvidence: {
+            type: "boolean"
+          },
+          retainWebhookPayloadPreviews: {
+            type: "boolean"
+          },
+          allowDataExportRequests: {
+            type: "boolean"
+          },
+          allowDeletionRequests: {
+            type: "boolean"
+          },
+          includeApiLogsInExports: {
+            type: "boolean"
+          },
+          includeWebhookLogsInExports: {
+            type: "boolean"
+          },
+          includeLegalAcceptancesInExports: {
+            type: "boolean"
+          },
+          dataMinimizationMode: {
+            type: "string",
+            enum: ["standard", "reduced", "strict"]
+          },
+          privacyContactEmail: {
+            type: "string",
+            format: "email"
+          },
+          securityContactEmail: {
+            type: "string",
+            format: "email"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      WorkspacePrivacySettingsResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("WorkspacePrivacySettings")
+        }
+      },
+      WorkspacePrivacyBundleResponse: {
+        type: "object",
+        required: ["record", "dataMap", "subprocessors", "cookieTracking"],
+        properties: {
+          record: ref("WorkspacePrivacySettings"),
+          dataMap: ref("PrivacyDataMapResponse"),
+          subprocessors: ref("SubprocessorListResponse"),
+          cookieTracking: ref("CookieTrackingStanceResponse")
+        }
+      },
+      PrivacyDataMapRecord: {
+        type: "object",
+        required: [
+          "datasetKey",
+          "dataCategory",
+          "purpose",
+          "tableOrSource",
+          "defaultRetentionDays",
+          "exportable",
+          "deletable",
+          "anonymizable",
+          "rawPayloadStored",
+          "userFacingDescription",
+          "riskNote",
+          "legalReviewRequired"
+        ],
+        properties: {
+          datasetKey: {
+            type: "string",
+            enum: [
+              "workspace_settings",
+              "privacy_requests",
+              "invoice_data",
+              "validation_reports",
+              "xml_metadata",
+              "api_logs",
+              "webhook_logs",
+              "vies_evidence",
+              "vida_simulations",
+              "legal_acceptances",
+              "activity_security_audit"
+            ]
+          },
+          dataCategory: {
+            type: "string"
+          },
+          purpose: {
+            type: "string"
+          },
+          tableOrSource: {
+            type: "string"
+          },
+          defaultRetentionDays: {
+            type: ["integer", "null"]
+          },
+          exportable: {
+            type: "boolean"
+          },
+          deletable: {
+            type: "boolean"
+          },
+          anonymizable: {
+            type: "boolean"
+          },
+          rawPayloadStored: {
+            type: "boolean",
+            description:
+              "False for mapped datasets that must not expose raw XML, raw SOAP, API key secrets, or webhook signing secrets."
+          },
+          userFacingDescription: {
+            type: "string"
+          },
+          riskNote: {
+            type: "string"
+          },
+          legalReviewRequired: {
+            type: "boolean",
+            const: true
+          }
+        }
+      },
+      PrivacyDataMapResponse: {
+        type: "object",
+        required: ["generatedAt", "disclaimer", "records"],
+        properties: {
+          generatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "GDPR-aware privacy-support controls are not legal advice, not privacy advice, not a GDPR compliance guarantee, and require professional review."
+          },
+          records: {
+            type: "array",
+            items: ref("PrivacyDataMapRecord")
+          }
+        }
+      },
+      SubprocessorRecord: {
+        type: "object",
+        additionalProperties: true,
+        required: [
+          "provider",
+          "purpose",
+          "status",
+          "legalReviewRequired"
+        ],
+        properties: {
+          provider: {
+            type: "string"
+          },
+          providerKey: {
+            type: "string",
+            description:
+              "Optional normalized key when a client derives one for display."
+          },
+          providerName: {
+            type: "string"
+          },
+          purpose: {
+            type: "string"
+          },
+          status: {
+            type: "string",
+            enum: [
+              "configured",
+              "not_configured",
+              "planned",
+              "review_required"
+            ]
+          },
+          region: {
+            type: ["string", "null"]
+          },
+          transferMechanism: {
+            type: ["string", "null"]
+          },
+          legalReviewRequired: {
+            type: "boolean",
+            const: true
+          }
+        }
+      },
+      SubprocessorListResponse: {
+        type: "object",
+        required: ["generatedAt", "disclaimer", "records"],
+        properties: {
+          generatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          disclaimer: {
+            type: "string"
+          },
+          records: {
+            type: "array",
+            items: ref("SubprocessorRecord")
+          }
+        }
+      },
+      CookieTrackingStance: {
+        type: "object",
+        required: [
+          "stance",
+          "essentialCookiesUsed",
+          "nonEssentialCookiesUsed",
+          "analyticsConfigured",
+          "preferenceStorage",
+          "summary",
+          "legalReviewRequired"
+        ],
+        properties: {
+          stance: {
+            type: "string",
+            const: "essential_only"
+          },
+          essentialCookiesUsed: {
+            type: "boolean",
+            const: true
+          },
+          nonEssentialCookiesUsed: {
+            type: "boolean",
+            const: false
+          },
+          analyticsConfigured: {
+            type: "boolean",
+            const: false
+          },
+          preferenceStorage: {
+            type: "string",
+            const: "minimal"
+          },
+          summary: {
+            type: "string"
+          },
+          legalReviewRequired: {
+            type: "boolean",
+            const: true
+          }
+        }
+      },
+      CookieTrackingStanceResponse: {
+        type: "object",
+        required: ["generatedAt", "disclaimer", "record"],
+        properties: {
+          generatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          disclaimer: {
+            type: "string"
+          },
+          record: ref("CookieTrackingStance")
+        }
+      },
+      WorkspacePrivacyRequest: {
+        type: "object",
+        additionalProperties: true,
+        required: [
+          "id",
+          "requestType",
+          "status",
+          "subject",
+          "createdAt",
+          "updatedAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          requestType: {
+            type: "string",
+            enum: [
+              "data_export",
+              "export",
+              "deletion",
+              "correction",
+              "objection",
+              "restriction",
+              "portability",
+              "retention_review",
+              "access",
+              "other"
+            ],
+            description:
+              "Legacy data_export/export forms are safely mapped to export support where needed."
+          },
+          status: {
+            type: "string",
+            enum: [
+              "submitted",
+              "in_review",
+              "awaiting_verification",
+              "approved",
+              "rejected",
+              "fulfilled",
+              "cancelled",
+              "completed"
+            ],
+            description:
+              "If a narrower database status set is present, unsupported statuses are mapped safely with warnings rather than weakening migrations."
+          },
+          subject: {
+            type: "string"
+          },
+          details: {
+            type: "string"
+          },
+          requesterEmail: {
+            type: ["string", "null"],
+            format: "email"
+          },
+          reviewNote: {
+            type: ["string", "null"],
+            description:
+              "Minimized review note. Do not store legal advice, secrets, raw XML, or raw SOAP."
+          },
+          completedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      WorkspacePrivacyRequestCreate: {
+        type: "object",
+        additionalProperties: false,
+        required: ["requestType", "subject"],
+        properties: {
+          requestType: {
+            type: "string",
+            enum: [
+              "data_export",
+              "export",
+              "deletion",
+              "correction",
+              "objection",
+              "restriction",
+              "portability",
+              "retention_review",
+              "access",
+              "other"
+            ]
+          },
+          subject: {
+            type: "string",
+            minLength: 1,
+            maxLength: 240
+          },
+          details: {
+            type: "string",
+            maxLength: 5000
+          },
+          requesterEmail: {
+            type: "string",
+            format: "email"
+          }
+        }
+      },
+      WorkspacePrivacyRequestReview: {
+        type: "object",
+        additionalProperties: false,
+        required: ["status"],
+        properties: {
+          status: {
+            type: "string",
+            enum: [
+              "submitted",
+              "in_review",
+              "awaiting_verification",
+              "approved",
+              "rejected",
+              "fulfilled",
+              "cancelled",
+              "completed"
+            ]
+          },
+          reviewNote: {
+            type: "string",
+            maxLength: 5000
+          }
+        }
+      },
+      WorkspacePrivacyRequestResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("WorkspacePrivacyRequest")
+        }
+      },
+      WorkspacePrivacyRequestListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("WorkspacePrivacyRequest")
+          }
+        }
+      },
+      WorkspaceExportPackageRecordCounts: {
+        type: "object",
+        additionalProperties: {
+          type: "integer",
+          minimum: 0
+        },
+        description:
+          "Counts for datasets included in the redacted export manifest."
+      },
+      WorkspaceExportPackage: {
+        type: "object",
+        additionalProperties: true,
+        required: [
+          "id",
+          "packageType",
+          "status",
+          "exportName",
+          "exportFormat",
+          "recordCounts",
+          "packageSizeBytes",
+          "createdAt",
+          "updatedAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          packageType: {
+            type: "string",
+            enum: ["full_workspace"]
+          },
+          status: {
+            type: "string",
+            enum: ["prepared", "failed"]
+          },
+          exportName: {
+            type: "string"
+          },
+          exportFormat: {
+            type: "string",
+            const: "json"
+          },
+          sourcePrivacyRequestId: {
+            type: ["string", "null"],
+            format: "uuid"
+          },
+          recordCounts: ref("WorkspaceExportPackageRecordCounts"),
+          packagePayload: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Redacted export payload. It includes generatedAt, organizationId, schema/version, redaction notice, included dataset manifest, retention/deletion notes, warnings/errors, and legal/privacy disclaimers. It excludes service-role keys, API key hashes/secrets, webhook raw secrets/encryption keys, raw SOAP, raw XML unless a future reviewed policy allows it, expired transient payloads, local paths, stack traces, platform admin allowlists, and env/config secrets."
+          },
+          packageSizeBytes: {
+            type: "integer",
+            minimum: 0
+          },
+          errorMessage: {
+            type: ["string", "null"]
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      WorkspaceExportPackageCreate: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sourcePrivacyRequestId: {
+            type: "string",
+            format: "uuid"
+          }
+        }
+      },
+      WorkspaceExportPackageResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("WorkspaceExportPackage")
+        }
+      },
+      WorkspaceExportPackageListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("WorkspaceExportPackage")
+          }
+        }
+      },
+      RetentionBucket: {
+        type: "object",
+        required: [
+          "retentionDays",
+          "cutoffDate",
+          "affectedCount"
+        ],
+        properties: {
+          retentionDays: {
+            type: "integer",
+            minimum: 0
+          },
+          cutoffDate: {
+            type: "string",
+            format: "date-time"
+          },
+          affectedCount: {
+            type: "integer",
+            minimum: 0
+          },
+          executedCount: {
+            type: "integer",
+            minimum: 0
+          }
+        }
+      },
+      WorkspaceRetentionPreview: {
+        type: "object",
+        additionalProperties: true,
+        required: [
+          "retentionMode",
+          "generatedAt",
+          "invoiceDrafts",
+          "validationRuns",
+          "xmlReadinessReports",
+          "warnings",
+          "disclaimer"
+        ],
+        properties: {
+          retentionMode: {
+            type: "string",
+            enum: ["manual", "scheduled"]
+          },
+          generatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          invoiceDrafts: ref("RetentionBucket"),
+          validationRuns: ref("RetentionBucket"),
+          xmlReadinessReports: ref("RetentionBucket"),
+          xmlValidationJobs: ref("RetentionBucket"),
+          invoiceExports: ref("RetentionBucket"),
+          apiRequests: ref("RetentionBucket"),
+          webhookDeliveries: ref("RetentionBucket"),
+          viesEvidenceChecks: ref("RetentionBucket"),
+          vidaSimulationRuns: ref("RetentionBucket"),
+          activityEvents: ref("RetentionBucket"),
+          privacyRequests: ref("RetentionBucket"),
+          retentionRuns: ref("RetentionBucket"),
+          deletionRuns: ref("RetentionBucket"),
+          legalAcceptances: ref("RetentionBucket"),
+          warnings: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "Retention previews are GDPR-aware support only and are not legal, tax, accounting, or privacy advice."
+          }
+        }
+      },
+      WorkspaceRetentionPreviewResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("WorkspaceRetentionPreview")
+        }
+      },
+      WorkspaceRetentionRun: {
+        allOf: [
+          ref("WorkspaceRetentionPreview"),
+          {
+            type: "object",
+            required: [
+              "id",
+              "runType",
+              "status",
+              "totalAffectedCount",
+              "totalExecutedCount",
+              "createdAt",
+              "updatedAt"
+            ],
+            properties: {
+              id: {
+                type: "string",
+                format: "uuid"
+              },
+              runType: {
+                type: "string",
+                const: "manual_retention_review"
+              },
+              status: {
+                type: "string",
+                enum: ["prepared", "executed", "failed"]
+              },
+              totalAffectedCount: {
+                type: "integer",
+                minimum: 0
+              },
+              totalExecutedCount: {
+                type: "integer",
+                minimum: 0
+              },
+              errorMessage: {
+                type: ["string", "null"]
+              },
+              executedAt: {
+                type: ["string", "null"],
+                format: "date-time"
+              },
+              createdAt: {
+                type: "string",
+                format: "date-time"
+              },
+              updatedAt: {
+                type: "string",
+                format: "date-time"
+              }
+            }
+          }
+        ]
+      },
+      WorkspaceRetentionRunResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("WorkspaceRetentionRun")
+        }
+      },
+      WorkspaceRetentionRunListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("WorkspaceRetentionRun")
+          }
+        }
+      },
+      WorkspaceDeletionCounts: {
+        type: "object",
+        additionalProperties: {
+          type: "integer",
+          minimum: 0
+        },
+        description:
+          "Tenant-scoped affected/executed counts. Public legal documents, platform rules, source registers, country packs, required audit/security records, and preserved legal acceptance records are not deleted by workspace deletion runs."
+      },
+      WorkspaceDeletionRun: {
+        type: "object",
+        additionalProperties: true,
+        required: [
+          "id",
+          "runType",
+          "status",
+          "sourcePrivacyRequestId",
+          "affectedCounts",
+          "executedCounts",
+          "totalAffectedCount",
+          "totalExecutedCount",
+          "warnings",
+          "disclaimer",
+          "createdAt",
+          "updatedAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          runType: {
+            type: "string",
+            const: "privacy_request_deletion"
+          },
+          status: {
+            type: "string",
+            enum: ["prepared", "executed", "failed"]
+          },
+          sourcePrivacyRequestId: {
+            type: "string",
+            format: "uuid"
+          },
+          affectedCounts: ref("WorkspaceDeletionCounts"),
+          executedCounts: ref("WorkspaceDeletionCounts"),
+          totalAffectedCount: {
+            type: "integer",
+            minimum: 0
+          },
+          totalExecutedCount: {
+            type: "integer",
+            minimum: 0
+          },
+          warnings: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          disclaimer: {
+            type: "string"
+          },
+          errorMessage: {
+            type: ["string", "null"]
+          },
+          executedAt: {
+            type: ["string", "null"],
+            format: "date-time"
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      WorkspaceDeletionRunCreate: {
+        type: "object",
+        additionalProperties: false,
+        required: ["sourcePrivacyRequestId"],
+        properties: {
+          sourcePrivacyRequestId: {
+            type: "string",
+            format: "uuid"
+          }
+        }
+      },
+      WorkspaceDeletionRunResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("WorkspaceDeletionRun")
+        }
+      },
+      WorkspaceDeletionRunListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("WorkspaceDeletionRun")
           }
         }
       },

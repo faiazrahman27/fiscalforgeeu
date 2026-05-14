@@ -34,6 +34,11 @@ schemas, scope metadata, examples, and common error responses.
 Webhook simulator details are documented in
 [`docs/api/webhooks.md`](./webhooks.md).
 
+Legal and privacy architecture details are documented in
+[`docs/architecture/legal-document-system.md`](../architecture/legal-document-system.md)
+and
+[`docs/architecture/privacy-gdpr-retention-deletion.md`](../architecture/privacy-gdpr-retention-deletion.md).
+
 ## Authentication
 
 Organization API keys authenticate selected sandbox developer endpoints through
@@ -103,6 +108,62 @@ list contains a reserved future scope.
 | Webhook simulator endpoint management | `GET /api/v1/webhooks/endpoints`, `POST /api/v1/webhooks/endpoints`, `GET /api/v1/webhooks/endpoints/{id}`, `PATCH /api/v1/webhooks/endpoints/{id}`, `DELETE /api/v1/webhooks/endpoints/{id}`, `POST /api/v1/webhooks/endpoints/{id}/rotate-secret` |
 | Signed webhook test events and logs | `POST /api/v1/webhooks/endpoints/{id}/test`, `GET /api/v1/webhooks/deliveries`, `GET /api/v1/webhooks/deliveries/{id}`, `POST /api/v1/webhooks/deliveries/{id}/retry` |
 
+## Legal And Privacy Support Routes
+
+Published legal documents are public read-only product policy notices:
+
+```text
+GET /api/v1/legal/documents
+GET /api/v1/legal/documents/{documentKey}
+```
+
+Signed-in users can accept required published document versions and review
+acceptance status:
+
+```text
+POST /api/v1/legal/documents/{documentKey}/accept
+GET /api/v1/legal/acceptances/me
+GET /api/v1/legal/acceptances/workspace
+```
+
+Organization API keys are rejected for legal acceptance writes and workspace
+acceptance review. Acceptance records store document/version/context and hashed
+request evidence only when captured; raw IP addresses and raw user agents are
+not stored or returned.
+
+Workspace owner/admin privacy-support endpoints include:
+
+```text
+GET /api/v1/workspace/settings
+PUT /api/v1/workspace/settings
+GET /api/v1/workspace/settings/privacy
+PATCH /api/v1/workspace/settings/privacy
+GET /api/v1/workspace/privacy/data-map
+GET /api/v1/workspace/privacy/subprocessors
+GET /api/v1/workspace/privacy/cookie-stance
+GET /api/v1/workspace/privacy-requests
+POST /api/v1/workspace/privacy-requests
+GET /api/v1/workspace/privacy-requests/{id}
+PATCH /api/v1/workspace/privacy-requests/{id}
+GET /api/v1/workspace/export-packages
+POST /api/v1/workspace/export-packages
+GET /api/v1/workspace/export-packages/{id}
+GET /api/v1/workspace/retention-preview
+GET /api/v1/workspace/retention-runs
+POST /api/v1/workspace/retention-runs
+POST /api/v1/workspace/retention-runs/{id}/execute
+GET /api/v1/workspace/deletion-runs
+POST /api/v1/workspace/deletion-runs
+POST /api/v1/workspace/deletion-runs/{id}/execute
+```
+
+These endpoints are GDPR-aware support tooling only. They do not guarantee GDPR
+compliance, decide statutory retention, replace DPO review, or provide legal,
+tax, accounting, privacy, filing, or professional advice. Export packages redact
+service-role keys, API key secrets and hashes, webhook raw secret material, raw
+SOAP, raw XML unless a future reviewed policy explicitly allows it, local paths,
+stack traces, platform-admin allowlists, and environment/config secrets.
+
 ## Platform-Admin-Only Routes
 
 These routes manage platform rule intelligence, source-reference metadata, and
@@ -142,3 +203,10 @@ Use `POST /api/v1/invoices/parse/ubl` for API-key UBL parsing.
   and retries help technical integrations; they do not indicate official filing,
   authority submission, downstream acceptance, legal/tax/accounting advice, or a
   compliance guarantee.
+- API Terms, Webhook Simulator Terms / Integration Notice, Disclaimer / No Tax
+  Advice Notice, country-pack, ViDA, VIES, and XML/XSD/Schematron notices are
+  versioned legal documents that require professional review. Accepting them is
+  policy-version evidence only, not proof of compliance.
+- Data-map, export, deletion, retention, subprocessor, cookie stance, and
+  privacy request endpoints support privacy operations but do not replace legal
+  counsel, DPO review, or professional privacy review.

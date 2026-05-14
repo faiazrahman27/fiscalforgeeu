@@ -5,7 +5,8 @@ const navItems = [
   { href: "/studio", label: "Studio" },
   { href: "/validation", label: "Validation" },
   { href: "/developer-api", label: "API" },
-  { href: "/boundaries", label: "Boundaries" }
+  { href: "/boundaries", label: "Boundaries" },
+  { href: "/legal", label: "Legal" }
 ];
 
 export function SiteHeader() {

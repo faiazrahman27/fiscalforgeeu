@@ -9,6 +9,21 @@ export type WorkspaceDeletionRunRecordCounts = {
   xmlReadinessReports: number;
   workspaceExportPackages: number;
   activityEvents: number;
+  productionInvoices: number;
+  businessProfiles: number;
+  contacts: number;
+  invoiceExports: number;
+  vatNumberChecks: number;
+  xmlValidationJobs: number;
+  apiKeys: number;
+  apiRequests: number;
+  webhookEndpoints: number;
+  webhookDeliveries: number;
+  viesEvidenceChecks: number;
+  vidaSimulationRuns: number;
+  legalAcceptances: number;
+  privacyRequestEvents: number;
+  privacyAuditEvents: number;
 };
 
 export type WorkspaceDeletionRunRecord = {
@@ -20,6 +35,8 @@ export type WorkspaceDeletionRunRecord = {
   executedCounts: WorkspaceDeletionRunRecordCounts;
   totalAffectedCount: number;
   totalExecutedCount: number;
+  warnings: string[];
+  disclaimer: string;
   errorMessage: string;
   executedAt: string;
   createdAt: string;
@@ -43,38 +60,20 @@ type SupabaseWorkspaceBootstrapRecord = {
   userEmail: string;
 };
 
-type SupabaseWorkspaceDeletionRunRow = {
-  id: string;
-  organization_id: string;
-  source_privacy_request_id: string | null;
-  initiated_by: string | null;
-  run_type: string;
-  status: string;
-
-  invoice_draft_affected_count: number;
-  validation_run_affected_count: number;
-  xml_report_affected_count: number;
-  workspace_export_package_affected_count: number;
-  activity_event_affected_count: number;
-
-  invoice_draft_executed_count: number;
-  validation_run_executed_count: number;
-  xml_report_executed_count: number;
-  workspace_export_package_executed_count: number;
-  activity_event_executed_count: number;
-
-  error_message: string;
-  executed_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
 type SupabaseWorkspacePrivacyRequestRow = {
   id: string;
   organization_id: string;
   request_type: string;
   status: string;
   subject: string;
+};
+
+type DeletionDatasetConfig = {
+  responseKey: keyof WorkspaceDeletionRunRecordCounts;
+  tableName: string;
+  columnPrefix: string;
+  preservedByDefault?: boolean;
+  executionMode: "delete" | "revoke" | "disable_secrets" | "preserve";
 };
 
 type WorkspaceActivityEventInput = {
@@ -92,10 +91,137 @@ type WorkspaceActivityEventInput = {
 const MAX_WORKSPACE_DELETION_RUNS = 250;
 
 const WORKSPACE_DELETION_RUN_SELECT_FIELDS =
-  "id, organization_id, source_privacy_request_id, initiated_by, run_type, status, invoice_draft_affected_count, validation_run_affected_count, xml_report_affected_count, workspace_export_package_affected_count, activity_event_affected_count, invoice_draft_executed_count, validation_run_executed_count, xml_report_executed_count, workspace_export_package_executed_count, activity_event_executed_count, error_message, executed_at, created_at, updated_at";
+  "id, organization_id, source_privacy_request_id, initiated_by, run_type, status, invoice_draft_affected_count, validation_run_affected_count, xml_report_affected_count, workspace_export_package_affected_count, activity_event_affected_count, production_invoice_affected_count, business_profile_affected_count, contact_affected_count, invoice_export_affected_count, vat_number_check_affected_count, xml_validation_job_affected_count, api_key_affected_count, api_request_log_affected_count, webhook_endpoint_affected_count, webhook_delivery_affected_count, vies_evidence_affected_count, vida_simulation_affected_count, legal_acceptance_affected_count, privacy_request_event_affected_count, privacy_audit_event_affected_count, invoice_draft_executed_count, validation_run_executed_count, xml_report_executed_count, workspace_export_package_executed_count, activity_event_executed_count, production_invoice_executed_count, business_profile_executed_count, contact_executed_count, invoice_export_executed_count, vat_number_check_executed_count, xml_validation_job_executed_count, api_key_executed_count, api_request_log_executed_count, webhook_endpoint_executed_count, webhook_delivery_executed_count, vies_evidence_executed_count, vida_simulation_executed_count, legal_acceptance_executed_count, privacy_request_event_executed_count, privacy_audit_event_executed_count, error_message, executed_at, created_at, updated_at";
 
 const WORKSPACE_PRIVACY_REQUEST_SELECT_FIELDS =
   "id, organization_id, request_type, status, subject";
+
+export const DELETION_RUN_DATASETS: readonly DeletionDatasetConfig[] = [
+  {
+    responseKey: "invoiceDrafts",
+    tableName: "invoice_drafts",
+    columnPrefix: "invoice_draft",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "validationRuns",
+    tableName: "validation_runs",
+    columnPrefix: "validation_run",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "xmlReadinessReports",
+    tableName: "xml_readiness_reports",
+    columnPrefix: "xml_report",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "workspaceExportPackages",
+    tableName: "workspace_export_packages",
+    columnPrefix: "workspace_export_package",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "activityEvents",
+    tableName: "workspace_activity_events",
+    columnPrefix: "activity_event",
+    executionMode: "preserve",
+    preservedByDefault: true
+  },
+  {
+    responseKey: "productionInvoices",
+    tableName: "invoices",
+    columnPrefix: "production_invoice",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "businessProfiles",
+    tableName: "business_profiles",
+    columnPrefix: "business_profile",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "contacts",
+    tableName: "contacts",
+    columnPrefix: "contact",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "invoiceExports",
+    tableName: "invoice_exports",
+    columnPrefix: "invoice_export",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "vatNumberChecks",
+    tableName: "vat_number_checks",
+    columnPrefix: "vat_number_check",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "xmlValidationJobs",
+    tableName: "xml_validation_jobs",
+    columnPrefix: "xml_validation_job",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "apiKeys",
+    tableName: "api_keys",
+    columnPrefix: "api_key",
+    executionMode: "revoke"
+  },
+  {
+    responseKey: "apiRequests",
+    tableName: "api_requests",
+    columnPrefix: "api_request_log",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "webhookEndpoints",
+    tableName: "webhook_endpoints",
+    columnPrefix: "webhook_endpoint",
+    executionMode: "disable_secrets"
+  },
+  {
+    responseKey: "webhookDeliveries",
+    tableName: "webhook_deliveries",
+    columnPrefix: "webhook_delivery",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "viesEvidenceChecks",
+    tableName: "vies_evidence_checks",
+    columnPrefix: "vies_evidence",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "vidaSimulationRuns",
+    tableName: "vida_simulation_runs",
+    columnPrefix: "vida_simulation",
+    executionMode: "delete"
+  },
+  {
+    responseKey: "legalAcceptances",
+    tableName: "legal_document_acceptances",
+    columnPrefix: "legal_acceptance",
+    executionMode: "preserve",
+    preservedByDefault: true
+  },
+  {
+    responseKey: "privacyRequestEvents",
+    tableName: "privacy_request_events",
+    columnPrefix: "privacy_request_event",
+    executionMode: "preserve",
+    preservedByDefault: true
+  },
+  {
+    responseKey: "privacyAuditEvents",
+    tableName: "workspace_privacy_audit_events",
+    columnPrefix: "privacy_audit_event",
+    executionMode: "preserve",
+    preservedByDefault: true
+  }
+];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -111,6 +237,22 @@ function readStringField(
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : fallback;
+}
+
+function readNumberField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.round(value));
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsedValue = Number(value);
+
+    return Number.isFinite(parsedValue) ? Math.max(0, Math.round(parsedValue)) : 0;
+  }
+
+  return 0;
 }
 
 function normalizeWorkspaceBootstrapRecord(
@@ -147,63 +289,94 @@ function normalizeDeletionRunStatus(value: string): WorkspaceDeletionRunStatus {
   return "prepared";
 }
 
-function normalizeDeletionRunRow(
-  row: SupabaseWorkspaceDeletionRunRow
-): WorkspaceDeletionRunRecord {
-  const affectedCounts = {
-    invoiceDrafts: row.invoice_draft_affected_count,
-    validationRuns: row.validation_run_affected_count,
-    xmlReadinessReports: row.xml_report_affected_count,
-    workspaceExportPackages: row.workspace_export_package_affected_count,
-    activityEvents: row.activity_event_affected_count
-  };
-
-  const executedCounts = {
-    invoiceDrafts: row.invoice_draft_executed_count,
-    validationRuns: row.validation_run_executed_count,
-    xmlReadinessReports: row.xml_report_executed_count,
-    workspaceExportPackages: row.workspace_export_package_executed_count,
-    activityEvents: row.activity_event_executed_count
-  };
-
+function emptyCounts(): WorkspaceDeletionRunRecordCounts {
   return {
-    id: row.id,
-    runType: "privacy_request_deletion",
-    status: normalizeDeletionRunStatus(row.status),
-    sourcePrivacyRequestId: row.source_privacy_request_id ?? "",
-    affectedCounts,
-    executedCounts,
-    totalAffectedCount:
-      affectedCounts.invoiceDrafts +
-      affectedCounts.validationRuns +
-      affectedCounts.xmlReadinessReports +
-      affectedCounts.workspaceExportPackages +
-      affectedCounts.activityEvents,
-    totalExecutedCount:
-      executedCounts.invoiceDrafts +
-      executedCounts.validationRuns +
-      executedCounts.xmlReadinessReports +
-      executedCounts.workspaceExportPackages +
-      executedCounts.activityEvents,
-    errorMessage: row.error_message,
-    executedAt: row.executed_at ?? "",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
+    invoiceDrafts: 0,
+    validationRuns: 0,
+    xmlReadinessReports: 0,
+    workspaceExportPackages: 0,
+    activityEvents: 0,
+    productionInvoices: 0,
+    businessProfiles: 0,
+    contacts: 0,
+    invoiceExports: 0,
+    vatNumberChecks: 0,
+    xmlValidationJobs: 0,
+    apiKeys: 0,
+    apiRequests: 0,
+    webhookEndpoints: 0,
+    webhookDeliveries: 0,
+    viesEvidenceChecks: 0,
+    vidaSimulationRuns: 0,
+    legalAcceptances: 0,
+    privacyRequestEvents: 0,
+    privacyAuditEvents: 0
   };
 }
 
-function normalizeRpcDeletionRunResult(
-  value: unknown
-): SupabaseWorkspaceDeletionRunRow | null {
-  if (Array.isArray(value)) {
-    const firstRecord = value[0];
+function readCounts(
+  row: Record<string, unknown>,
+  suffix: "affected_count" | "executed_count"
+): WorkspaceDeletionRunRecordCounts {
+  const counts = emptyCounts();
 
-    return isPlainObject(firstRecord)
-      ? (firstRecord as SupabaseWorkspaceDeletionRunRow)
-      : null;
+  for (const dataset of DELETION_RUN_DATASETS) {
+    counts[dataset.responseKey] = readNumberField(
+      row,
+      `${dataset.columnPrefix}_${suffix}`
+    );
   }
 
-  return isPlainObject(value) ? (value as SupabaseWorkspaceDeletionRunRow) : null;
+  return counts;
+}
+
+function sumCounts(counts: WorkspaceDeletionRunRecordCounts) {
+  return Object.values(counts).reduce((total, count) => total + count, 0);
+}
+
+function getDeletionWarnings() {
+  return [
+    "Deletion execution is destructive for eligible workspace data and must be preceded by a prepared review.",
+    "Public legal documents, platform rule sources, country packs, and platform-level rule metadata are not deleted by workspace deletion runs.",
+    "Webhook endpoint secrets are nulled and endpoints are disabled instead of exposing raw secret material.",
+    "API keys are revoked or minimized instead of exporting or revealing key hashes or full secrets.",
+    ...DELETION_RUN_DATASETS.filter((dataset) => dataset.preservedByDefault).map(
+      (dataset) =>
+        `${dataset.tableName} is counted for review, but required privacy, legal, security, or audit evidence is preserved by default.`
+    )
+  ];
+}
+
+function normalizeDeletionRunRow(value: unknown): WorkspaceDeletionRunRecord {
+  const row = isPlainObject(value) ? value : {};
+  const affectedCounts = readCounts(row, "affected_count");
+  const executedCounts = readCounts(row, "executed_count");
+
+  return {
+    id: readStringField(row, "id"),
+    runType: "privacy_request_deletion",
+    status: normalizeDeletionRunStatus(readStringField(row, "status")),
+    sourcePrivacyRequestId: readStringField(row, "source_privacy_request_id"),
+    affectedCounts,
+    executedCounts,
+    totalAffectedCount: sumCounts(affectedCounts),
+    totalExecutedCount: sumCounts(executedCounts),
+    warnings: getDeletionWarnings(),
+    disclaimer:
+      "Deletion runs are GDPR-aware privacy-support tooling only. They are not legal advice, privacy advice, tax advice, accounting advice, official filing advice, or a GDPR compliance guarantee.",
+    errorMessage: readStringField(row, "error_message"),
+    executedAt: readStringField(row, "executed_at"),
+    createdAt: readStringField(row, "created_at"),
+    updatedAt: readStringField(row, "updated_at")
+  };
+}
+
+function normalizeRpcDeletionRunResult(value: unknown) {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return isPlainObject(value) ? value : null;
 }
 
 function isDeletionRunNotFoundError(message: string) {
@@ -317,10 +490,6 @@ async function recordWorkspaceActivityEvent(
   });
 
   if (error) {
-    /*
-     * Activity logging must not break deletion-run preparation.
-     * The deletion-run row remains the authoritative audit record.
-     */
     console.warn(`Workspace activity event was not recorded: ${error.message}`);
   }
 }
@@ -351,7 +520,13 @@ async function insertDeletionRunPreparedActivityEvent({
       sourcePrivacyRequestSubject: sourcePrivacyRequest.subject,
       sourcePrivacyRequestStatus: sourcePrivacyRequest.status,
       totalAffectedCount: record.totalAffectedCount,
-      affectedCounts: record.affectedCounts
+      affectedCounts: record.affectedCounts,
+      executionModes: DELETION_RUN_DATASETS.map((dataset) => ({
+        dataset: dataset.responseKey,
+        mode: dataset.executionMode
+      })),
+      legalAdvice: false,
+      privacyComplianceGuarantee: false
     }
   });
 }
@@ -381,9 +556,7 @@ export async function listAuthenticatedWorkspaceDeletionRuns(
     throw new Error(`Could not list deletion runs: ${error.message}`);
   }
 
-  return ((data ?? []) as SupabaseWorkspaceDeletionRunRow[]).map((row) =>
-    normalizeDeletionRunRow(row)
-  );
+  return (data ?? []).map((row) => normalizeDeletionRunRow(row));
 }
 
 export async function createAuthenticatedWorkspaceDeletionRun(
@@ -392,7 +565,6 @@ export async function createAuthenticatedWorkspaceDeletionRun(
 ) {
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
-
   const sourcePrivacyRequestId = payload.sourcePrivacyRequestId.trim();
 
   if (!sourcePrivacyRequestId) {
@@ -409,55 +581,28 @@ export async function createAuthenticatedWorkspaceDeletionRun(
     return null;
   }
 
-  const [
-    invoiceDraftAffectedCount,
-    validationRunAffectedCount,
-    xmlReportAffectedCount,
-    workspaceExportPackageAffectedCount,
-    activityEventAffectedCount
-  ] = await Promise.all([
-    countWorkspaceRows({
-      supabase,
-      tableName: "invoice_drafts",
-      organizationId: workspace.organizationId
-    }),
-    countWorkspaceRows({
-      supabase,
-      tableName: "validation_runs",
-      organizationId: workspace.organizationId
-    }),
-    countWorkspaceRows({
-      supabase,
-      tableName: "xml_readiness_reports",
-      organizationId: workspace.organizationId
-    }),
-    countWorkspaceRows({
-      supabase,
-      tableName: "workspace_export_packages",
-      organizationId: workspace.organizationId
-    }),
-    countWorkspaceRows({
-      supabase,
-      tableName: "workspace_activity_events",
-      organizationId: workspace.organizationId
+  const insertValues: Record<string, unknown> = {
+    organization_id: workspace.organizationId,
+    source_privacy_request_id: sourcePrivacyRequest.id,
+    initiated_by: context.userId,
+    run_type: "privacy_request_deletion",
+    status: "prepared"
+  };
+
+  await Promise.all(
+    DELETION_RUN_DATASETS.map(async (dataset) => {
+      insertValues[`${dataset.columnPrefix}_affected_count`] =
+        await countWorkspaceRows({
+          supabase,
+          tableName: dataset.tableName,
+          organizationId: workspace.organizationId
+        });
     })
-  ]);
+  );
 
   const { data, error } = await supabase
     .from("workspace_deletion_runs")
-    .insert({
-      organization_id: workspace.organizationId,
-      source_privacy_request_id: sourcePrivacyRequest.id,
-      initiated_by: context.userId,
-      run_type: "privacy_request_deletion",
-      status: "prepared",
-
-      invoice_draft_affected_count: invoiceDraftAffectedCount,
-      validation_run_affected_count: validationRunAffectedCount,
-      xml_report_affected_count: xmlReportAffectedCount,
-      workspace_export_package_affected_count: workspaceExportPackageAffectedCount,
-      activity_event_affected_count: activityEventAffectedCount
-    })
+    .insert(insertValues)
     .select(WORKSPACE_DELETION_RUN_SELECT_FIELDS)
     .single();
 
@@ -465,7 +610,7 @@ export async function createAuthenticatedWorkspaceDeletionRun(
     throw new Error(`Could not create deletion run: ${error.message}`);
   }
 
-  const record = normalizeDeletionRunRow(data as SupabaseWorkspaceDeletionRunRow);
+  const record = normalizeDeletionRunRow(data);
 
   try {
     await insertDeletionRunPreparedActivityEvent({
@@ -489,13 +634,6 @@ export async function executeAuthenticatedWorkspaceDeletionRun(
   id: string
 ) {
   const supabase = createAuthenticatedSupabaseClient(context);
-
-  /*
-   * Destructive workspace deletion is intentionally executed through a Postgres
-   * RPC. The RPC performs the delete/update/activity-log sequence inside the
-   * database so the operation is atomic and does not partially delete records if
-   * a later step fails.
-   */
   const { data, error } = await supabase.rpc("execute_workspace_deletion_run", {
     deletion_run_id: id
   });

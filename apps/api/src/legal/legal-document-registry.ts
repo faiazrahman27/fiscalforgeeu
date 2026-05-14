@@ -161,7 +161,7 @@ Operational, legal, privacy, and security contact details require professional b
       "Initial privacy policy draft aligned to export, deletion, retention, data-map, and subprocessor controls.",
     bodyMd: `
 ## Positioning
-This Privacy Policy is a product policy draft. Controller and processor roles depend on the final operating entity, customer contracts, deployment model, and professional privacy review.
+This Privacy Policy is a GDPR-aware product policy draft. Controller and processor roles depend on the final operating entity, customer contracts, deployment model, and professional privacy review.
 
 ## Data Categories
 Invoice Lantern may process account data, workspace membership data, organization settings, invoice and customer data, contacts, business profiles, canonical invoice data, XML job metadata, validation reports, VAT format checks, VIES evidence metadata, ViDA simulation runs, webhook endpoint metadata, webhook delivery logs, API request metadata, privacy requests, export packages, retention/deletion run metadata, legal acceptance records, and security/audit events.

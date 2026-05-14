@@ -127,6 +127,10 @@ export default function DeveloperApiPage() {
                 <RadioTower size={18} />
                 Webhooks
               </Link>
+              <Link href="/legal/api-terms" className="text-link-button">
+                <ShieldCheck size={18} />
+                API terms
+              </Link>
             </div>
           </Reveal>
 
@@ -451,6 +455,22 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
           </Reveal>
 
           <div className="next-page-row">
+            <Link
+              href="/legal/webhook-simulator-terms"
+              className="text-link-button"
+            >
+              Webhook notice
+              <ArrowRight size={18} />
+            </Link>
+
+            <Link
+              href="/legal/disclaimer-no-tax-advice"
+              className="text-link-button"
+            >
+              Disclaimer
+              <ArrowRight size={18} />
+            </Link>
+
             <Link href="/boundaries" className="text-link-button">
               Continue to Boundaries
               <ArrowRight size={18} />

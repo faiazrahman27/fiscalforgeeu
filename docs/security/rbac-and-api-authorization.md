@@ -106,6 +106,9 @@ certification.
 | XML validation jobs | Signed-in user or scoped API key | Validation/report roles or `xml:validation_jobs`; uploaded XML history remains signed-user only. |
 | Workspace activity | Signed-in user | `owner`, `admin`, or `developer`. |
 | Workspace settings, privacy, retention, deletion, export packages | Signed-in user | `owner` or `admin`. |
+| Workspace privacy data map, subprocessors, and cookie stance | Signed-in user | `owner` or `admin`; GDPR-aware support metadata only, not a GDPR compliance guarantee. |
+| Workspace privacy requests | Signed-in user | `owner` or `admin`; supports access, export, deletion, correction, objection, restriction, portability, retention review, and other workflow records. |
+| Legal documents | Public read for published documents; signed-in user for acceptance | Draft/review documents are hidden from public reads. Organization API keys are rejected for legal acceptance and workspace acceptance status. |
 | Workspace member and invitation management | Signed-in user | `owner` or `admin`; organization API keys are rejected; last-owner protection and invite-token hashing are enforced. |
 | Country packs and validation rules | Public or scoped technical catalog reads as implemented | No tenant-owned object data is returned. |
 | Platform rule/source/country-pack admin | Signed-in platform admin only | Backend-only `PLATFORM_ADMIN_EMAILS`; organization API keys and workspace roles alone are rejected; writes create lifecycle events and preserve source traceability. |
@@ -154,12 +157,32 @@ new migrations only.
 - Platform admin rule/source/country-pack responses return metadata and
   lifecycle events only. They do not expose the platform-admin email allow-list,
   service-role credentials, source-document bodies, or legal/tax conclusions.
+- Legal document public reads return published policy markdown and safe
+  metadata only. Acceptance records store document/version/context and hashed
+  request evidence only when captured; raw IP addresses and raw user agents are
+  not stored or returned.
+- Export packages include generated timestamp, organization ID, schema/version,
+  redaction notice, manifest, retention/deletion notes, warnings, and
+  legal/privacy disclaimers. They exclude service-role keys, database URLs, API
+  key hashes/secrets, webhook raw signing secrets, webhook encryption keys, raw
+  SOAP, raw XML unless a future reviewed policy explicitly allows it, expired
+  transient payloads, local paths, stack traces, platform-admin allowlists, and
+  environment/config secrets.
+- Deletion runs require owner/admin access and a prepared deletion request
+  review. They stay tenant-scoped, revoke/minimize API-key metadata, disable and
+  clear webhook endpoint secret fields, and preserve required legal, audit,
+  security, public legal document, platform rule, source-register, and
+  country-pack records.
+- Retention previews/runs are owner/admin, tenant-scoped, and non-destructive
+  until execution. Preserved legal/security/audit datasets must produce clear
+  warnings instead of being silently deleted.
 
 ## Future Work
 
 This document covers the Step 2 authorization hardening, Step 4 workspace
 member/invitation management rules, and Step 5 production invoice lifecycle
-route permissions, plus the Step 10 explicit VIES evidence workflow. Later
-prompts may add the full editor/studio fields, CII, monitoring, legal-document
-workflows, and
-PWA/offline capabilities. Those are not implemented or claimed complete here.
+route permissions, plus the Step 10 explicit VIES evidence workflow and the
+legal/privacy/retention/deletion hardening layer. Later prompts may add the full
+editor/studio fields, CII, monitoring/security dashboard work, and
+PWA/mobile/offline capabilities. Those are not implemented or claimed complete
+here.

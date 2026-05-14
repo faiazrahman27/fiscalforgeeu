@@ -65,6 +65,13 @@ const pageLinks = [
     description:
       "Review the platform's independent positioning, non-affiliation language, no-tax-advice notices, and professional-review requirements.",
     tag: "Trust"
+  },
+  {
+    href: "/legal",
+    label: "Legal Documents",
+    description:
+      "Read versioned platform policies, API terms, privacy notices, cookie stance, subprocessor list, retention notice, and simulation disclaimers.",
+    tag: "Policy"
   }
 ];
 
