@@ -8,6 +8,7 @@ import {
   BookOpenCheck,
   Clock3,
   Eye,
+  FileText,
   Globe2,
   Layers3,
   Play,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 
 type VidaBuyerType = "business" | "consumer" | "public_authority" | "unknown";
+type VidaSellerType = "business" | "public_authority" | "unknown";
 
 type VidaTransactionType =
   | "goods"
@@ -24,19 +26,30 @@ type VidaTransactionType =
   | "mixed"
   | "unknown";
 
-type VidaFindingSeverity = "info" | "warning" | "review_required";
+type VidaSupplyScenario = "domestic" | "intra_eu" | "non_eu" | "unknown";
+type VidaInvoiceProfile = "EN16931" | "PEPPOL_BIS_3" | "COUNTRY_PACK";
+
+type VidaFindingSeverity = "info" | "warning" | "review_required" | "blocked";
 
 type VidaLegalConfidence =
+  | "technical"
+  | "standard_based"
+  | "official_source_derived"
   | "educational_simulation"
   | "professional_review_required";
 
 type VidaFinding = {
   code: string;
   severity: VidaFindingSeverity;
+  category: string;
   message: string;
   legalConfidence: VidaLegalConfidence;
   sourceLabels: string[];
+  sourceRefs: string[];
   fixSuggestion: string;
+  countryPackVersion?: string;
+  countryPackStatus?: string;
+  evidenceStatus?: string;
 };
 
 type VidaCountryContext = {
@@ -44,33 +57,75 @@ type VidaCountryContext = {
   buyerInEu: boolean;
   sameCountry: boolean;
   crossBorderEu: boolean;
+  sellerCountryPackStatus: string;
+  buyerCountryPackStatus: string;
+  sellerCountryPackVersion: string | null;
+  buyerCountryPackVersion: string | null;
+  sellerCountryPackSourceCoverageStatus: string;
+  buyerCountryPackSourceCoverageStatus: string;
 };
 
 type VidaNormalizedInput = {
   sellerCountryCode: string | null;
   buyerCountryCode: string | null;
+  sellerVatCountryCode: string | null;
+  buyerVatCountryCode: string | null;
   sellerVatId: string | null;
   buyerVatId: string | null;
   buyerType: VidaBuyerType;
+  sellerType: VidaSellerType;
   transactionType: VidaTransactionType;
+  supplyScenario: VidaSupplyScenario;
   invoiceDate: string | null;
+  issueDate: string | null;
   currency: string | null;
   amount: string | null;
+  invoiceProfile: VidaInvoiceProfile | null;
   countryPackVersions: Record<string, string>;
+};
+
+type VidaTimelineItem = {
+  date: string;
+  label: string;
+  sourceRefs: string[];
+  relevance: string;
+};
+
+type VidaSourceReference = {
+  id: string;
+  label: string;
+  title?: string;
+  publisher?: string;
+  url?: string;
+  notes?: string;
+};
+
+type VidaEvidenceSummary = {
+  vatFormatEvidence: Record<string, unknown>;
+  viesEvidence: Record<string, unknown>;
+  structuredInvoiceEvidence: Record<string, unknown>;
+  countryPackEvidence: Record<string, unknown>;
+  xmlValidationEvidence: Record<string, unknown>;
+  schematronEvidence: Record<string, unknown>;
 };
 
 type VidaSimulationResult = {
   simulationVersion: string;
   transactionClass: string;
   vidaRelevance: string;
+  readinessScore: number | null;
+  readinessStatus: string;
   reason: string;
   effectiveDateContext: string;
+  timeline: VidaTimelineItem[];
   confidence: string;
   legalConfidence: VidaLegalConfidence;
   countryContext: VidaCountryContext;
   normalizedInput: VidaNormalizedInput;
+  evidenceSummary: VidaEvidenceSummary;
   findings: VidaFinding[];
   recommendedNextActions: string[];
+  sourceReferences: VidaSourceReference[];
   disclaimer: string;
   persisted: boolean;
   simulationRunId: string | null;
@@ -89,6 +144,8 @@ type VidaSimulationRunSummary = {
   transactionType: string;
   transactionClass: string;
   vidaRelevance: string;
+  readinessScore: number | null;
+  readinessStatus: string;
   legalConfidence: VidaLegalConfidence;
   invoiceDate: string | null;
   currencyCode: string | null;
@@ -96,6 +153,9 @@ type VidaSimulationRunSummary = {
   countryPackVersions: Record<string, string>;
   countryContext: VidaCountryContext;
   normalizedInput: VidaNormalizedInput;
+  evidenceSummary: VidaEvidenceSummary;
+  timeline: VidaTimelineItem[];
+  sourceReferences: VidaSourceReference[];
   findingCount: number;
   infoCount: number;
   warningCount: number;
@@ -113,10 +173,21 @@ type VidaSimulationForm = {
   sellerVatId: string;
   buyerVatId: string;
   buyerType: VidaBuyerType;
+  sellerType: VidaSellerType;
   transactionType: VidaTransactionType;
+  supplyScenario: VidaSupplyScenario;
   invoiceDate: string;
+  issueDate: string;
   currency: string;
   amount: string;
+  invoiceProfile: VidaInvoiceProfile;
+  hasCanonicalInvoice: boolean;
+  hasUblXml: boolean;
+  xsdStatus: string;
+  schematronPeppolStatus: string;
+  schematronEn16931Status: string;
+  sellerViesStatus: string;
+  buyerViesStatus: string;
 };
 
 const defaultVidaForm: VidaSimulationForm = {
@@ -125,11 +196,52 @@ const defaultVidaForm: VidaSimulationForm = {
   sellerVatId: "DE123456789",
   buyerVatId: "HU12345678",
   buyerType: "business",
+  sellerType: "business",
   transactionType: "services",
-  invoiceDate: "2026-05-01",
+  supplyScenario: "intra_eu",
+  invoiceDate: "2030-07-01",
+  issueDate: "2030-07-01",
   currency: "EUR",
-  amount: "100.00"
+  amount: "100.00",
+  invoiceProfile: "EN16931",
+  hasCanonicalInvoice: false,
+  hasUblXml: false,
+  xsdStatus: "not_checked",
+  schematronPeppolStatus: "not_checked",
+  schematronEn16931Status: "not_checked",
+  sellerViesStatus: "not_checked",
+  buyerViesStatus: "not_checked"
 };
+
+const euCountryOptions = [
+  ["AT", "Austria", "AT"],
+  ["BE", "Belgium", "BE"],
+  ["BG", "Bulgaria", "BG"],
+  ["HR", "Croatia", "HR"],
+  ["CY", "Cyprus", "CY"],
+  ["CZ", "Czechia", "CZ"],
+  ["DK", "Denmark", "DK"],
+  ["EE", "Estonia", "EE"],
+  ["FI", "Finland", "FI"],
+  ["FR", "France", "FR"],
+  ["DE", "Germany", "DE"],
+  ["GR", "Greece", "EL"],
+  ["HU", "Hungary", "HU"],
+  ["IE", "Ireland", "IE"],
+  ["IT", "Italy", "IT"],
+  ["LV", "Latvia", "LV"],
+  ["LT", "Lithuania", "LT"],
+  ["LU", "Luxembourg", "LU"],
+  ["MT", "Malta", "MT"],
+  ["NL", "Netherlands", "NL"],
+  ["PL", "Poland", "PL"],
+  ["PT", "Portugal", "PT"],
+  ["RO", "Romania", "RO"],
+  ["SK", "Slovakia", "SK"],
+  ["SI", "Slovenia", "SI"],
+  ["ES", "Spain", "ES"],
+  ["SE", "Sweden", "SE"]
+] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -258,12 +370,19 @@ function normalizeTransactionType(value: unknown): VidaTransactionType {
 }
 
 function normalizeFindingSeverity(value: unknown): VidaFindingSeverity {
-  return value === "warning" || value === "review_required" ? value : "info";
+  return value === "warning" ||
+    value === "review_required" ||
+    value === "blocked"
+    ? value
+    : "info";
 }
 
 function normalizeLegalConfidence(value: unknown): VidaLegalConfidence {
-  return value === "professional_review_required"
-    ? "professional_review_required"
+  return value === "technical" ||
+    value === "standard_based" ||
+    value === "official_source_derived" ||
+    value === "professional_review_required"
+    ? value
     : "educational_simulation";
 }
 
@@ -274,7 +393,35 @@ function normalizeCountryContext(value: unknown): VidaCountryContext {
     sellerInEu: readBooleanField(record, "sellerInEu"),
     buyerInEu: readBooleanField(record, "buyerInEu"),
     sameCountry: readBooleanField(record, "sameCountry"),
-    crossBorderEu: readBooleanField(record, "crossBorderEu")
+    crossBorderEu: readBooleanField(record, "crossBorderEu"),
+    sellerCountryPackStatus: readStringField(
+      record,
+      "sellerCountryPackStatus",
+      "unknown"
+    ),
+    buyerCountryPackStatus: readStringField(
+      record,
+      "buyerCountryPackStatus",
+      "unknown"
+    ),
+    sellerCountryPackVersion: readNullableStringField(
+      record,
+      "sellerCountryPackVersion"
+    ),
+    buyerCountryPackVersion: readNullableStringField(
+      record,
+      "buyerCountryPackVersion"
+    ),
+    sellerCountryPackSourceCoverageStatus: readStringField(
+      record,
+      "sellerCountryPackSourceCoverageStatus",
+      "unknown"
+    ),
+    buyerCountryPackSourceCoverageStatus: readStringField(
+      record,
+      "buyerCountryPackSourceCoverageStatus",
+      "unknown"
+    )
   };
 }
 
@@ -284,14 +431,87 @@ function normalizeNormalizedInput(value: unknown): VidaNormalizedInput {
   return {
     sellerCountryCode: readNullableStringField(record, "sellerCountryCode"),
     buyerCountryCode: readNullableStringField(record, "buyerCountryCode"),
+    sellerVatCountryCode: readNullableStringField(record, "sellerVatCountryCode"),
+    buyerVatCountryCode: readNullableStringField(record, "buyerVatCountryCode"),
     sellerVatId: readNullableStringField(record, "sellerVatId"),
     buyerVatId: readNullableStringField(record, "buyerVatId"),
     buyerType: normalizeBuyerType(record.buyerType),
+    sellerType:
+      record.sellerType === "public_authority" || record.sellerType === "unknown"
+        ? record.sellerType
+        : "business",
     transactionType: normalizeTransactionType(record.transactionType),
+    supplyScenario:
+      record.supplyScenario === "domestic" ||
+      record.supplyScenario === "intra_eu" ||
+      record.supplyScenario === "non_eu" ||
+      record.supplyScenario === "unknown"
+        ? record.supplyScenario
+        : "unknown",
     invoiceDate: readNullableStringField(record, "invoiceDate"),
+    issueDate: readNullableStringField(record, "issueDate"),
     currency: readNullableStringField(record, "currency"),
     amount: readNullableStringField(record, "amount"),
+    invoiceProfile:
+      record.invoiceProfile === "EN16931" ||
+      record.invoiceProfile === "PEPPOL_BIS_3" ||
+      record.invoiceProfile === "COUNTRY_PACK"
+        ? record.invoiceProfile
+        : null,
     countryPackVersions: readStringRecordField(record, "countryPackVersions")
+  };
+}
+
+function normalizeTimeline(value: unknown): VidaTimelineItem[] {
+  return Array.isArray(value)
+    ? value
+        .filter(isPlainObject)
+        .map((item) => ({
+          date: readStringField(item, "date"),
+          label: readStringField(item, "label"),
+          sourceRefs: readStringArrayField(item, "sourceRefs"),
+          relevance: readStringField(item, "relevance")
+        }))
+        .filter((item) => item.date && item.label)
+    : [];
+}
+
+function normalizeSourceReferences(value: unknown): VidaSourceReference[] {
+  return Array.isArray(value)
+    ? value
+        .filter(isPlainObject)
+        .map((item) => ({
+          id: readStringField(item, "id"),
+          label: readStringField(item, "label"),
+          title: readStringField(item, "title"),
+          publisher: readStringField(item, "publisher"),
+          url: readStringField(item, "url"),
+          notes: readStringField(item, "notes")
+        }))
+        .filter((item) => item.id && item.label)
+    : [];
+}
+
+function normalizeEvidenceSummary(value: unknown): VidaEvidenceSummary {
+  const record = isPlainObject(value) ? value : {};
+
+  return {
+    vatFormatEvidence: isPlainObject(record.vatFormatEvidence)
+      ? record.vatFormatEvidence
+      : {},
+    viesEvidence: isPlainObject(record.viesEvidence) ? record.viesEvidence : {},
+    structuredInvoiceEvidence: isPlainObject(record.structuredInvoiceEvidence)
+      ? record.structuredInvoiceEvidence
+      : {},
+    countryPackEvidence: isPlainObject(record.countryPackEvidence)
+      ? record.countryPackEvidence
+      : {},
+    xmlValidationEvidence: isPlainObject(record.xmlValidationEvidence)
+      ? record.xmlValidationEvidence
+      : {},
+    schematronEvidence: isPlainObject(record.schematronEvidence)
+      ? record.schematronEvidence
+      : {}
   };
 }
 
@@ -309,10 +529,15 @@ function normalizeFinding(value: unknown): VidaFinding | null {
   return {
     code,
     severity: normalizeFindingSeverity(value.severity),
+    category: readStringField(value, "category", "VIDA_SIMULATION"),
     message: readStringField(value, "message"),
     legalConfidence: normalizeLegalConfidence(value.legalConfidence),
     sourceLabels: readStringArrayField(value, "sourceLabels"),
-    fixSuggestion: readStringField(value, "fixSuggestion")
+    sourceRefs: readStringArrayField(value, "sourceRefs"),
+    fixSuggestion: readStringField(value, "fixSuggestion"),
+    countryPackVersion: readStringField(value, "countryPackVersion"),
+    countryPackStatus: readStringField(value, "countryPackStatus"),
+    evidenceStatus: readStringField(value, "evidenceStatus")
   };
 }
 
@@ -341,17 +566,27 @@ function normalizeVidaResult(value: unknown): VidaSimulationResult | null {
       "insufficient_data"
     ),
     vidaRelevance: readStringField(value, "vidaRelevance", "review_required"),
+    readinessScore:
+      typeof value.readinessScore === "number" ? value.readinessScore : null,
+    readinessStatus: readStringField(
+      value,
+      "readinessStatus",
+      "professional_review_required"
+    ),
     reason: readStringField(value, "reason"),
     effectiveDateContext: readStringField(value, "effectiveDateContext"),
+    timeline: normalizeTimeline(value.timeline),
     confidence: readStringField(value, "confidence", "educational_simulation"),
     legalConfidence: normalizeLegalConfidence(value.legalConfidence),
     countryContext: normalizeCountryContext(value.countryContext),
     normalizedInput: normalizeNormalizedInput(value.normalizedInput),
+    evidenceSummary: normalizeEvidenceSummary(value.evidenceSummary),
     findings: normalizeFindings(value.findings),
     recommendedNextActions: readStringArrayField(
       value,
       "recommendedNextActions"
     ),
+    sourceReferences: normalizeSourceReferences(value.sourceReferences),
     disclaimer: readStringField(value, "disclaimer"),
     persisted: value.persisted === true,
     simulationRunId: readNullableStringField(value, "simulationRunId")
@@ -391,6 +626,13 @@ function normalizeVidaSimulationRunSummary(
       "insufficient_data"
     ),
     vidaRelevance: readStringField(value, "vidaRelevance", "review_required"),
+    readinessScore:
+      typeof value.readinessScore === "number" ? value.readinessScore : null,
+    readinessStatus: readStringField(
+      value,
+      "readinessStatus",
+      "professional_review_required"
+    ),
     legalConfidence: normalizeLegalConfidence(value.legalConfidence),
     invoiceDate: readNullableStringField(value, "invoiceDate"),
     currencyCode: readNullableStringField(value, "currencyCode"),
@@ -398,6 +640,9 @@ function normalizeVidaSimulationRunSummary(
     countryPackVersions: readStringRecordField(value, "countryPackVersions"),
     countryContext: normalizeCountryContext(value.countryContext),
     normalizedInput: normalizeNormalizedInput(value.normalizedInput),
+    evidenceSummary: normalizeEvidenceSummary(value.evidenceSummary),
+    timeline: normalizeTimeline(value.timeline),
+    sourceReferences: normalizeSourceReferences(value.sourceReferences),
     findingCount: readNumberField(value, "findingCount"),
     infoCount: readNumberField(value, "infoCount"),
     warningCount: readNumberField(value, "warningCount"),
@@ -416,6 +661,9 @@ function formatStatus(status: string) {
 
 function formatLegalConfidence(value: string) {
   const labels: Record<string, string> = {
+    technical: "Technical",
+    standard_based: "Standards-based",
+    official_source_derived: "Source-derived context",
     educational_simulation: "Educational simulation",
     professional_review_required: "Professional review required"
   };
@@ -440,12 +688,44 @@ function formatNullable(value: string | null, fallback = "Not provided") {
   return value && value.trim().length > 0 ? value : fallback;
 }
 
+function formatUnknownValue(value: unknown) {
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (value === null || value === undefined) {
+    return "Not provided";
+  }
+
+  return JSON.stringify(value);
+}
+
 function buildRequestBody(form: VidaSimulationForm) {
   const body: Record<string, unknown> = {
     sellerCountry: form.sellerCountry.trim(),
     buyerCountry: form.buyerCountry.trim(),
     buyerType: form.buyerType,
+    sellerType: form.sellerType,
     transactionType: form.transactionType,
+    supplyScenario: form.supplyScenario,
+    invoiceProfile: form.invoiceProfile,
+    structuredInvoiceSignals: {
+      hasCanonicalInvoice: form.hasCanonicalInvoice,
+      hasUblXml: form.hasUblXml,
+      hasCiiXml: false,
+      xsdStatus: form.xsdStatus,
+      schematronPeppolStatus: form.schematronPeppolStatus,
+      schematronEn16931Status: form.schematronEn16931Status
+    },
+    vatEvidence: {
+      sellerViesStatus: form.sellerViesStatus,
+      buyerViesStatus: form.buyerViesStatus,
+      sourceLabel: "workspace selected cached evidence state"
+    },
     persist: true
   };
 
@@ -459,6 +739,10 @@ function buildRequestBody(form: VidaSimulationForm) {
 
   if (form.invoiceDate.trim()) {
     body.invoiceDate = form.invoiceDate.trim();
+  }
+
+  if (form.issueDate.trim()) {
+    body.issueDate = form.issueDate.trim();
   }
 
   if (form.currency.trim()) {
@@ -485,16 +769,25 @@ export default function WorkspaceVidaSimulatorPage() {
   const [historyMessage, setHistoryMessage] = useState("");
 
   const simulationRunId = simulationResult?.simulationRunId ?? "";
+  const selectedSellerCountry = euCountryOptions.find(
+    ([countryCode]) => countryCode === form.sellerCountry
+  );
+  const selectedBuyerCountry = euCountryOptions.find(
+    ([countryCode]) => countryCode === form.buyerCountry
+  );
 
   const findingCounts = useMemo(() => {
     const counts = {
       info: 0,
       warning: 0,
-      reviewRequired: 0
+      reviewRequired: 0,
+      blocked: 0
     };
 
     for (const finding of simulationResult?.findings ?? []) {
-      if (finding.severity === "review_required") {
+      if (finding.severity === "blocked") {
+        counts.blocked += 1;
+      } else if (finding.severity === "review_required") {
         counts.reviewRequired += 1;
       } else if (finding.severity === "warning") {
         counts.warning += 1;
@@ -638,13 +931,20 @@ export default function WorkspaceVidaSimulatorPage() {
         </div>
 
         <div className="workspace-stat">
-          <p>Relevance</p>
+          <p>Readiness</p>
           <strong>
             {simulationResult
-              ? formatStatus(simulationResult.vidaRelevance)
+              ? formatStatus(simulationResult.readinessStatus)
               : "Pending"}
           </strong>
-          <span>Readiness signal only; not a legal conclusion.</span>
+          <span>
+            Score{" "}
+            {simulationResult?.readinessScore === null ||
+            simulationResult?.readinessScore === undefined
+              ? "not available"
+              : simulationResult.readinessScore}
+            ; not a legal conclusion.
+          </span>
         </div>
 
         <div className="workspace-stat">
@@ -715,11 +1015,22 @@ export default function WorkspaceVidaSimulatorPage() {
           </div>
         ) : null}
 
+        <div className="alert-item">
+          <span />
+          <p>
+            Country packs cover EU core plus all 27 EU Member States. Selected
+            seller: {selectedSellerCountry?.[0] ?? form.sellerCountry}{" "}
+            {selectedSellerCountry?.[1] ?? ""}; selected buyer:{" "}
+            {selectedBuyerCountry?.[0] ?? form.buyerCountry}{" "}
+            {selectedBuyerCountry?.[1] ?? ""}. Greece is shown as GR; Greek VAT
+            IDs may use the EL prefix for format evidence.
+          </p>
+        </div>
+
         <form className="workspace-form-grid" onSubmit={handleSubmit}>
           <label>
             Seller country
-            <input
-              maxLength={8}
+            <select
               onChange={(event) => {
                 setForm((current) => ({
                   ...current,
@@ -728,13 +1039,19 @@ export default function WorkspaceVidaSimulatorPage() {
               }}
               required
               value={form.sellerCountry}
-            />
+            >
+              {euCountryOptions.map(([countryCode, countryName, vatPrefix]) => (
+                <option key={countryCode} value={countryCode}>
+                  {countryCode} {countryName}
+                  {countryCode === "GR" ? ` (VAT prefix ${vatPrefix})` : ""}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label>
             Buyer country
-            <input
-              maxLength={8}
+            <select
               onChange={(event) => {
                 setForm((current) => ({
                   ...current,
@@ -743,7 +1060,14 @@ export default function WorkspaceVidaSimulatorPage() {
               }}
               required
               value={form.buyerCountry}
-            />
+            >
+              {euCountryOptions.map(([countryCode, countryName, vatPrefix]) => (
+                <option key={countryCode} value={countryCode}>
+                  {countryCode} {countryName}
+                  {countryCode === "GR" ? ` (VAT prefix ${vatPrefix})` : ""}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label>
@@ -793,6 +1117,23 @@ export default function WorkspaceVidaSimulatorPage() {
           </label>
 
           <label>
+            Seller type
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  sellerType: event.target.value as VidaSellerType
+                }));
+              }}
+              value={form.sellerType}
+            >
+              <option value="business">Business</option>
+              <option value="public_authority">Public authority</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+
+          <label>
             Transaction type
             <select
               onChange={(event) => {
@@ -812,6 +1153,24 @@ export default function WorkspaceVidaSimulatorPage() {
           </label>
 
           <label>
+            Supply scenario
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  supplyScenario: event.target.value as VidaSupplyScenario
+                }));
+              }}
+              value={form.supplyScenario}
+            >
+              <option value="intra_eu">Intra-EU</option>
+              <option value="domestic">Domestic</option>
+              <option value="non_eu">Non-EU</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+
+          <label>
             Invoice date
             <input
               maxLength={32}
@@ -823,6 +1182,21 @@ export default function WorkspaceVidaSimulatorPage() {
               }}
               placeholder="2026-05-01"
               value={form.invoiceDate}
+            />
+          </label>
+
+          <label>
+            Issue date
+            <input
+              maxLength={32}
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  issueDate: event.target.value
+                }));
+              }}
+              placeholder="2030-07-01"
+              value={form.issueDate}
             />
           </label>
 
@@ -852,6 +1226,145 @@ export default function WorkspaceVidaSimulatorPage() {
               }}
               value={form.amount}
             />
+          </label>
+
+          <label>
+            Invoice profile
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  invoiceProfile: event.target.value as VidaInvoiceProfile
+                }));
+              }}
+              value={form.invoiceProfile}
+            >
+              <option value="EN16931">EN 16931</option>
+              <option value="PEPPOL_BIS_3">Peppol BIS 3 style</option>
+              <option value="COUNTRY_PACK">Country-pack context</option>
+            </select>
+          </label>
+
+          <label>
+            Canonical invoice evidence
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  hasCanonicalInvoice: event.target.value === "yes"
+                }));
+              }}
+              value={form.hasCanonicalInvoice ? "yes" : "no"}
+            >
+              <option value="no">Not attached</option>
+              <option value="yes">Attached</option>
+            </select>
+          </label>
+
+          <label>
+            UBL XML evidence
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  hasUblXml: event.target.value === "yes"
+                }));
+              }}
+              value={form.hasUblXml ? "yes" : "no"}
+            >
+              <option value="no">Not attached</option>
+              <option value="yes">Attached</option>
+            </select>
+          </label>
+
+          <label>
+            XSD status
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  xsdStatus: event.target.value
+                }));
+              }}
+              value={form.xsdStatus}
+            >
+              <option value="not_checked">Not checked</option>
+              <option value="passed">Passed</option>
+              <option value="failed">Failed</option>
+              <option value="not_configured">Not configured</option>
+            </select>
+          </label>
+
+          <label>
+            Peppol Schematron
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  schematronPeppolStatus: event.target.value
+                }));
+              }}
+              value={form.schematronPeppolStatus}
+            >
+              <option value="not_checked">Not checked</option>
+              <option value="passed">Passed</option>
+              <option value="failed">Failed</option>
+              <option value="not_configured">Not configured</option>
+            </select>
+          </label>
+
+          <label>
+            EN 16931 Schematron
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  schematronEn16931Status: event.target.value
+                }));
+              }}
+              value={form.schematronEn16931Status}
+            >
+              <option value="not_checked">Not checked</option>
+              <option value="passed">Passed</option>
+              <option value="failed">Failed</option>
+              <option value="not_configured">Not configured</option>
+            </select>
+          </label>
+
+          <label>
+            Seller VIES evidence
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  sellerViesStatus: event.target.value
+                }));
+              }}
+              value={form.sellerViesStatus}
+            >
+              <option value="not_checked">Not checked</option>
+              <option value="valid">Valid evidence</option>
+              <option value="invalid">Invalid evidence</option>
+              <option value="unavailable">Unavailable</option>
+            </select>
+          </label>
+
+          <label>
+            Buyer VIES evidence
+            <select
+              onChange={(event) => {
+                setForm((current) => ({
+                  ...current,
+                  buyerViesStatus: event.target.value
+                }));
+              }}
+              value={form.buyerViesStatus}
+            >
+              <option value="not_checked">Not checked</option>
+              <option value="valid">Valid evidence</option>
+              <option value="invalid">Invalid evidence</option>
+              <option value="unavailable">Unavailable</option>
+            </select>
           </label>
 
           <button
@@ -940,6 +1453,108 @@ export default function WorkspaceVidaSimulatorPage() {
               </div>
 
               <div className="finding-console-row">
+                <Layers3 size={18} />
+
+                <div>
+                  <strong>VIDA_READINESS_STATUS</strong>
+                  <p>
+                    Status: {formatStatus(simulationResult.readinessStatus)}.
+                    Score:{" "}
+                    {simulationResult.readinessScore === null
+                      ? "not available"
+                      : simulationResult.readinessScore}
+                    .
+                  </p>
+                  <p>
+                    Seller pack:{" "}
+                    {simulationResult.countryContext.sellerCountryPackStatus}{" "}
+                    {simulationResult.countryContext.sellerCountryPackVersion ??
+                      "unversioned"}
+                    . Buyer pack:{" "}
+                    {simulationResult.countryContext.buyerCountryPackStatus}{" "}
+                    {simulationResult.countryContext.buyerCountryPackVersion ??
+                      "unversioned"}
+                    .
+                  </p>
+                </div>
+
+                <span>{simulationResult.readinessStatus}</span>
+              </div>
+
+              <div className="finding-console-row">
+                <FileText size={18} />
+
+                <div>
+                  <strong>VIDA_EVIDENCE_SUMMARY</strong>
+                  <p>
+                    VAT format:{" "}
+                    {formatUnknownValue(
+                      simulationResult.evidenceSummary.vatFormatEvidence
+                        .sellerStatus
+                    )}{" "}
+                    seller /{" "}
+                    {formatUnknownValue(
+                      simulationResult.evidenceSummary.vatFormatEvidence
+                        .buyerStatus
+                    )}{" "}
+                    buyer. VIES:{" "}
+                    {formatUnknownValue(
+                      simulationResult.evidenceSummary.viesEvidence
+                        .sellerStatus
+                    )}{" "}
+                    seller /{" "}
+                    {formatUnknownValue(
+                      simulationResult.evidenceSummary.viesEvidence.buyerStatus
+                    )}{" "}
+                    buyer.
+                  </p>
+                  <p>
+                    XSD:{" "}
+                    {formatUnknownValue(
+                      simulationResult.evidenceSummary.xmlValidationEvidence
+                        .xsdStatus
+                    )}
+                    . Peppol Schematron:{" "}
+                    {formatUnknownValue(
+                      simulationResult.evidenceSummary.schematronEvidence
+                        .peppolStatus
+                    )}
+                    . EN 16931 Schematron:{" "}
+                    {formatUnknownValue(
+                      simulationResult.evidenceSummary.schematronEvidence
+                        .en16931Status
+                    )}
+                    .
+                  </p>
+                </div>
+
+                <span>evidence</span>
+              </div>
+
+              {simulationResult.timeline.map((item) => (
+                <div
+                  className="finding-console-row"
+                  key={`${item.date}-${item.relevance}`}
+                >
+                  <Clock3 size={18} />
+
+                  <div>
+                    <strong>{item.date}</strong>
+                    <p>{item.label}</p>
+                    <p>
+                      Sources:{" "}
+                      {item.sourceRefs.length > 0
+                        ? item.sourceRefs.join(", ")
+                        : "No source references"}
+                      .
+                    </p>
+                  </div>
+
+                  <span>{item.relevance}</span>
+                </div>
+              ))}
+
+              <div className="finding-console-row">
                 <BookOpenCheck size={18} />
 
                 <div>
@@ -1014,6 +1629,25 @@ export default function WorkspaceVidaSimulatorPage() {
                   </div>
 
                   <span>{finding.severity}</span>
+                </div>
+              ))}
+
+              {simulationResult.sourceReferences.map((sourceReference) => (
+                <div
+                  className="finding-console-row"
+                  key={sourceReference.id}
+                >
+                  <BookOpenCheck size={18} />
+
+                  <div>
+                    <strong>{sourceReference.label}</strong>
+                    <p>{sourceReference.title ?? sourceReference.id}</p>
+                    {sourceReference.url ? (
+                      <p>{sourceReference.url}</p>
+                    ) : null}
+                  </div>
+
+                  <span>source</span>
                 </div>
               ))}
 

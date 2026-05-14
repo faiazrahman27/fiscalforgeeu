@@ -69,6 +69,17 @@ determinations.
 
 ## ViDA Readiness
 
-Country packs support validation context and later ViDA-readiness expansion.
-They do not implement ViDA expansion in this step and do not determine legal
-compliance, tax compliance, official filing readiness, or authority acceptance.
+Country packs now feed the ViDA-readiness simulator for seller and buyer
+country context, pack version, pack status, source coverage, source labels, and
+professional-review warnings. The simulator uses the country-pack EU Member
+State list rather than maintaining a separate country list.
+
+Greece remains user-facing `GR` in country packs. VAT-number prefix
+compatibility may use `EL` through tax-engine local VAT-format rules. Simulator
+findings preserve that distinction and do not convert country-pack context into
+national tax advice.
+
+Country-pack statuses such as `beta`, `unknown`, `not_reviewed`, or
+`professional_review_required` reduce readiness and add review findings. They do
+not determine legal compliance, tax compliance, official filing readiness, or
+authority acceptance.

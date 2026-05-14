@@ -22,6 +22,9 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@invoice-lantern/country-packs": "file:../country-packs",
+    "@invoice-lantern/invoice-core": "file:../invoice-core",
+    "@invoice-lantern/tax-engine": "file:../tax-engine",
     "invoice-lantern-platform": "file:../.."
   }
 }

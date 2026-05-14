@@ -112,14 +112,33 @@ const exampleVidaSimulationRequest = {
   sellerVatId: "DE123456789",
   buyerVatId: "HU12345678",
   buyerType: "business",
+  sellerType: "business",
   transactionType: "services",
-  invoiceDate: "2026-05-01",
+  supplyScenario: "intra_eu",
+  invoiceDate: "2030-07-01",
+  issueDate: "2030-07-01",
   currency: "EUR",
   amount: "100.00",
+  invoiceProfile: "EN16931",
+  structuredInvoiceSignals: {
+    hasCanonicalInvoice: true,
+    hasUblXml: true,
+    hasCiiXml: false,
+    xsdStatus: "passed",
+    schematronPeppolStatus: "not_configured",
+    schematronEn16931Status: "not_configured"
+  },
+  vatEvidence: {
+    sellerViesStatus: "not_checked",
+    buyerViesStatus: "not_checked",
+    sourceLabel: "caller-supplied evidence context"
+  },
   countryPackVersions: {
     DE: "2026.05.1",
     HU: "2026.05.1"
-  }
+  },
+  sourceRefs: ["eu-vida-package-context"],
+  sourceLabels: ["European Commission ViDA package context"]
 };
 
 const rateLimitHeaders = {
@@ -790,6 +809,52 @@ const openApiDocument = {
           "200": response(
             "Generated technical UBL 2.1 XML and safe export metadata.",
             ref("UblExportResponse")
+          ),
+          "404": errorResponse(
+            "Production invoice was not found in this workspace.",
+            "PRODUCTION_INVOICE_NOT_FOUND"
+          )
+        }
+      })
+    },
+    "/invoices/{id}/simulate-vida": {
+      post: bearerOperation({
+        tags: ["Invoices", "Transactions"],
+        summary: "Run a production invoice ViDA-readiness simulation",
+        description:
+          "Runs and stores a ViDA-readiness simulation from the tenant-scoped production invoice canonical payload. The route requires a signed-in workspace user, does not allow organization API keys, does not change invoice lifecycle status, and does not call live VIES by default. The result is educational technical readiness context only; it is not official filing, not legal advice, not tax advice, not accounting advice, not authority acceptance, and not a compliance guarantee.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        requestBody: {
+          required: false,
+          content: jsonContent(ref("ProductionInvoiceVidaSimulationRequest"), {
+            invoiceSimulationContext: {
+              value: {
+                buyerType: "business",
+                transactionType: "services",
+                structuredInvoiceSignals: {
+                  hasUblXml: true,
+                  xsdStatus: "passed",
+                  schematronPeppolStatus: "not_configured",
+                  schematronEn16931Status: "not_configured"
+                }
+              }
+            }
+          })
+        },
+        responses: {
+          "201": response(
+            "Persisted production invoice ViDA-readiness simulation.",
+            ref("VidaSimulationResponse")
           ),
           "404": errorResponse(
             "Production invoice was not found in this workspace.",
@@ -5988,7 +6053,7 @@ const openApiDocument = {
             maxLength: 8,
             example: "DE",
             description:
-              "Seller country as a two-letter country code. Greece aliases such as GR are normalized to EL by the simulator."
+              "Seller country as a two-letter country code. Greece is represented as GR for user-facing country context; EL is accepted as a VAT-prefix compatibility alias."
           },
           buyerCountry: {
             type: "string",
@@ -6016,12 +6081,27 @@ const openApiDocument = {
             enum: ["business", "consumer", "public_authority", "unknown"],
             default: "unknown"
           },
+          sellerType: {
+            type: "string",
+            enum: ["business", "public_authority", "unknown"],
+            default: "business"
+          },
           transactionType: {
             type: "string",
             enum: ["goods", "services", "digital_service", "mixed", "unknown"],
             default: "unknown"
           },
+          supplyScenario: {
+            type: "string",
+            enum: ["domestic", "intra_eu", "non_eu", "unknown"],
+            default: "unknown"
+          },
           invoiceDate: {
+            type: "string",
+            maxLength: 32,
+            example: "2026-05-01"
+          },
+          issueDate: {
             type: "string",
             maxLength: 32,
             example: "2026-05-01"
@@ -6036,6 +6116,13 @@ const openApiDocument = {
             maxLength: 80,
             example: "100.00"
           },
+          invoiceProfile: {
+            type: "string",
+            enum: ["EN16931", "PEPPOL_BIS_3", "COUNTRY_PACK"]
+          },
+          structuredInvoiceSignals: ref("VidaStructuredInvoiceSignals"),
+          vatEvidence: ref("VidaVatEvidenceInput"),
+          countryPackContext: ref("VidaCountryPackContextInput"),
           countryPackVersions: {
             type: "object",
             additionalProperties: {
@@ -6065,12 +6152,258 @@ const openApiDocument = {
             maxLength: 120,
             description:
               "Optional workspace validation run association. The API verifies workspace ownership before storing the association."
+          },
+          sourceRefs: {
+            type: "array",
+            maxItems: 50,
+            items: {
+              type: "string",
+              maxLength: 160
+            },
+            description:
+              "Optional caller-provided source reference ids carried as evidence context only."
+          },
+          sourceLabels: {
+            type: "array",
+            maxItems: 50,
+            items: {
+              type: "string",
+              maxLength: 240
+            },
+            description:
+              "Optional caller-provided source labels carried as evidence context only."
+          }
+        }
+      },
+      VidaStructuredInvoiceSignals: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          hasCanonicalInvoice: {
+            type: "boolean",
+            description:
+              "True when the scenario is backed by Invoice Lantern canonical invoice data."
+          },
+          hasUblXml: {
+            type: "boolean"
+          },
+          hasCiiXml: {
+            type: "boolean"
+          },
+          xsdStatus: {
+            type: "string",
+            enum: [
+              "passed",
+              "failed",
+              "warning",
+              "not_configured",
+              "not_checked",
+              "unavailable",
+              "unknown"
+            ],
+            description:
+              "Technical XML XSD evidence status. Passed is technical only; not_configured is not success."
+          },
+          schematronPeppolStatus: {
+            type: "string",
+            enum: [
+              "passed",
+              "failed",
+              "warning",
+              "not_configured",
+              "not_checked",
+              "unavailable",
+              "unknown"
+            ],
+            description:
+              "Peppol-style Schematron evidence status. This is not Peppol certification."
+          },
+          schematronEn16931Status: {
+            type: "string",
+            enum: [
+              "passed",
+              "failed",
+              "warning",
+              "not_configured",
+              "not_checked",
+              "unavailable",
+              "unknown"
+            ],
+            description:
+              "EN 16931-style Schematron evidence status. This is not EN 16931 certification."
+          },
+          validationSummary: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              status: {
+                type: "string"
+              },
+              totalFindings: {
+                type: "integer",
+                minimum: 0
+              },
+              blockedCount: {
+                type: "integer",
+                minimum: 0
+              },
+              fatalCount: {
+                type: "integer",
+                minimum: 0
+              },
+              warningCount: {
+                type: "integer",
+                minimum: 0
+              },
+              infoCount: {
+                type: "integer",
+                minimum: 0
+              }
+            }
+          }
+        }
+      },
+      VidaVatEvidenceInput: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sellerFormatStatus: {
+            type: "string",
+            enum: ["valid", "invalid", "not_checked", "unknown"]
+          },
+          buyerFormatStatus: {
+            type: "string",
+            enum: ["valid", "invalid", "not_checked", "unknown"]
+          },
+          sellerViesStatus: {
+            type: "string",
+            enum: ["valid", "invalid", "unavailable", "not_checked", "unknown"],
+            description:
+              "Caller-supplied or cached VIES evidence status. VIES valid is evidence only; unavailable is not invalid."
+          },
+          buyerViesStatus: {
+            type: "string",
+            enum: ["valid", "invalid", "unavailable", "not_checked", "unknown"],
+            description:
+              "Caller-supplied or cached VIES evidence status. This endpoint does not call live VIES by default."
+          },
+          checkedAt: {
+            type: "string",
+            maxLength: 80
+          },
+          sourceLabel: {
+            type: "string",
+            maxLength: 160
+          }
+        }
+      },
+      VidaCountryPackContextInput: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sellerCountryPackVersion: {
+            type: "string",
+            maxLength: 80
+          },
+          buyerCountryPackVersion: {
+            type: "string",
+            maxLength: 80
+          },
+          sellerCountryPackStatus: {
+            type: "string",
+            enum: [
+              "eu_core_only",
+              "draft",
+              "beta",
+              "reviewed",
+              "professional_review_required",
+              "deprecated",
+              "suspended",
+              "unknown"
+            ]
+          },
+          buyerCountryPackStatus: {
+            type: "string",
+            enum: [
+              "eu_core_only",
+              "draft",
+              "beta",
+              "reviewed",
+              "professional_review_required",
+              "deprecated",
+              "suspended",
+              "unknown"
+            ]
+          },
+          sourceCoverageStatus: {
+            type: "string",
+            enum: [
+              "reviewed",
+              "beta",
+              "draft",
+              "not_reviewed",
+              "unknown",
+              "professional_review_required",
+              "eu_core_only"
+            ]
+          }
+        }
+      },
+      ProductionInvoiceVidaSimulationRequest: {
+        type: "object",
+        additionalProperties: false,
+        description:
+          "Optional context layered onto the production invoice canonical payload before running a persisted ViDA-readiness simulation. No lifecycle status change is made.",
+        properties: {
+          buyerType: {
+            type: "string",
+            enum: ["business", "consumer", "public_authority", "unknown"]
+          },
+          sellerType: {
+            type: "string",
+            enum: ["business", "public_authority", "unknown"]
+          },
+          transactionType: {
+            type: "string",
+            enum: ["goods", "services", "digital_service", "mixed", "unknown"]
+          },
+          supplyScenario: {
+            type: "string",
+            enum: ["domestic", "intra_eu", "non_eu", "unknown"]
+          },
+          structuredInvoiceSignals: ref("VidaStructuredInvoiceSignals"),
+          vatEvidence: ref("VidaVatEvidenceInput"),
+          countryPackContext: ref("VidaCountryPackContextInput"),
+          sourceRefs: {
+            type: "array",
+            maxItems: 50,
+            items: {
+              type: "string",
+              maxLength: 160
+            }
+          },
+          sourceLabels: {
+            type: "array",
+            maxItems: 50,
+            items: {
+              type: "string",
+              maxLength: 240
+            }
           }
         }
       },
       VidaCountryContext: {
         type: "object",
-        required: ["sellerInEu", "buyerInEu", "sameCountry", "crossBorderEu"],
+        required: [
+          "sellerInEu",
+          "buyerInEu",
+          "sameCountry",
+          "crossBorderEu",
+          "sellerCountryPackStatus",
+          "buyerCountryPackStatus",
+          "sellerCountryPackVersion",
+          "buyerCountryPackVersion"
+        ],
         properties: {
           sellerInEu: {
             type: "boolean"
@@ -6083,6 +6416,24 @@ const openApiDocument = {
           },
           crossBorderEu: {
             type: "boolean"
+          },
+          sellerCountryPackStatus: {
+            type: "string"
+          },
+          buyerCountryPackStatus: {
+            type: "string"
+          },
+          sellerCountryPackVersion: {
+            type: ["string", "null"]
+          },
+          buyerCountryPackVersion: {
+            type: ["string", "null"]
+          },
+          sellerCountryPackSourceCoverageStatus: {
+            type: "string"
+          },
+          buyerCountryPackSourceCoverageStatus: {
+            type: "string"
           }
         }
       },
@@ -6091,13 +6442,22 @@ const openApiDocument = {
         required: [
           "sellerCountryCode",
           "buyerCountryCode",
+          "sellerVatCountryCode",
+          "buyerVatCountryCode",
           "sellerVatId",
           "buyerVatId",
           "buyerType",
+          "sellerType",
           "transactionType",
+          "supplyScenario",
           "invoiceDate",
+          "issueDate",
           "currency",
           "amount",
+          "invoiceProfile",
+          "structuredInvoiceSignals",
+          "vatEvidence",
+          "countryPackContext",
           "countryPackVersions"
         ],
         properties: {
@@ -6106,6 +6466,14 @@ const openApiDocument = {
             example: "DE"
           },
           buyerCountryCode: {
+            type: ["string", "null"],
+            example: "HU"
+          },
+          sellerVatCountryCode: {
+            type: ["string", "null"],
+            example: "DE"
+          },
+          buyerVatCountryCode: {
             type: ["string", "null"],
             example: "HU"
           },
@@ -6121,11 +6489,23 @@ const openApiDocument = {
             type: "string",
             enum: ["business", "consumer", "public_authority", "unknown"]
           },
+          sellerType: {
+            type: "string",
+            enum: ["business", "public_authority", "unknown"]
+          },
           transactionType: {
             type: "string",
             enum: ["goods", "services", "digital_service", "mixed", "unknown"]
           },
+          supplyScenario: {
+            type: "string",
+            enum: ["domestic", "intra_eu", "non_eu", "unknown"]
+          },
           invoiceDate: {
+            type: ["string", "null"],
+            example: "2026-05-01"
+          },
+          issueDate: {
             type: ["string", "null"],
             example: "2026-05-01"
           },
@@ -6137,9 +6517,28 @@ const openApiDocument = {
             type: ["string", "null"],
             example: "100.00"
           },
+          invoiceProfile: {
+            type: ["string", "null"],
+            enum: ["EN16931", "PEPPOL_BIS_3", "COUNTRY_PACK", null]
+          },
+          structuredInvoiceSignals: ref("VidaStructuredInvoiceSignals"),
+          vatEvidence: ref("VidaVatEvidenceInput"),
+          countryPackContext: ref("VidaCountryPackContextInput"),
           countryPackVersions: {
             type: "object",
             additionalProperties: {
+              type: "string"
+            }
+          },
+          sourceRefs: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          sourceLabels: {
+            type: "array",
+            items: {
               type: "string"
             }
           }
@@ -6147,7 +6546,16 @@ const openApiDocument = {
       },
       VidaReadinessFinding: {
         type: "object",
-        required: ["code", "severity", "message", "legalConfidence", "sourceLabels", "fixSuggestion"],
+        required: [
+          "code",
+          "severity",
+          "category",
+          "message",
+          "fixSuggestion",
+          "sourceLabels",
+          "sourceRefs",
+          "legalConfidence"
+        ],
         properties: {
           code: {
             type: "string",
@@ -6155,14 +6563,34 @@ const openApiDocument = {
           },
           severity: {
             type: "string",
-            enum: ["info", "warning", "review_required"]
+            enum: ["info", "warning", "review_required", "blocked"]
+          },
+          category: {
+            type: "string",
+            enum: [
+              "VIDA_SIMULATION",
+              "VAT_ID",
+              "VIES",
+              "COUNTRY_PACK",
+              "STRUCTURED_INVOICE",
+              "UBL",
+              "XSD",
+              "SCHEMATRON",
+              "LEGAL_LABEL"
+            ]
           },
           message: {
             type: "string"
           },
           legalConfidence: {
             type: "string",
-            enum: ["educational_simulation", "professional_review_required"]
+            enum: [
+              "technical",
+              "standard_based",
+              "official_source_derived",
+              "educational_simulation",
+              "professional_review_required"
+            ]
           },
           sourceLabels: {
             type: "array",
@@ -6172,6 +6600,129 @@ const openApiDocument = {
           },
           fixSuggestion: {
             type: "string"
+          },
+          sourceRefs: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          countryPackVersion: {
+            type: "string"
+          },
+          countryPackStatus: {
+            type: "string"
+          },
+          evidenceStatus: {
+            type: "string"
+          }
+        }
+      },
+      VidaTimelineItem: {
+        type: "object",
+        required: ["date", "label", "sourceRefs", "relevance"],
+        properties: {
+          date: {
+            type: "string",
+            example: "2030-07-01"
+          },
+          label: {
+            type: "string",
+            description:
+              "Timeline label for readiness context only, not a legal obligation conclusion."
+          },
+          sourceRefs: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          relevance: {
+            type: "string",
+            enum: [
+              "source_context",
+              "readiness_context",
+              "cross_border_b2b_readiness",
+              "country_review_required"
+            ]
+          }
+        }
+      },
+      VidaSourceReference: {
+        type: "object",
+        required: ["id", "label"],
+        properties: {
+          id: {
+            type: "string"
+          },
+          label: {
+            type: "string"
+          },
+          title: {
+            type: "string"
+          },
+          publisher: {
+            type: "string"
+          },
+          url: {
+            type: "string",
+            format: "uri"
+          },
+          sourceType: {
+            type: "string"
+          },
+          reviewedAt: {
+            type: "string"
+          },
+          notes: {
+            type: "string"
+          }
+        }
+      },
+      VidaEvidenceSummary: {
+        type: "object",
+        required: [
+          "vatFormatEvidence",
+          "viesEvidence",
+          "structuredInvoiceEvidence",
+          "countryPackEvidence",
+          "xmlValidationEvidence",
+          "schematronEvidence"
+        ],
+        properties: {
+          vatFormatEvidence: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Local VAT-format evidence only. Format-valid is not VIES-valid."
+          },
+          viesEvidence: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "VIES evidence summary. VIES valid is time-of-check evidence only and VIES unavailable is not invalid."
+          },
+          structuredInvoiceEvidence: {
+            type: "object",
+            additionalProperties: true
+          },
+          countryPackEvidence: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Country-pack version, status, and source coverage context. This is not national tax advice."
+          },
+          xmlValidationEvidence: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Technical XML validation evidence. XSD pass is technical only."
+          },
+          schematronEvidence: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Technical Schematron evidence. Pass/not-configured states are not certification."
           }
         }
       },
@@ -6181,20 +6732,25 @@ const openApiDocument = {
           "simulationVersion",
           "transactionClass",
           "vidaRelevance",
+          "readinessScore",
+          "readinessStatus",
           "reason",
           "effectiveDateContext",
+          "timeline",
           "confidence",
           "legalConfidence",
           "countryContext",
           "normalizedInput",
+          "evidenceSummary",
           "findings",
           "recommendedNextActions",
+          "sourceReferences",
           "disclaimer"
         ],
         properties: {
           simulationVersion: {
             type: "string",
-            example: "2026.05.1"
+            example: "2026.05.2"
           },
           transactionClass: {
             type: "string",
@@ -6217,6 +6773,24 @@ const openApiDocument = {
             type: "string",
             enum: ["high", "medium", "low", "not_relevant", "review_required"]
           },
+          readinessScore: {
+            type: ["integer", "null"],
+            minimum: 0,
+            maximum: 100,
+            description:
+              "Explainable technical readiness score. Null means the simulator lacks minimum country data; it is not a legal or tax score."
+          },
+          readinessStatus: {
+            type: "string",
+            enum: [
+              "ready_for_technical_review",
+              "needs_more_invoice_data",
+              "needs_vat_evidence",
+              "needs_country_review",
+              "not_relevant",
+              "professional_review_required"
+            ]
+          },
           reason: {
             type: "string"
           },
@@ -6225,9 +6799,16 @@ const openApiDocument = {
             description:
               "ViDA rollout context for readiness planning only. This field is simulation context and does not decide legal obligations."
           },
+          timeline: {
+            type: "array",
+            items: ref("VidaTimelineItem")
+          },
           confidence: {
             type: "string",
-            enum: ["educational_simulation"]
+            enum: [
+              "educational_simulation",
+              "professional_review_required"
+            ]
           },
           legalConfidence: {
             type: "string",
@@ -6235,6 +6816,7 @@ const openApiDocument = {
           },
           countryContext: ref("VidaCountryContext"),
           normalizedInput: ref("VidaNormalizedInput"),
+          evidenceSummary: ref("VidaEvidenceSummary"),
           findings: {
             type: "array",
             items: ref("VidaReadinessFinding")
@@ -6244,6 +6826,10 @@ const openApiDocument = {
             items: {
               type: "string"
             }
+          },
+          sourceReferences: {
+            type: "array",
+            items: ref("VidaSourceReference")
           },
           disclaimer: {
             type: "string",
@@ -6285,6 +6871,8 @@ const openApiDocument = {
           "transactionType",
           "transactionClass",
           "vidaRelevance",
+          "readinessScore",
+          "readinessStatus",
           "legalConfidence",
           "invoiceDate",
           "currencyCode",
@@ -6292,6 +6880,9 @@ const openApiDocument = {
           "countryPackVersions",
           "countryContext",
           "normalizedInput",
+          "evidenceSummary",
+          "timeline",
+          "sourceReferences",
           "findingCount",
           "infoCount",
           "warningCount",
@@ -6332,7 +6923,7 @@ const openApiDocument = {
           },
           simulationVersion: {
             type: "string",
-            example: "2026.05.1"
+            example: "2026.05.2"
           },
           sellerCountryCode: {
             type: ["string", "null"],
@@ -6371,6 +6962,22 @@ const openApiDocument = {
             type: "string",
             enum: ["high", "medium", "low", "not_relevant", "review_required"]
           },
+          readinessScore: {
+            type: ["integer", "null"],
+            minimum: 0,
+            maximum: 100
+          },
+          readinessStatus: {
+            type: "string",
+            enum: [
+              "ready_for_technical_review",
+              "needs_more_invoice_data",
+              "needs_vat_evidence",
+              "needs_country_review",
+              "not_relevant",
+              "professional_review_required"
+            ]
+          },
           legalConfidence: {
             type: "string",
             enum: ["educational_simulation", "professional_review_required"]
@@ -6395,6 +7002,15 @@ const openApiDocument = {
           },
           countryContext: ref("VidaCountryContext"),
           normalizedInput: ref("VidaNormalizedInput"),
+          evidenceSummary: ref("VidaEvidenceSummary"),
+          timeline: {
+            type: "array",
+            items: ref("VidaTimelineItem")
+          },
+          sourceReferences: {
+            type: "array",
+            items: ref("VidaSourceReference")
+          },
           findingCount: {
             type: "integer",
             minimum: 0

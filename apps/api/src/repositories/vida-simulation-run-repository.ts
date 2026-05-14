@@ -6,7 +6,10 @@ import type {
   VidaReadinessFinding,
   VidaReadinessSimulationInput,
   VidaReadinessSimulationResult,
+  VidaReadinessStatus,
   VidaRelevance,
+  VidaSourceReference,
+  VidaTimelineItem,
   VidaTransactionClass,
   VidaTransactionType
 } from "@invoice-lantern/vida-simulator";
@@ -32,6 +35,8 @@ export type VidaSimulationRunRecord = {
   transactionType: VidaTransactionType;
   transactionClass: VidaTransactionClass;
   vidaRelevance: VidaRelevance;
+  readinessScore: number | null;
+  readinessStatus: VidaReadinessStatus;
   legalConfidence: VidaLegalConfidence;
   invoiceDate: string | null;
   currencyCode: string | null;
@@ -40,6 +45,9 @@ export type VidaSimulationRunRecord = {
   inputPayload: Record<string, unknown>;
   normalizedInput: Record<string, unknown>;
   countryContext: Record<string, unknown>;
+  evidenceSummary: Record<string, unknown>;
+  timeline: VidaTimelineItem[];
+  sourceReferences: VidaSourceReference[];
   resultPayload: Record<string, unknown>;
   findings: VidaReadinessFinding[];
   sourceLabels: string[];
@@ -235,6 +243,10 @@ function normalizeStringArray(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function normalizeUnknownArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function normalizeCountryPackVersions(value: unknown): Record<string, string> {
   if (!isPlainObject(value)) {
     return {};
@@ -321,11 +333,115 @@ function normalizeVidaRelevance(value: string): VidaRelevance {
 }
 
 function normalizeLegalConfidence(value: string): VidaLegalConfidence {
-  if (value === "professional_review_required") {
+  if (
+    value === "technical" ||
+    value === "standard_based" ||
+    value === "official_source_derived" ||
+    value === "educational_simulation" ||
+    value === "professional_review_required"
+  ) {
     return value;
   }
 
   return "educational_simulation";
+}
+
+function normalizeReadinessStatus(value: string): VidaReadinessStatus {
+  if (
+    value === "ready_for_technical_review" ||
+    value === "needs_more_invoice_data" ||
+    value === "needs_vat_evidence" ||
+    value === "needs_country_review" ||
+    value === "not_relevant" ||
+    value === "professional_review_required"
+  ) {
+    return value;
+  }
+
+  return "professional_review_required";
+}
+
+function normalizeReadinessScore(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function normalizeFindingSeverity(
+  value: string
+): VidaReadinessFinding["severity"] | null {
+  if (
+    value === "info" ||
+    value === "warning" ||
+    value === "review_required" ||
+    value === "blocked"
+  ) {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeFindingCategory(
+  value: string
+): VidaReadinessFinding["category"] {
+  if (
+    value === "VIDA_SIMULATION" ||
+    value === "VAT_ID" ||
+    value === "VIES" ||
+    value === "COUNTRY_PACK" ||
+    value === "STRUCTURED_INVOICE" ||
+    value === "UBL" ||
+    value === "XSD" ||
+    value === "SCHEMATRON" ||
+    value === "LEGAL_LABEL"
+  ) {
+    return value;
+  }
+
+  return "VIDA_SIMULATION";
+}
+
+function normalizeFindingCountryPackStatus(
+  value: string | undefined
+): NonNullable<VidaReadinessFinding["countryPackStatus"]> | null {
+  if (
+    value === "eu_core_only" ||
+    value === "draft" ||
+    value === "beta" ||
+    value === "reviewed" ||
+    value === "professional_review_required" ||
+    value === "deprecated" ||
+    value === "suspended" ||
+    value === "unknown"
+  ) {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeFindingEvidenceStatus(
+  value: string | undefined
+): NonNullable<VidaReadinessFinding["evidenceStatus"]> | null {
+  if (
+    value === "present" ||
+    value === "missing" ||
+    value === "valid" ||
+    value === "invalid" ||
+    value === "passed" ||
+    value === "failed" ||
+    value === "not_configured" ||
+    value === "not_checked" ||
+    value === "unavailable" ||
+    value === "unknown"
+  ) {
+    return value;
+  }
+
+  return null;
 }
 
 function normalizeSource(value: string): VidaSimulationRunSource {
@@ -349,7 +465,12 @@ function normalizeFindings(value: unknown): VidaReadinessFinding[] {
     .filter(isPlainObject)
     .map((item) => {
       const code = readStringField(item, "code");
-      const severity = readStringField(item, "severity");
+      const severity = normalizeFindingSeverity(
+        readStringField(item, "severity")
+      );
+      const category = normalizeFindingCategory(
+        readStringField(item, "category")
+      );
       const message = readStringField(item, "message");
       const legalConfidence = readStringField(
         item,
@@ -358,27 +479,51 @@ function normalizeFindings(value: unknown): VidaReadinessFinding[] {
       );
       const fixSuggestion = readStringField(item, "fixSuggestion");
       const sourceLabels = normalizeStringArray(item.sourceLabels);
+      const sourceRefs = normalizeStringArray(item.sourceRefs);
+      const countryPackVersion = normalizeOptionalText(
+        typeof item.countryPackVersion === "string"
+          ? item.countryPackVersion
+          : null
+      );
+      const countryPackStatus = normalizeFindingCountryPackStatus(
+        typeof item.countryPackStatus === "string"
+          ? item.countryPackStatus
+          : undefined
+      );
+      const evidenceStatus = normalizeFindingEvidenceStatus(
+        typeof item.evidenceStatus === "string"
+          ? item.evidenceStatus
+          : undefined
+      );
 
-      if (!code || !message || !fixSuggestion) {
+      if (!code || !severity || !message || !fixSuggestion) {
         return null;
       }
 
-      if (
-        severity !== "info" &&
-        severity !== "warning" &&
-        severity !== "review_required"
-      ) {
-        return null;
-      }
-
-      return {
+      const finding: VidaReadinessFinding = {
         code,
         severity,
+        category,
         message,
-        legalConfidence: normalizeLegalConfidence(legalConfidence),
+        fixSuggestion,
         sourceLabels,
-        fixSuggestion
+        sourceRefs,
+        legalConfidence: normalizeLegalConfidence(legalConfidence)
       };
+
+      if (countryPackVersion) {
+        finding.countryPackVersion = countryPackVersion;
+      }
+
+      if (countryPackStatus) {
+        finding.countryPackStatus = countryPackStatus;
+      }
+
+      if (evidenceStatus) {
+        finding.evidenceStatus = evidenceStatus;
+      }
+
+      return finding;
     })
     .filter((item): item is VidaReadinessFinding => item !== null);
 }
@@ -386,7 +531,7 @@ function normalizeFindings(value: unknown): VidaReadinessFinding[] {
 function countFindings(findings: VidaReadinessFinding[]) {
   return findings.reduce(
     (counts, finding) => {
-      if (finding.severity === "review_required") {
+      if (finding.severity === "review_required" || finding.severity === "blocked") {
         counts.reviewRequiredCount += 1;
       } else if (finding.severity === "warning") {
         counts.warningCount += 1;
@@ -428,6 +573,7 @@ function normalizeSupabaseVidaSimulationRunRow(
   row: SupabaseVidaSimulationRunRow
 ): VidaSimulationRunRecord {
   const findings = normalizeFindings(row.findings);
+  const resultPayload = normalizeObject(row.result_payload);
 
   return {
     id: row.id,
@@ -445,6 +591,10 @@ function normalizeSupabaseVidaSimulationRunRow(
     transactionType: normalizeTransactionType(row.transaction_type),
     transactionClass: normalizeTransactionClass(row.transaction_class),
     vidaRelevance: normalizeVidaRelevance(row.vida_relevance),
+    readinessScore: normalizeReadinessScore(resultPayload.readinessScore),
+    readinessStatus: normalizeReadinessStatus(
+      readStringField(resultPayload, "readinessStatus")
+    ),
     legalConfidence: normalizeLegalConfidence(row.legal_confidence),
     invoiceDate: row.invoice_date,
     currencyCode: row.currency_code,
@@ -455,7 +605,12 @@ function normalizeSupabaseVidaSimulationRunRow(
     inputPayload: normalizeObject(row.input_payload),
     normalizedInput: normalizeObject(row.normalized_input),
     countryContext: normalizeObject(row.country_context),
-    resultPayload: normalizeObject(row.result_payload),
+    evidenceSummary: normalizeObject(resultPayload.evidenceSummary),
+    timeline: normalizeUnknownArray(resultPayload.timeline) as VidaTimelineItem[],
+    sourceReferences: normalizeUnknownArray(
+      resultPayload.sourceReferences
+    ) as VidaSourceReference[],
+    resultPayload,
     findings,
     sourceLabels: normalizeStringArray(row.source_labels),
     recommendedNextActions: normalizeStringArray(
@@ -602,6 +757,8 @@ function buildVidaSimulationActivityMetadata(record: VidaSimulationRunRecord) {
     simulationVersion: record.simulationVersion,
     transactionClass: record.transactionClass,
     vidaRelevance: record.vidaRelevance,
+    readinessScore: record.readinessScore,
+    readinessStatus: record.readinessStatus,
     legalConfidence: record.legalConfidence,
     sellerCountryCode: record.sellerCountryCode,
     buyerCountryCode: record.buyerCountryCode,

@@ -30,12 +30,73 @@ const vidaBuyerTypeSchema = z.enum([
   "unknown"
 ]);
 
+const vidaSellerTypeSchema = z.enum(["business", "public_authority", "unknown"]);
+
 const vidaTransactionTypeSchema = z.enum([
   "goods",
   "services",
   "digital_service",
   "mixed",
   "unknown"
+]);
+
+const vidaSupplyScenarioSchema = z.enum([
+  "domestic",
+  "intra_eu",
+  "non_eu",
+  "unknown"
+]);
+
+const vidaInvoiceProfileSchema = z.enum([
+  "EN16931",
+  "PEPPOL_BIS_3",
+  "COUNTRY_PACK"
+]);
+
+const vidaTechnicalCheckStatusSchema = z.enum([
+  "passed",
+  "failed",
+  "warning",
+  "not_configured",
+  "not_checked",
+  "unavailable",
+  "unknown"
+]);
+
+const vidaVatFormatEvidenceStatusSchema = z.enum([
+  "valid",
+  "invalid",
+  "not_checked",
+  "unknown"
+]);
+
+const vidaViesEvidenceStatusSchema = z.enum([
+  "valid",
+  "invalid",
+  "unavailable",
+  "not_checked",
+  "unknown"
+]);
+
+const vidaCountryPackStatusSchema = z.enum([
+  "eu_core_only",
+  "draft",
+  "beta",
+  "reviewed",
+  "professional_review_required",
+  "deprecated",
+  "suspended",
+  "unknown"
+]);
+
+const vidaSourceCoverageStatusSchema = z.enum([
+  "reviewed",
+  "beta",
+  "draft",
+  "not_reviewed",
+  "unknown",
+  "professional_review_required",
+  "eu_core_only"
 ]);
 
 const vidaRelevanceSchema = z.enum([
@@ -45,6 +106,50 @@ const vidaRelevanceSchema = z.enum([
   "not_relevant",
   "review_required"
 ]);
+
+const vidaValidationSummarySchema = z
+  .object({
+    status: z.string().trim().max(80).optional(),
+    totalFindings: z.number().int().min(0).max(10000).optional(),
+    blockedCount: z.number().int().min(0).max(10000).optional(),
+    fatalCount: z.number().int().min(0).max(10000).optional(),
+    warningCount: z.number().int().min(0).max(10000).optional(),
+    infoCount: z.number().int().min(0).max(10000).optional()
+  })
+  .strict();
+
+const vidaStructuredInvoiceSignalsSchema = z
+  .object({
+    hasCanonicalInvoice: z.boolean().optional(),
+    hasUblXml: z.boolean().optional(),
+    hasCiiXml: z.boolean().optional(),
+    xsdStatus: vidaTechnicalCheckStatusSchema.optional(),
+    schematronPeppolStatus: vidaTechnicalCheckStatusSchema.optional(),
+    schematronEn16931Status: vidaTechnicalCheckStatusSchema.optional(),
+    validationSummary: vidaValidationSummarySchema.optional()
+  })
+  .strict();
+
+const vidaVatEvidenceSchema = z
+  .object({
+    sellerFormatStatus: vidaVatFormatEvidenceStatusSchema.optional(),
+    buyerFormatStatus: vidaVatFormatEvidenceStatusSchema.optional(),
+    buyerViesStatus: vidaViesEvidenceStatusSchema.optional(),
+    sellerViesStatus: vidaViesEvidenceStatusSchema.optional(),
+    checkedAt: z.string().trim().max(80).optional(),
+    sourceLabel: z.string().trim().max(160).optional()
+  })
+  .strict();
+
+const vidaCountryPackContextSchema = z
+  .object({
+    sellerCountryPackVersion: z.string().trim().max(80).optional(),
+    buyerCountryPackVersion: z.string().trim().max(80).optional(),
+    sellerCountryPackStatus: vidaCountryPackStatusSchema.optional(),
+    buyerCountryPackStatus: vidaCountryPackStatusSchema.optional(),
+    sourceCoverageStatus: vidaSourceCoverageStatusSchema.optional()
+  })
+  .strict();
 
 const vidaTransactionClassSchema = z.enum([
   "intra_eu_b2b_goods",
@@ -68,13 +173,22 @@ const vidaSimulationRequestSchema = z
     sellerVatId: z.string().trim().max(64).optional(),
     buyerVatId: z.string().trim().max(64).optional(),
     buyerType: vidaBuyerTypeSchema.optional(),
+    sellerType: vidaSellerTypeSchema.optional(),
     transactionType: vidaTransactionTypeSchema.optional(),
+    supplyScenario: vidaSupplyScenarioSchema.optional(),
     invoiceDate: z.string().trim().max(32).optional(),
+    issueDate: z.string().trim().max(32).optional(),
     currency: z.string().trim().max(8).optional(),
     amount: z.string().trim().max(80).optional(),
+    invoiceProfile: vidaInvoiceProfileSchema.optional(),
+    structuredInvoiceSignals: vidaStructuredInvoiceSignalsSchema.optional(),
+    vatEvidence: vidaVatEvidenceSchema.optional(),
+    countryPackContext: vidaCountryPackContextSchema.optional(),
     countryPackVersions: z
       .record(z.string().trim().min(1).max(8), z.string().trim().min(1).max(80))
       .optional(),
+    sourceRefs: z.array(z.string().trim().min(1).max(160)).max(50).optional(),
+    sourceLabels: z.array(z.string().trim().min(1).max(240)).max(50).optional(),
 
     /*
      * Persistence is opt-in. Normal developer API calls can run simulations
@@ -183,12 +297,24 @@ function buildVidaSimulationInput(
     input.buyerType = data.buyerType;
   }
 
+  if (data.sellerType !== undefined) {
+    input.sellerType = data.sellerType;
+  }
+
   if (data.transactionType !== undefined) {
     input.transactionType = data.transactionType;
   }
 
+  if (data.supplyScenario !== undefined) {
+    input.supplyScenario = data.supplyScenario;
+  }
+
   if (data.invoiceDate !== undefined) {
     input.invoiceDate = data.invoiceDate;
+  }
+
+  if (data.issueDate !== undefined) {
+    input.issueDate = data.issueDate;
   }
 
   if (data.currency !== undefined) {
@@ -199,8 +325,32 @@ function buildVidaSimulationInput(
     input.amount = data.amount;
   }
 
+  if (data.invoiceProfile !== undefined) {
+    input.invoiceProfile = data.invoiceProfile;
+  }
+
+  if (data.structuredInvoiceSignals !== undefined) {
+    input.structuredInvoiceSignals = data.structuredInvoiceSignals;
+  }
+
+  if (data.vatEvidence !== undefined) {
+    input.vatEvidence = data.vatEvidence;
+  }
+
+  if (data.countryPackContext !== undefined) {
+    input.countryPackContext = data.countryPackContext;
+  }
+
   if (data.countryPackVersions !== undefined) {
     input.countryPackVersions = data.countryPackVersions;
+  }
+
+  if (data.sourceRefs !== undefined) {
+    input.sourceRefs = data.sourceRefs;
+  }
+
+  if (data.sourceLabels !== undefined) {
+    input.sourceLabels = data.sourceLabels;
   }
 
   return input;
@@ -236,6 +386,8 @@ function buildVidaSimulationRunSummary(record: VidaSimulationRunRecord) {
     transactionType: record.transactionType,
     transactionClass: record.transactionClass,
     vidaRelevance: record.vidaRelevance,
+    readinessScore: record.readinessScore,
+    readinessStatus: record.readinessStatus,
     legalConfidence: record.legalConfidence,
     invoiceDate: record.invoiceDate,
     currencyCode: record.currencyCode,
@@ -243,6 +395,9 @@ function buildVidaSimulationRunSummary(record: VidaSimulationRunRecord) {
     countryPackVersions: record.countryPackVersions,
     countryContext: record.countryContext,
     normalizedInput: record.normalizedInput,
+    evidenceSummary: record.evidenceSummary,
+    timeline: record.timeline,
+    sourceReferences: record.sourceReferences,
     findingCount: record.findingCount,
     infoCount: record.infoCount,
     warningCount: record.warningCount,
@@ -343,6 +498,7 @@ export async function transactionRoutes(app: FastifyInstance) {
 
         return {
           ...simulationResult,
+          simulationId: record.id,
           persisted: true,
           simulationRunId: record.id,
           simulationRun: buildVidaSimulationRunSummary(record)

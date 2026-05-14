@@ -33,6 +33,15 @@ type ProductionInvoiceExportMetadata = {
   disclaimer: string;
 };
 
+type ProductionInvoiceVidaSimulation = {
+  simulationRunId: string | null;
+  transactionClass: string;
+  vidaRelevance: string;
+  readinessScore: number | null;
+  readinessStatus: string;
+  disclaimer: string;
+};
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -127,6 +136,31 @@ function normalizeExportMetadata(
   };
 }
 
+function normalizeVidaSimulation(
+  value: unknown
+): ProductionInvoiceVidaSimulation | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const transactionClass = readStringField(value, "transactionClass");
+  const vidaRelevance = readStringField(value, "vidaRelevance");
+  const readinessStatus = readStringField(value, "readinessStatus");
+
+  if (!transactionClass || !vidaRelevance || !readinessStatus) {
+    return null;
+  }
+
+  return {
+    simulationRunId: readStringField(value, "simulationRunId") || null,
+    transactionClass,
+    vidaRelevance,
+    readinessScore: readNullableNumberField(value, "readinessScore"),
+    readinessStatus,
+    disclaimer: readStringField(value, "disclaimer")
+  };
+}
+
 async function readResponseBody(response: Response) {
   const responseText = await response.text();
 
@@ -178,6 +212,10 @@ export default function ExistingInvoiceDraftPage({
   const [exportMetadata, setExportMetadata] =
     useState<ProductionInvoiceExportMetadata | null>(null);
   const [exportMessage, setExportMessage] = useState("");
+  const [isRunningVidaSimulation, setIsRunningVidaSimulation] = useState(false);
+  const [vidaSimulation, setVidaSimulation] =
+    useState<ProductionInvoiceVidaSimulation | null>(null);
+  const [vidaSimulationMessage, setVidaSimulationMessage] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -326,6 +364,68 @@ export default function ExistingInvoiceDraftPage({
     }
   }
 
+  async function runProductionInvoiceVidaSimulation() {
+    if (!productionInvoice) {
+      return;
+    }
+
+    setIsRunningVidaSimulation(true);
+    setVidaSimulationMessage("");
+    setVidaSimulation(null);
+
+    try {
+      const response = await fetch(
+        `/api/local/invoices/${encodeURIComponent(
+          productionInvoice.id
+        )}/simulate-vida`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            buyerType: "business",
+            transactionType: "unknown",
+            structuredInvoiceSignals: {
+              hasCanonicalInvoice: true,
+              hasUblXml: false,
+              xsdStatus: "not_checked",
+              schematronPeppolStatus: "not_checked",
+              schematronEn16931Status: "not_checked"
+            }
+          }),
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setVidaSimulationMessage(getApiErrorMessage(responseData));
+        return;
+      }
+
+      const normalizedSimulation = normalizeVidaSimulation(responseData);
+
+      if (!normalizedSimulation) {
+        setVidaSimulationMessage(
+          "The ViDA-readiness simulation result could not be read safely."
+        );
+        return;
+      }
+
+      setVidaSimulation(normalizedSimulation);
+      setVidaSimulationMessage(
+        "ViDA-readiness simulation saved without changing invoice lifecycle status."
+      );
+    } catch {
+      setVidaSimulationMessage(
+        "Could not run production invoice ViDA-readiness simulation through the local API proxy."
+      );
+    } finally {
+      setIsRunningVidaSimulation(false);
+    }
+  }
+
   if (isLoadingDraft) {
     return (
       <div className="workspace-page">
@@ -414,21 +514,42 @@ export default function ExistingInvoiceDraftPage({
               <h3>Lifecycle summary</h3>
             </div>
 
-            <button
-              className="text-link-button"
-              disabled={isExportingUbl}
-              onClick={exportProductionUbl}
-              type="button"
-            >
-              <FileText size={16} />
-              {isExportingUbl ? "Exporting" : "Export UBL"}
-            </button>
+            <div className="workspace-row-actions">
+              <button
+                className="text-link-button"
+                disabled={isRunningVidaSimulation}
+                onClick={runProductionInvoiceVidaSimulation}
+                type="button"
+              >
+                <ShieldAlert size={16} />
+                {isRunningVidaSimulation
+                  ? "Running simulation"
+                  : "Run ViDA readiness simulation"}
+              </button>
+
+              <button
+                className="text-link-button"
+                disabled={isExportingUbl}
+                onClick={exportProductionUbl}
+                type="button"
+              >
+                <FileText size={16} />
+                {isExportingUbl ? "Exporting" : "Export UBL"}
+              </button>
+            </div>
           </div>
 
           {exportMessage ? (
             <div className="alert-item">
               <span />
               <p>{exportMessage}</p>
+            </div>
+          ) : null}
+
+          {vidaSimulationMessage ? (
+            <div className="alert-item">
+              <span />
+              <p>{vidaSimulationMessage}</p>
             </div>
           ) : null}
 
@@ -460,6 +581,57 @@ export default function ExistingInvoiceDraftPage({
             </div>
           </div>
         </section>
+
+        {vidaSimulation ? (
+          <section className="workspace-table-shell">
+            <div className="workspace-table-head">
+              <div>
+                <p>ViDA readiness simulation</p>
+                <h3>Saved technical readiness result</h3>
+              </div>
+
+              {vidaSimulation.simulationRunId ? (
+                <Link
+                  className="text-link-button"
+                  href={`/workspace/vida-simulator/${encodeURIComponent(
+                    vidaSimulation.simulationRunId
+                  )}`}
+                >
+                  <FileText size={16} />
+                  Open result
+                </Link>
+              ) : null}
+            </div>
+
+            <div className="workspace-data-grid">
+              <article className="workspace-data-card">
+                <span>Transaction class</span>
+                <strong>{vidaSimulation.transactionClass}</strong>
+                <p>Readiness context only.</p>
+              </article>
+
+              <article className="workspace-data-card">
+                <span>Readiness</span>
+                <strong>{vidaSimulation.readinessStatus}</strong>
+                <p>Score: {vidaSimulation.readinessScore ?? "not available"}</p>
+              </article>
+
+              <article className="workspace-data-card">
+                <span>ViDA relevance</span>
+                <strong>{vidaSimulation.vidaRelevance}</strong>
+                <p>Not official filing or a legal conclusion.</p>
+              </article>
+            </div>
+
+            <div className="alert-item">
+              <span />
+              <p>
+                {vidaSimulation.disclaimer ||
+                  "This ViDA-readiness simulation is educational and technical only. It is not legal, tax, or accounting advice and not official filing."}
+              </p>
+            </div>
+          </section>
+        ) : null}
 
         {exportMetadata ? (
           <section className="workspace-table-shell">

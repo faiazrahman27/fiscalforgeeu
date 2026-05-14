@@ -92,5 +92,12 @@ evidence and remains separate from legal/tax/accounting conclusions.
 
 Country-pack source references identify reviewed public-source metadata where
 available and expose `countryPackVersion` and `countryPackStatus` on relevant
-findings. They support validation context and later ViDA-readiness work, but do
+findings. They support validation context and ViDA-readiness simulation, but do
 not provide official country, tax authority, filing, or compliance conclusions.
+
+ViDA-readiness findings use the same safe finding language where practical:
+severity, category, source labels, source refs, legal confidence, evidence
+status, country-pack version, and country-pack status. These findings are
+readiness signals only. VIES valid remains time-of-check evidence, XSD and
+Schematron pass states remain technical evidence, and `not_configured` is not a
+successful validation state.

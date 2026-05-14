@@ -44,11 +44,13 @@ test("ViDA simulation endpoint classifies cross-border EU B2B scenario", async (
 
   const body = response.json() as Record<string, unknown>;
 
-  assert.equal(body.simulationVersion, "2026.05.1");
+  assert.equal(body.simulationVersion, "2026.05.2");
   assert.equal(body.transactionClass, "intra_eu_b2b_service");
   assert.equal(body.vidaRelevance, "high");
-  assert.equal(body.confidence, "educational_simulation");
-  assert.equal(body.legalConfidence, "educational_simulation");
+  assert.equal(body.confidence, "professional_review_required");
+  assert.equal(body.legalConfidence, "professional_review_required");
+  assert.equal(typeof body.readinessScore, "number");
+  assert.equal(body.readinessStatus, "needs_more_invoice_data");
   assert.equal(body.persisted, false);
   assert.equal(body.simulationRunId, undefined);
   assert.equal(body.simulationRun, undefined);
@@ -65,6 +67,8 @@ test("ViDA simulation endpoint classifies cross-border EU B2B scenario", async (
   assert.equal(countryContext.buyerInEu, true);
   assert.equal(countryContext.sameCountry, false);
   assert.equal(countryContext.crossBorderEu, true);
+  assert.equal(countryContext.sellerCountryPackStatus, "beta");
+  assert.equal(countryContext.buyerCountryPackStatus, "beta");
 
   const normalizedInput = body.normalizedInput as Record<string, unknown>;
 
@@ -72,6 +76,18 @@ test("ViDA simulation endpoint classifies cross-border EU B2B scenario", async (
   assert.equal(normalizedInput.buyerCountryCode, "HU");
   assert.equal(normalizedInput.sellerVatId, "DE123456789");
   assert.equal(normalizedInput.buyerVatId, "HU12345678");
+
+  const evidenceSummary = body.evidenceSummary as Record<string, unknown>;
+  const timeline = body.timeline as Record<string, unknown>[];
+  const sourceReferences = body.sourceReferences as Record<string, unknown>[];
+
+  assert.equal(typeof evidenceSummary, "object");
+  assert.equal(Array.isArray(timeline), true);
+  assert.ok(timeline.some((item) => item.date === "2030-07-01"));
+  assert.equal(Array.isArray(sourceReferences), true);
+  assert.ok(
+    sourceReferences.some((item) => item.id === "eu-vida-package-context")
+  );
 
   const findings = body.findings as Record<string, unknown>[];
 
@@ -107,7 +123,7 @@ test("ViDA simulation endpoint normalizes Greece alias safely", async (t) => {
   const body = response.json() as Record<string, unknown>;
   const normalizedInput = body.normalizedInput as Record<string, unknown>;
 
-  assert.equal(normalizedInput.sellerCountryCode, "EL");
+  assert.equal(normalizedInput.sellerCountryCode, "GR");
   assert.equal(normalizedInput.buyerCountryCode, "DE");
   assert.equal(body.transactionClass, "intra_eu_b2b_goods");
   assert.equal(body.vidaRelevance, "high");
@@ -154,6 +170,111 @@ test("ViDA simulation endpoint rejects unexpected fields", async (t) => {
       buyerType: "business",
       transactionType: "services",
       officialSubmission: true
+    })
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.body, /VIDA_SIMULATION_REQUEST_INVALID/);
+});
+
+test("ViDA simulation endpoint returns expanded evidence, timeline, and source-linked output", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/transactions/simulate-vida",
+    headers: apiHeaders(),
+    payload: JSON.stringify({
+      sellerCountry: "DE",
+      buyerCountry: "GR",
+      sellerVatId: "DE123456789",
+      buyerVatId: "EL123456789",
+      buyerType: "business",
+      sellerType: "business",
+      transactionType: "mixed",
+      supplyScenario: "intra_eu",
+      invoiceDate: "2030-07-01",
+      issueDate: "2030-07-01",
+      currency: "EUR",
+      amount: "100.00",
+      invoiceProfile: "PEPPOL_BIS_3",
+      structuredInvoiceSignals: {
+        hasCanonicalInvoice: true,
+        hasUblXml: true,
+        hasCiiXml: false,
+        xsdStatus: "passed",
+        schematronPeppolStatus: "passed",
+        schematronEn16931Status: "passed",
+        validationSummary: {
+          status: "passed",
+          totalFindings: 0
+        }
+      },
+      vatEvidence: {
+        sellerViesStatus: "valid",
+        buyerViesStatus: "unavailable",
+        checkedAt: "2026-05-14T10:00:00.000Z",
+        sourceLabel: "cached VIES evidence"
+      },
+      sourceRefs: ["eu-vida-package-context"],
+      sourceLabels: ["European Commission ViDA context"]
+    })
+  });
+
+  assert.equal(response.statusCode, 200);
+
+  const body = response.json() as Record<string, unknown>;
+  const evidenceSummary = body.evidenceSummary as Record<string, unknown>;
+  const findings = body.findings as Record<string, unknown>[];
+
+  assert.equal(body.transactionClass, "intra_eu_b2b_mixed");
+  assert.equal(body.vidaRelevance, "high");
+  assert.equal(typeof body.readinessScore, "number");
+  assert.equal(body.persisted, false);
+  assert.equal(
+    (evidenceSummary.viesEvidence as Record<string, unknown>).buyerStatus,
+    "unavailable"
+  );
+  assert.ok(
+    findings.some(
+      (finding) => finding.code === "VIDA_BUYER_VIES_UNAVAILABLE"
+    )
+  );
+  assert.ok(
+    findings.some(
+      (finding) => finding.code === "VIDA_GR_EL_VAT_PREFIX_COMPATIBILITY"
+    )
+  );
+  assert.doesNotMatch(response.body, /<soap/i);
+  assert.doesNotMatch(response.body, /<Invoice/i);
+  assert.doesNotMatch(response.body, /service_role/i);
+  assert.doesNotMatch(response.body, /SUPABASE_SERVICE_ROLE/i);
+});
+
+test("ViDA simulation endpoint rejects unexpected nested evidence fields", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/transactions/simulate-vida",
+    headers: apiHeaders(),
+    payload: JSON.stringify({
+      sellerCountry: "DE",
+      buyerCountry: "HU",
+      buyerType: "business",
+      transactionType: "services",
+      vatEvidence: {
+        buyerViesStatus: "valid",
+        rawSoap: "<Envelope />"
+      }
     })
   });
 

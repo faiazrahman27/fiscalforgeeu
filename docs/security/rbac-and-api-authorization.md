@@ -75,11 +75,11 @@ paths, require signed-in Supabase users.
 | UBL parse | Signed-in user or scoped API key | Workspace validation roles or `invoices:parse_ubl`; XML safety checks stay in place. |
 | UBL import to editable draft | Signed-in user | Workspace draft editors only. Organization API keys can parse UBL but cannot create editable drafts in this step. |
 | Invoice drafts | Signed-in user | Read roles may view; edit roles may create/update; only owner/admin delete. |
-| Production invoice lifecycle | Signed-in user | Read roles may view; `owner`, `admin`, `accountant`, and `reviewer` may create, update, convert from draft, or transition; `developer` and `viewer` are read-only by default; organization API keys are rejected in Step 5. |
+| Production invoice lifecycle | Signed-in user | Read roles may view; `owner`, `admin`, `accountant`, and `reviewer` may create, update, convert from draft, or transition; `developer` and `viewer` are read-only by default; organization API keys are rejected in Step 5. Production invoice ViDA simulation is signed-user only, tenant-scoped by invoice id and organization id, persisted as a simulation run, and does not change lifecycle state. |
 | Validation runs and reports | Signed-in user or scoped API key | Report readers or `validation_runs:read`; object reads are organization-scoped. |
 | VAT format checks | Signed-in user or scoped API key | Validation roles or `vat:validate_format`; stored local-format check history is signed-user only. |
 | VIES evidence checks | Signed-in user or scoped API key | Validation roles or `vat:check_vies`; live checks are explicit, disabled by default, rate-limited, safely persisted, and never make VAT format validity equivalent to VIES validity. |
-| ViDA simulation | Signed-in user or scoped API key | Validation roles or `transactions:simulate_vida`; simulation remains educational and technical only. |
+| ViDA simulation | Signed-in user or scoped API key | Validation roles or `transactions:simulate_vida`; direct transaction simulation remains educational and technical only. API keys can run direct simulation but cannot persist workspace history. |
 | XML validation jobs | Signed-in user or scoped API key | Validation/report roles or `xml:validation_jobs`; uploaded XML history remains signed-user only. |
 | Workspace activity | Signed-in user | `owner`, `admin`, or `developer`. |
 | Workspace settings, privacy, retention, deletion, export packages | Signed-in user | `owner` or `admin`. |

@@ -106,6 +106,28 @@ const fallbackRows: EndpointRow[] = [
   },
   {
     method: "POST",
+    path: "/api/v1/transactions/simulate-vida",
+    tag: "Transactions",
+    summary: "Run ViDA-readiness simulation",
+    description:
+      "Returns transaction class, readiness score/status, evidence summary, timeline, source references, and safe non-official findings.",
+    scope: "transactions:simulate_vida",
+    auth: "X-API-Key or Bearer user token",
+    responses: ["200", "400", "401", "403", "429", "500"]
+  },
+  {
+    method: "POST",
+    path: "/api/v1/invoices/:id/simulate-vida",
+    tag: "Invoices",
+    summary: "Run production invoice ViDA simulation",
+    description:
+      "Runs a signed-user simulation from a tenant-scoped production invoice canonical payload without changing lifecycle status.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["201", "400", "401", "403", "404", "500"]
+  },
+  {
+    method: "POST",
     path: "/api/v1/vat/validate-format",
     tag: "VAT",
     summary: "Validate local VAT format",

@@ -33,6 +33,12 @@ const apiModules = [
   },
   {
     icon: <ShieldCheck size={22} />,
+    title: "ViDA-readiness simulation",
+    description:
+      "Run source-linked educational ViDA-readiness simulations with transaction class, readiness score/status, evidence summary, country-pack context, timeline, findings, and safe professional-review wording."
+  },
+  {
+    icon: <ShieldCheck size={22} />,
     title: "VIES evidence checks",
     description:
       "POST VAT numbers to the backend VIES evidence endpoint through scoped API keys. VIES evidence is time-of-check evidence only and is separate from local format checks."
@@ -175,6 +181,56 @@ curl -X POST http://localhost:4000/api/v1/invoices/validate \\
                 <span />
                 <span />
                 <span />
+                <p>ViDA readiness simulation</p>
+              </div>
+
+              <pre>{`# Educational technical simulation only.
+# Cross-border B2B relevance is readiness context, not a legal obligation conclusion.
+# VIES evidence is supplied or cached evidence only; live VIES is not called by default.
+
+curl -X POST http://localhost:4000/api/v1/transactions/simulate-vida \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d '{
+    "sellerCountry": "DE",
+    "buyerCountry": "GR",
+    "sellerVatId": "DE123456789",
+    "buyerVatId": "EL123456789",
+    "buyerType": "business",
+    "transactionType": "services",
+    "structuredInvoiceSignals": {
+      "hasCanonicalInvoice": true,
+      "hasUblXml": true,
+      "xsdStatus": "passed",
+      "schematronPeppolStatus": "not_configured",
+      "schematronEn16931Status": "not_configured"
+    },
+    "vatEvidence": {
+      "buyerViesStatus": "not_checked"
+    }
+  }'
+
+{
+  "transactionClass": "intra_eu_b2b_service",
+  "vidaRelevance": "high",
+  "readinessStatus": "needs_country_review",
+  "readinessScore": 64,
+  "evidenceSummary": {
+    "viesEvidence": {
+      "note": "VIES evidence is time-of-check evidence only."
+    }
+  },
+  "disclaimer": "This is not official software, legal advice, tax advice, accounting advice, official filing, or a compliance guarantee."
+}`}</pre>
+            </div>
+          </Reveal>
+
+          <Reveal>
+            <div className="terminal-shell subpage-terminal">
+              <div className="terminal-top">
+                <span />
+                <span />
+                <span />
                 <p>XML validation jobs</p>
               </div>
 
@@ -285,6 +341,7 @@ xml:validation_jobs      GET  /api/v1/xml/validation-jobs
 xml:validation_jobs      GET  /api/v1/xml/validation-jobs/:id
 vat:validate_format      POST /api/v1/vat/validate-format
 vat:check_vies           POST /api/v1/vat/check-vies
+transactions:simulate_vida POST /api/v1/transactions/simulate-vida
 rules:read               GET  /api/v1/validation/rules
 validation_runs:read     GET  /api/v1/validation-runs/:id
 
@@ -294,6 +351,7 @@ GET    /api/v1/invoices/:id
 POST   /api/v1/invoices/from-draft
 POST   /api/v1/invoices/:id/transition
 POST   /api/v1/invoices/:id/export/ubl
+POST   /api/v1/invoices/:id/simulate-vida
 
 Invoice Lantern API keys provide access to sandbox technical validation tools only.
 They are not official filing credentials and do not provide tax authority submission capability.

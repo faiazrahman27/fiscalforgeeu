@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { canonicalToUblInvoiceXml } from "@invoice-lantern/ubl";
+import {
+  buildVidaSimulationInputFromCanonicalInvoice,
+  simulateVidaReadinessFromCanonicalInvoice
+} from "@invoice-lantern/vida-simulator";
+import { z } from "zod";
 import { requireSupabaseUser } from "../../middleware/require-api-key.js";
 import {
   WORKSPACE_ROLE_SETS,
@@ -27,10 +32,141 @@ import {
   updateProductionInvoice
 } from "../../services/invoice-lifecycle-service.js";
 import { saveOrganizationInvoiceExportRecord } from "../../repositories/invoice-export-repository.js";
+import { saveAuthenticatedVidaSimulationRunRecord } from "../../repositories/vida-simulation-run-repository.js";
 import { formatZodError } from "../../utils/zod-error.js";
 
 const PRODUCTION_UBL_EXPORT_DISCLAIMER =
   "Invoice Lantern generated this technical UBL 2.1 export from a production invoice canonical record. It is not official validation, not Peppol-certified, not legal/tax/accounting advice, not official filing, and not authority acceptance.";
+
+const vidaInvoiceSimulationRequestSchema = z
+  .object({
+    buyerType: z
+      .enum(["business", "consumer", "public_authority", "unknown"])
+      .optional(),
+    sellerType: z.enum(["business", "public_authority", "unknown"]).optional(),
+    transactionType: z
+      .enum(["goods", "services", "digital_service", "mixed", "unknown"])
+      .optional(),
+    supplyScenario: z
+      .enum(["domestic", "intra_eu", "non_eu", "unknown"])
+      .optional(),
+    structuredInvoiceSignals: z
+      .object({
+        hasCanonicalInvoice: z.boolean().optional(),
+        hasUblXml: z.boolean().optional(),
+        hasCiiXml: z.boolean().optional(),
+        xsdStatus: z
+          .enum([
+            "passed",
+            "failed",
+            "warning",
+            "not_configured",
+            "not_checked",
+            "unavailable",
+            "unknown"
+          ])
+          .optional(),
+        schematronPeppolStatus: z
+          .enum([
+            "passed",
+            "failed",
+            "warning",
+            "not_configured",
+            "not_checked",
+            "unavailable",
+            "unknown"
+          ])
+          .optional(),
+        schematronEn16931Status: z
+          .enum([
+            "passed",
+            "failed",
+            "warning",
+            "not_configured",
+            "not_checked",
+            "unavailable",
+            "unknown"
+          ])
+          .optional(),
+        validationSummary: z
+          .object({
+            status: z.string().trim().max(80).optional(),
+            totalFindings: z.number().int().min(0).max(10000).optional(),
+            blockedCount: z.number().int().min(0).max(10000).optional(),
+            fatalCount: z.number().int().min(0).max(10000).optional(),
+            warningCount: z.number().int().min(0).max(10000).optional(),
+            infoCount: z.number().int().min(0).max(10000).optional()
+          })
+          .strict()
+          .optional()
+      })
+      .strict()
+      .optional(),
+    vatEvidence: z
+      .object({
+        sellerFormatStatus: z
+          .enum(["valid", "invalid", "not_checked", "unknown"])
+          .optional(),
+        buyerFormatStatus: z
+          .enum(["valid", "invalid", "not_checked", "unknown"])
+          .optional(),
+        buyerViesStatus: z
+          .enum(["valid", "invalid", "unavailable", "not_checked", "unknown"])
+          .optional(),
+        sellerViesStatus: z
+          .enum(["valid", "invalid", "unavailable", "not_checked", "unknown"])
+          .optional(),
+        checkedAt: z.string().trim().max(80).optional(),
+        sourceLabel: z.string().trim().max(160).optional()
+      })
+      .strict()
+      .optional(),
+    countryPackContext: z
+      .object({
+        sellerCountryPackVersion: z.string().trim().max(80).optional(),
+        buyerCountryPackVersion: z.string().trim().max(80).optional(),
+        sellerCountryPackStatus: z
+          .enum([
+            "eu_core_only",
+            "draft",
+            "beta",
+            "reviewed",
+            "professional_review_required",
+            "deprecated",
+            "suspended",
+            "unknown"
+          ])
+          .optional(),
+        buyerCountryPackStatus: z
+          .enum([
+            "eu_core_only",
+            "draft",
+            "beta",
+            "reviewed",
+            "professional_review_required",
+            "deprecated",
+            "suspended",
+            "unknown"
+          ])
+          .optional(),
+        sourceCoverageStatus: z
+          .enum([
+            "reviewed",
+            "beta",
+            "draft",
+            "not_reviewed",
+            "unknown",
+            "professional_review_required",
+            "eu_core_only"
+          ])
+          .optional()
+      })
+      .strict()
+      .optional(),
+    sourceRefs: z.array(z.string().trim().min(1).max(160)).max(50).optional(),
+    sourceLabels: z.array(z.string().trim().min(1).max(240)).max(50).optional()
+  })
+  .strict();
 
 function sendError(
   reply: FastifyReply,
@@ -499,6 +635,113 @@ export async function invoiceRoutes(app: FastifyInstance) {
           totals: record.calculationSummary,
           findings: record.validationSummary.findings,
           disclaimer: PRODUCTION_UBL_EXPORT_DISCLAIMER
+        });
+      } catch (error) {
+        return sendInvoiceLifecycleError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/:id/simulate-vida",
+    {
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceValidators, {
+          code: "PRODUCTION_INVOICE_VIDA_SIMULATION_ROLE_REQUIRED",
+          message:
+            "Production invoice ViDA-readiness simulation requires an organization owner, admin, accountant, developer, or reviewer role."
+        })
+      ]
+    },
+    async (request, reply) => {
+      const context = getWorkspaceAuthorizationContext(request, reply);
+
+      if (!context) {
+        return reply;
+      }
+
+      const parsedParams = productionInvoiceParamsSchema.safeParse(
+        request.params
+      );
+
+      if (!parsedParams.success) {
+        return sendValidationError(
+          reply,
+          "Production invoice ID failed schema validation.",
+          formatZodError(parsedParams.error)
+        );
+      }
+
+      const parsedBody = vidaInvoiceSimulationRequestSchema.safeParse(
+        request.body ?? {}
+      );
+
+      if (!parsedBody.success) {
+        return sendValidationError(
+          reply,
+          "Production invoice ViDA simulation request failed schema validation.",
+          formatZodError(parsedBody.error)
+        );
+      }
+
+      try {
+        const record = await getProductionInvoice({
+          context,
+          id: parsedParams.data.id
+        });
+
+        if (!record) {
+          return sendNotFound(reply);
+        }
+
+        const simulationInput = buildVidaSimulationInputFromCanonicalInvoice(
+          record.canonicalInvoice,
+          parsedBody.data
+        );
+        const simulationResult = simulateVidaReadinessFromCanonicalInvoice(
+          record.canonicalInvoice,
+          parsedBody.data
+        );
+        const simulationRun = await saveAuthenticatedVidaSimulationRunRecord(
+          {
+            userId: context.userId,
+            accessToken: context.accessToken
+          },
+          {
+            inputPayload: simulationInput,
+            result: simulationResult,
+            source: "workspace",
+            requestMetadata: {
+              method: request.method,
+              path: request.routeOptions.url ?? request.url.split("?")[0],
+              authenticationMode: request.authenticationMode ?? null,
+              productionInvoiceId: record.id,
+              invoiceNumber: record.invoiceNumber,
+              invoiceStatus: record.status,
+              normalizedInput: simulationResult.normalizedInput
+            }
+          }
+        );
+
+        return reply.status(201).send({
+          ...simulationResult,
+          simulationId: simulationRun.id,
+          persisted: true,
+          simulationRunId: simulationRun.id,
+          simulationRun: {
+            id: simulationRun.id,
+            productionInvoiceId: record.id,
+            invoiceNumber: record.invoiceNumber,
+            transactionClass: simulationRun.transactionClass,
+            vidaRelevance: simulationRun.vidaRelevance,
+            readinessScore: simulationRun.readinessScore,
+            readinessStatus: simulationRun.readinessStatus,
+            legalConfidence: simulationRun.legalConfidence,
+            createdAt: simulationRun.createdAt
+          },
+          invoiceSimulationDisclaimer:
+            "This production invoice ViDA-readiness simulation did not change invoice lifecycle status and is not official filing, legal advice, tax advice, accounting advice, or a compliance guarantee."
         });
       } catch (error) {
         return sendInvoiceLifecycleError(reply, error);

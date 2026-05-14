@@ -140,7 +140,12 @@ test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boun
   assert.match(requestSchema, /sellerVatId/);
   assert.match(requestSchema, /buyerVatId/);
   assert.match(requestSchema, /buyerType/);
+  assert.match(requestSchema, /sellerType/);
   assert.match(requestSchema, /transactionType/);
+  assert.match(requestSchema, /supplyScenario/);
+  assert.match(requestSchema, /structuredInvoiceSignals/);
+  assert.match(requestSchema, /vatEvidence/);
+  assert.match(requestSchema, /countryPackContext/);
   assert.match(requestSchema, /countryPackVersions/);
   assert.match(requestSchema, /persist/);
   assert.match(requestSchema, /invoiceDraftId/);
@@ -159,12 +164,17 @@ test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boun
   assert.match(responseSchema, /simulationVersion/);
   assert.match(responseSchema, /transactionClass/);
   assert.match(responseSchema, /vidaRelevance/);
+  assert.match(responseSchema, /readinessScore/);
+  assert.match(responseSchema, /readinessStatus/);
   assert.match(responseSchema, /effectiveDateContext/);
+  assert.match(responseSchema, /timeline/);
   assert.match(responseSchema, /legalConfidence/);
   assert.match(responseSchema, /countryContext/);
   assert.match(responseSchema, /normalizedInput/);
+  assert.match(responseSchema, /evidenceSummary/);
   assert.match(responseSchema, /findings/);
   assert.match(responseSchema, /recommendedNextActions/);
+  assert.match(responseSchema, /sourceReferences/);
   assert.match(responseSchema, /disclaimer/);
   assert.match(responseSchema, /persisted/);
   assert.match(responseSchema, /simulationRunId/);
@@ -174,12 +184,19 @@ test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boun
   assert.match(countryContextSchema, /buyerInEu/);
   assert.match(countryContextSchema, /sameCountry/);
   assert.match(countryContextSchema, /crossBorderEu/);
+  assert.match(countryContextSchema, /sellerCountryPackStatus/);
+  assert.match(countryContextSchema, /buyerCountryPackStatus/);
 
   assert.match(normalizedInputSchema, /sellerCountryCode/);
   assert.match(normalizedInputSchema, /buyerCountryCode/);
+  assert.match(normalizedInputSchema, /sellerVatCountryCode/);
+  assert.match(normalizedInputSchema, /buyerVatCountryCode/);
   assert.match(normalizedInputSchema, /sellerVatId/);
   assert.match(normalizedInputSchema, /buyerVatId/);
 
+  assert.match(findingSchema, /category/);
+  assert.match(findingSchema, /sourceRefs/);
+  assert.match(findingSchema, /evidenceStatus/);
   assert.match(findingSchema, /legalConfidence/);
   assert.match(findingSchema, /sourceLabels/);
   assert.match(findingSchema, /fixSuggestion/);
@@ -281,6 +298,9 @@ test("OpenAPI documents ViDA simulation history endpoints, schemas, and safe bou
   assert.match(vidaSimulationResponse, /persisted/);
   assert.match(vidaSimulationResponse, /simulationRunId/);
   assert.match(vidaSimulationResponse, /simulationRun/);
+  assert.match(vidaSimulationResponse, /readinessScore/);
+  assert.match(vidaSimulationResponse, /evidenceSummary/);
+  assert.match(vidaSimulationResponse, /sourceReferences/);
 
   assert.match(vidaSimulationRunSummary, /organizationId/);
   assert.match(vidaSimulationRunSummary, /createdBy/);
@@ -290,7 +310,11 @@ test("OpenAPI documents ViDA simulation history endpoints, schemas, and safe bou
   assert.match(vidaSimulationRunSummary, /simulationVersion/);
   assert.match(vidaSimulationRunSummary, /transactionClass/);
   assert.match(vidaSimulationRunSummary, /vidaRelevance/);
+  assert.match(vidaSimulationRunSummary, /readinessScore/);
+  assert.match(vidaSimulationRunSummary, /readinessStatus/);
   assert.match(vidaSimulationRunSummary, /legalConfidence/);
+  assert.match(vidaSimulationRunSummary, /evidenceSummary/);
+  assert.match(vidaSimulationRunSummary, /sourceReferences/);
   assert.match(vidaSimulationRunSummary, /findingCount/);
   assert.match(vidaSimulationRunSummary, /reviewRequiredCount/);
   assert.match(vidaSimulationRunSummary, /disclaimer/);
@@ -331,6 +355,7 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/invoices/from-draft",
     "/invoices/{id}",
     "/invoices/{id}/export/ubl",
+    "/invoices/{id}/simulate-vida",
     "/invoices/{id}/transition",
     "/invoices/{id}/lifecycle-events",
     "/invoices/validate",
@@ -391,6 +416,9 @@ test("OpenAPI documents production invoice lifecycle endpoints and safe boundari
   const productionUblExport = JSON.stringify(
     readRecord(paths, "/invoices/{id}/export/ubl")
   );
+  const invoiceVidaSimulation = JSON.stringify(
+    readRecord(paths, "/invoices/{id}/simulate-vida")
+  );
   const transition = JSON.stringify(
     readRecord(paths, "/invoices/{id}/transition")
   );
@@ -416,6 +444,7 @@ test("OpenAPI documents production invoice lifecycle endpoints and safe boundari
     fromDraft,
     invoiceDetail,
     productionUblExport,
+    invoiceVidaSimulation,
     transition,
     lifecycleEvents,
     productionInvoice,
@@ -433,6 +462,10 @@ test("OpenAPI documents production invoice lifecycle endpoints and safe boundari
   assert.match(productionUblExport, /technical UBL 2\.1 export/i);
   assert.match(productionUblExport, /safe invoice_exports metadata/i);
   assert.match(productionUblExport, /not Peppol-certified/i);
+  assert.match(invoiceVidaSimulation, /ViDA-readiness simulation/i);
+  assert.match(invoiceVidaSimulation, /does not change invoice lifecycle status/i);
+  assert.match(invoiceVidaSimulation, /not official filing/i);
+  assert.match(invoiceVidaSimulation, /not.*compliance guarantee/i);
   assert.match(transition, /internal workspace state only/i);
   assert.match(transition, /not official filing/i);
   assert.match(transition, /not.*authority acceptance/i);
