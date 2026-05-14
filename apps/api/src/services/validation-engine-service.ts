@@ -6,6 +6,7 @@ import {
 import { validateVatFormat } from "@invoice-lantern/tax-engine";
 import {
   buildValidationFindingSummary,
+  buildCountryPackValidationFindings,
   buildViesFindingFromEvidence,
   buildViesFindingFromStatus,
   enrichValidationFindings,
@@ -163,6 +164,7 @@ export async function runValidationEngine(
     })),
     ...buildVatFormatValidationFindings(input.invoice)
   ]);
+  const countryPackFindings = buildCountryPackValidationFindings(input.invoice);
   const xmlFindings = (input.xmlFindings ?? []).map((finding) =>
     mapXmlValidationFindingToEnriched(finding)
   );
@@ -172,7 +174,12 @@ export async function runValidationEngine(
     createdBy: input.createdBy ?? null,
     viesMode
   });
-  const findings = [...baseFindings, ...xmlFindings, ...viesResult.findings];
+  const findings = [
+    ...baseFindings,
+    ...countryPackFindings,
+    ...xmlFindings,
+    ...viesResult.findings
+  ];
   const summary = buildValidationFindingSummary(findings);
 
   return {

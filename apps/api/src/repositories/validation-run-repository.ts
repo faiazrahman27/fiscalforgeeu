@@ -12,7 +12,10 @@ import {
   hasSupabaseServerConfig
 } from "../lib/supabase/server-client.js";
 import type { ValidationSourceReference } from "../schemas/validation-engine.js";
-import { enrichValidationFindings } from "../services/validation-finding-enrichment.js";
+import {
+  buildCountryPackValidationFindings,
+  enrichValidationFindings
+} from "../services/validation-finding-enrichment.js";
 import { buildVatFormatValidationFindings } from "../services/vat-format-validation-findings.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
@@ -42,6 +45,9 @@ export type Finding = {
   technicalCode?: string | undefined;
   technicalMessage?: string | undefined;
   businessRuleId?: string | undefined;
+  countryPackVersion?: string | undefined;
+  countryPackStatus?: string | undefined;
+  countryPackCountryCode?: string | undefined;
 };
 
 export type ValidationTotals = {
@@ -348,6 +354,12 @@ function normalizeFinding(value: unknown): Finding | null {
   const technicalCode = readStringField(value, "technicalCode");
   const technicalMessage = readStringField(value, "technicalMessage");
   const businessRuleId = readStringField(value, "businessRuleId");
+  const countryPackVersion = readStringField(value, "countryPackVersion");
+  const countryPackStatus = readStringField(value, "countryPackStatus");
+  const countryPackCountryCode = readStringField(
+    value,
+    "countryPackCountryCode"
+  );
   const xmlLine = readOptionalNumberField(value, "xmlLine");
 
   if (!code || !field || !message) {
@@ -442,6 +454,18 @@ function normalizeFinding(value: unknown): Finding | null {
 
   if (businessRuleId) {
     finding.businessRuleId = businessRuleId;
+  }
+
+  if (countryPackVersion) {
+    finding.countryPackVersion = countryPackVersion;
+  }
+
+  if (countryPackStatus) {
+    finding.countryPackStatus = countryPackStatus;
+  }
+
+  if (countryPackCountryCode) {
+    finding.countryPackCountryCode = countryPackCountryCode;
   }
 
   return finding;
@@ -729,13 +753,16 @@ export function calculateValidationTotals(
 export function buildValidationFindings(
   payload: InvoiceValidationRequest
 ): Finding[] {
-  return enrichValidationFindings([
+  return [
+    ...enrichValidationFindings([
     ...buildCoreValidationFindings(payload).map((finding) => ({
       ...finding,
       field: finding.fieldPath
     })),
     ...buildVatFormatValidationFindings(payload)
-  ]) as Finding[];
+  ]),
+    ...buildCountryPackValidationFindings(payload)
+  ] as Finding[];
 }
 
 /* -------------------------------------------------------------------------- */

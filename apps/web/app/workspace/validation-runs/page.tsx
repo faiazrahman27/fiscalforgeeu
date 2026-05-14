@@ -44,7 +44,17 @@ type ValidationFinding = {
   legalConfidence?: LegalConfidence;
   ruleSetCode?: string;
   ruleVersion?: string;
+  checkType?: string;
+  layer?: string;
   sourceLabels?: string[];
+  sourceReferences?: {
+    sourceName: string;
+    sourceLabel?: string;
+    sourceUrl?: string;
+  }[];
+  countryPackVersion?: string;
+  countryPackStatus?: string;
+  countryPackCountryCode?: string;
 };
 
 type ValidationTotals = {
@@ -502,12 +512,26 @@ function normalizeFinding(value: unknown): ValidationFinding | null {
         : undefined,
     ruleSetCode: readStringField(value, "ruleSetCode", ""),
     ruleVersion: readStringField(value, "ruleVersion", ""),
+    checkType: readStringField(value, "checkType", ""),
+    layer: readStringField(value, "layer", ""),
     sourceLabels: Array.isArray(value.sourceLabels)
       ? value.sourceLabels
           .filter((item): item is string => typeof item === "string")
           .map((item) => item.trim())
           .filter(Boolean)
-      : []
+      : [],
+    sourceReferences: Array.isArray(value.sourceReferences)
+      ? value.sourceReferences
+          .filter((item): item is Record<string, unknown> => isPlainObject(item))
+          .map((item) => ({
+            sourceName: readStringField(item, "sourceName", "Unnamed source"),
+            sourceLabel: readStringField(item, "sourceLabel", ""),
+            sourceUrl: readStringField(item, "sourceUrl", "")
+          }))
+      : [],
+    countryPackVersion: readStringField(value, "countryPackVersion", ""),
+    countryPackStatus: readStringField(value, "countryPackStatus", ""),
+    countryPackCountryCode: readStringField(value, "countryPackCountryCode", "")
   };
 }
 
@@ -1119,6 +1143,39 @@ export default function WorkspaceValidationRunsPage() {
                     <p>
                       Rule set: {item.ruleSetCode || "Not linked"}. Version:{" "}
                       {item.ruleVersion || "not versioned"}.
+                    </p>
+                  ) : null}
+                  {item.checkType || item.layer ? (
+                    <p>
+                      Check: {item.checkType || "not recorded"}. Layer:{" "}
+                      {item.layer || "not recorded"}.
+                    </p>
+                  ) : null}
+                  {item.countryPackVersion || item.countryPackStatus ? (
+                    <p>
+                      Country pack:{" "}
+                      {item.countryPackCountryCode || "not recorded"}{" "}
+                      {item.countryPackVersion || "not versioned"}{" "}
+                      {item.countryPackStatus
+                        ? `(${formatStatus(item.countryPackStatus)})`
+                        : ""}
+                      . Professional review warning applies where flagged.
+                    </p>
+                  ) : null}
+                  {item.sourceLabels && item.sourceLabels.length > 0 ? (
+                    <p>Sources: {item.sourceLabels.join(", ")}.</p>
+                  ) : null}
+                  {item.sourceReferences && item.sourceReferences.length > 0 ? (
+                    <p>
+                      Source refs:{" "}
+                      {item.sourceReferences
+                        .map(
+                          (sourceReference) =>
+                            sourceReference.sourceLabel ||
+                            sourceReference.sourceName
+                        )
+                        .join(", ")}
+                      .
                     </p>
                   ) : null}
                 </div>

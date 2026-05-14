@@ -26,6 +26,7 @@ type ApiKeyScope =
   | "invoices:import_ubl"
   | "xml:validation_jobs"
   | "vat:validate_format"
+  | "vat:check_vies"
   | "transactions:simulate_vida"
   | "validation_runs:read"
   | "rules:read";
@@ -113,6 +114,7 @@ type ApiKeyFormState = {
 type ApiTestEndpointId =
   | "validation-rules"
   | "vat-format"
+  | "vies-check"
   | "vida-simulation"
   | "invoice-validation"
   | "ubl-parse"
@@ -174,6 +176,11 @@ const scopeOptions: {
     value: "vat:validate_format",
     label: "VAT format",
     description: "POST /api/v1/vat/validate-format"
+  },
+  {
+    value: "vat:check_vies",
+    label: "VIES evidence",
+    description: "POST /api/v1/vat/check-vies"
   },
   {
     value: "transactions:simulate_vida",
@@ -325,6 +332,18 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
     }
   },
   {
+    id: "vies-check",
+    label: "VIES evidence check",
+    method: "POST",
+    path: "/api/v1/vat/check-vies",
+    scope: "vat:check_vies",
+    body: {
+      countryCode: "DE",
+      vatNumber: "DE123456789",
+      partyRole: "buyer"
+    }
+  },
+  {
     id: "vida-simulation",
     label: "ViDA readiness simulation",
     method: "POST",
@@ -363,7 +382,8 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
       requestedChecks: [
         "worker_readiness",
         "xsd_ubl",
-        "schematron_peppol_placeholder"
+        "schematron_peppol",
+        "schematron_en16931"
       ]
     }
   }
@@ -436,6 +456,7 @@ function isApiKeyScope(value: unknown): value is ApiKeyScope {
     value === "invoices:import_ubl" ||
     value === "xml:validation_jobs" ||
     value === "vat:validate_format" ||
+    value === "vat:check_vies" ||
     value === "transactions:simulate_vida" ||
     value === "validation_runs:read" ||
     value === "rules:read"
@@ -2030,6 +2051,12 @@ curl -X POST http://localhost:4000/api/v1/vat/validate-format \\
   -H "content-type: application/json" \\
   -H "X-API-Key: il_test_your_key_here" \\
   -d '{"vatId":"HU12345678","countryHint":"HU"}'
+
+# VIES evidence check
+curl -X POST http://localhost:4000/api/v1/vat/check-vies \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d '{"countryCode":"DE","vatNumber":"DE123456789","partyRole":"buyer"}'
 
 # ViDA-readiness simulation
 curl -X POST http://localhost:4000/api/v1/transactions/simulate-vida \\

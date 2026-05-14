@@ -142,6 +142,10 @@ const VAT_FORMAT_RULES = {
 
 export type SupportedVatCountryCode = keyof typeof VAT_FORMAT_RULES;
 
+const VAT_COUNTRY_HINT_ALIASES: Record<string, SupportedVatCountryCode> = {
+  GR: "EL"
+};
+
 export function normalizeVatId(input: string): string {
   return input.trim().toUpperCase().replace(/[\s\-./]+/g, "");
 }
@@ -345,7 +349,11 @@ function normalizeCountryHint(input: string | undefined) {
 
   const normalized = normalizeVatId(input);
 
-  return /^[A-Z]{2}$/.test(normalized) ? normalized : null;
+  if (!/^[A-Z]{2}$/.test(normalized)) {
+    return null;
+  }
+
+  return VAT_COUNTRY_HINT_ALIASES[normalized] ?? normalized;
 }
 
 function extractLeadingCountryLikePrefix(input: string) {

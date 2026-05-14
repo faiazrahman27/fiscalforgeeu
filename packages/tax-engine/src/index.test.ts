@@ -38,6 +38,7 @@ test("known local VAT format examples pass", () => {
 test("country names are exposed for supported VAT format rules", () => {
   assert.equal(getVatFormatCountryName("DE"), "Germany");
   assert.equal(getVatFormatCountryName("hu"), "Hungary");
+  assert.equal(getVatFormatCountryName("GR"), "Greece");
   assert.equal(getVatFormatCountryName("US"), undefined);
 });
 
@@ -74,6 +75,15 @@ test("country hints can validate unprefixed VAT IDs", () => {
   assert.equal(result.normalized, "DE123456789");
   assert.equal(result.countryCode, "DE");
   assert.match(result.warnings.join(" "), /country hint was used/i);
+});
+
+test("Greece country hint maps to the EL VAT prefix used by VIES", () => {
+  const result = validateVatFormat("123456789", "GR");
+
+  assert.equal(result.formatValid, true);
+  assert.equal(result.normalized, "EL123456789");
+  assert.equal(result.countryCode, "EL");
+  assert.equal(result.countryName, "Greece");
 });
 
 test("country hint mismatch fails with a warning", () => {

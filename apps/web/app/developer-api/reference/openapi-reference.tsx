@@ -77,7 +77,7 @@ const fallbackRows: EndpointRow[] = [
     tag: "XML Validation Jobs",
     summary: "Create an XML validation job",
     description:
-      "Creates a metadata-only XML validation job. UBL XSD checks are configuration-gated and return not_configured until local UBL XSD artefacts are available; Schematron remains planned/inactive.",
+      "Creates a metadata-only XML validation job. Supported checks include xsd_ubl, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; not_configured, disabled, unsupported, unsafe_input, and preflight_only are not success.",
     scope: "xml:validation_jobs",
     auth: "X-API-Key",
     responses: ["200", "400", "401", "403", "413", "429", "500"]
@@ -112,6 +112,17 @@ const fallbackRows: EndpointRow[] = [
     description:
       "Runs local VAT ID format checks only. This is not VIES and not proof of registration.",
     scope: "vat:validate_format",
+    auth: "X-API-Key",
+    responses: ["200", "400", "401", "403", "429", "500"]
+  },
+  {
+    method: "POST",
+    path: "/api/v1/vat/check-vies",
+    tag: "VAT",
+    summary: "Check VIES evidence",
+    description:
+      "Runs an optional backend VIES evidence check. Local format-valid is not VIES-valid, VIES unavailable is not invalid, and VIES valid is not legal, tax, accounting, filing, or compliance proof.",
+    scope: "vat:check_vies",
     auth: "X-API-Key",
     responses: ["200", "400", "401", "403", "429", "500"]
   },

@@ -70,7 +70,10 @@ export const enrichedValidationFindingSchema = z
     xmlLine: z.number().int().positive().optional(),
     technicalCode: z.string().trim().min(1).optional(),
     technicalMessage: z.string().trim().min(1).optional(),
-    businessRuleId: z.string().trim().min(1).optional()
+    businessRuleId: z.string().trim().min(1).optional(),
+    countryPackVersion: z.string().trim().min(1).optional(),
+    countryPackStatus: z.string().trim().min(1).optional(),
+    countryPackCountryCode: z.string().trim().min(1).optional()
   })
   .strict();
 

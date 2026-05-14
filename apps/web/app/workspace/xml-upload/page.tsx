@@ -41,6 +41,8 @@ type XmlValidationJobStatus =
 type XmlValidationJobCheck =
   | "worker_readiness"
   | "xsd_ubl"
+  | "schematron_peppol"
+  | "schematron_en16931"
   | "schematron_peppol_placeholder";
 
 type XmlValidationJobCheckStatus =
@@ -49,6 +51,10 @@ type XmlValidationJobCheckStatus =
   | "completed"
   | "not_configured"
   | "not_implemented"
+  | "unsupported"
+  | "unsafe_input"
+  | "preflight_only"
+  | "disabled"
   | "error";
 
 type XmlReadinessFinding = {
@@ -506,10 +512,24 @@ const validationJobCheckOptions: {
   },
   {
     value: "schematron_peppol_placeholder",
-    label: "Peppol Schematron placeholder",
+    label: "Deprecated Peppol preflight alias",
     description:
-      "Planned, inactive. This step does not perform Schematron validation.",
+      "Deprecated compatibility alias. It reports guarded preflight metadata and should not be treated as a pass.",
     active: false
+  },
+  {
+    value: "schematron_peppol",
+    label: "Peppol-style Schematron",
+    description:
+      "Guarded local technical Schematron execution when local artefacts and execution gates are configured.",
+    active: true
+  },
+  {
+    value: "schematron_en16931",
+    label: "EN 16931-style Schematron",
+    description:
+      "Guarded local technical Schematron execution for EN 16931-style assertions when configured.",
+    active: true
   }
 ];
 
@@ -660,6 +680,8 @@ function isXmlValidationJobCheck(value: unknown): value is XmlValidationJobCheck
   return (
     value === "worker_readiness" ||
     value === "xsd_ubl" ||
+    value === "schematron_peppol" ||
+    value === "schematron_en16931" ||
     value === "schematron_peppol_placeholder"
   );
 }
@@ -673,6 +695,10 @@ function isXmlValidationJobCheckStatus(
     value === "completed" ||
     value === "not_configured" ||
     value === "not_implemented" ||
+    value === "unsupported" ||
+    value === "unsafe_input" ||
+    value === "preflight_only" ||
+    value === "disabled" ||
     value === "error"
   );
 }
@@ -1138,7 +1164,14 @@ function getSchematronOrchestrationTone(
 }
 
 function getSchematronJobBadge(job: XmlValidationJob) {
-  if (!job.requestedChecks.includes("schematron_peppol_placeholder")) {
+  if (
+    !job.requestedChecks.some(
+      (check) =>
+        check === "schematron_peppol" ||
+        check === "schematron_en16931" ||
+        check === "schematron_peppol_placeholder"
+    )
+  ) {
     return null;
   }
 
@@ -1162,10 +1195,10 @@ function getSchematronJobBadge(job: XmlValidationJob) {
   }
 
   if (status === "ready_for_future_execution") {
-    return "Schematron planned";
+    return "Schematron gated";
   }
 
-  return "Schematron preflight";
+  return "Schematron technical";
 }
 
 function isUblParseFindingSeverity(
@@ -2358,7 +2391,7 @@ export default function WorkspaceXmlUploadPage() {
         return nextJobs.slice(0, 10);
       });
       setValidationJobMessage(
-        "XML validation job completed. UBL XSD reports not configured until local XSD artefacts are available; Schematron remains planned."
+        "XML validation job completed. UBL XSD and guarded Schematron checks report separate technical statuses; not_configured, unsupported, disabled, and preflight_only are not success."
       );
     } catch {
       setValidationJobMessage(
@@ -2669,7 +2702,7 @@ export default function WorkspaceXmlUploadPage() {
 9. current reports can be exported as JSON readiness reports
 10. XML validation jobs can be created without storing raw XML
 11. UBL XSD check reports not configured until local artefacts are configured
-12. Schematron and Peppol validation remain planned and inactive
+12. Guarded Schematron requires configured local artefacts and execution gates
 
 Backend endpoints:
 POST   /api/v1/xml/inspect
@@ -2829,7 +2862,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               }
               key={option.value}
             >
-              <p>{option.active ? "Available" : "Planned inactive"}</p>
+              <p>{option.active ? "Selectable" : "Deprecated alias"}</p>
               <strong>{option.label}</strong>
               <span>{option.description}</span>
               <span>
@@ -2846,7 +2879,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
           <div className="workspace-data-card is-full">
             <p>Boundary notice</p>
-            <strong>UBL XSD is configuration-gated. Schematron is planned.</strong>
+            <strong>UBL XSD and Schematron are guarded technical checks.</strong>
             <span>
               The UBL XSD check must not be treated as valid until local UBL XSD
               artefacts are configured and the worker reports a passed check.
@@ -2957,16 +2990,16 @@ DELETE /api/local/xml/uploads/:id`}</pre>
                 <strong>
                   {formatBooleanStatus(selectedSchematronPeppolSummary.requested)}
                 </strong>
-                <span>schematron_peppol_placeholder</span>
+                <span>schematron_peppol or deprecated placeholder alias</span>
               </div>
 
               <div className="workspace-data-card is-warn">
-                <p>Placeholder status</p>
+                <p>Guarded execution status</p>
                 <strong>
                   {formatOptionalStatus(selectedSchematronPeppolSummary.status) ||
-                    "Not implemented / inactive"}
+                    "Not configured or not executed"}
                 </strong>
-                <span>Not implemented / inactive</span>
+                <span>Not configured or not executed</span>
               </div>
 
               <div className="workspace-data-card">

@@ -45,12 +45,14 @@ The engine enriches and combines:
 - guarded local Schematron findings (`schematron_peppol` and
   `schematron_en16931`)
 - optional VIES evidence findings
-- existing country-pack placeholders when later flows supply them
+- source-linked country-pack simulation findings for seller/buyer country
+  context
 
-The engine does not download official rule packs, expand country packs, or
-claim official EN 16931 or Peppol validation. Step 9 makes rule catalog,
-versioning, source links, and report metadata real so future country-pack and
-admin-source work can build on stable contracts.
+The engine does not download official rule packs, claim official EN 16931 or
+Peppol validation, or determine legal/tax compliance. Country-pack findings are
+warnings and context only. No source means no legal/tax rule; unknown or
+unreviewed national details remain `unknown`, `not_reviewed`, or
+`professional_review_required`.
 
 ## Catalog And Versioning
 
@@ -87,3 +89,8 @@ and Schematron adapters are source-linked as Invoice Lantern technical
 adapters, not official standards-body results. VIES evidence, when live checks
 are explicitly enabled and requested, is labelled as VIES time-of-check
 evidence and remains separate from legal/tax/accounting conclusions.
+
+Country-pack source references identify reviewed public-source metadata where
+available and expose `countryPackVersion` and `countryPackStatus` on relevant
+findings. They support validation context and later ViDA-readiness work, but do
+not provide official country, tax authority, filing, or compliance conclusions.

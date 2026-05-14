@@ -48,6 +48,21 @@ type ApiInvoiceDraftListResponse = {
   records?: ApiInvoiceDraftSummary[];
 };
 
+type ProductionInvoiceListItem = {
+  id: string;
+  invoiceNumber: string;
+  buyer: string;
+  buyerCountry: string;
+  issueDate: string;
+  status: string;
+  currency: string;
+  payableAmount: string;
+};
+
+type ApiProductionInvoiceListResponse = {
+  records?: unknown[];
+};
+
 type ApiErrorShape = {
   error?: {
     code?: string;
@@ -126,6 +141,52 @@ function normalizeInvoiceDraft(value: unknown): InvoiceListItem | null {
   };
 }
 
+function normalizeProductionInvoice(value: unknown): ProductionInvoiceListItem | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const id = readStringField(record, "id");
+  const invoiceNumber = readStringField(record, "invoiceNumber");
+  const issueDate = readStringField(record, "issueDate");
+  const canonicalJson =
+    typeof record.canonicalJson === "object" &&
+    record.canonicalJson !== null &&
+    !Array.isArray(record.canonicalJson)
+      ? (record.canonicalJson as Record<string, unknown>)
+      : {};
+  const buyer =
+    typeof canonicalJson.buyer === "object" &&
+    canonicalJson.buyer !== null &&
+    !Array.isArray(canonicalJson.buyer)
+      ? (canonicalJson.buyer as Record<string, unknown>)
+      : {};
+  const calculationSummary =
+    typeof record.calculationSummary === "object" &&
+    record.calculationSummary !== null &&
+    !Array.isArray(record.calculationSummary)
+      ? (record.calculationSummary as Record<string, unknown>)
+      : {};
+
+  if (!id || !invoiceNumber || !issueDate) {
+    return null;
+  }
+
+  return {
+    id,
+    invoiceNumber,
+    buyer: readStringField(buyer, "name") || "Not recorded",
+    buyerCountry: readStringField(buyer, "country") || "Not provided",
+    issueDate,
+    status: readStringField(record, "status") || "draft",
+    currency: readStringField(record, "currency") || "EUR",
+    payableAmount: formatAmount(
+      calculationSummary.payableAmount ?? calculationSummary.payable_amount
+    )
+  };
+}
+
 function uniqueInvoices(invoices: InvoiceListItem[]) {
   const seen = new Set<string>();
 
@@ -185,8 +246,14 @@ export default function WorkspaceInvoicesPage() {
   const router = useRouter();
 
   const [apiInvoices, setApiInvoices] = useState<InvoiceListItem[]>([]);
+  const [productionInvoices, setProductionInvoices] = useState<
+    ProductionInvoiceListItem[]
+  >([]);
   const [isLoadingInvoices, setIsLoadingInvoices] = useState(true);
+  const [isLoadingProductionInvoices, setIsLoadingProductionInvoices] =
+    useState(true);
   const [invoiceLoadMessage, setInvoiceLoadMessage] = useState("");
+  const [productionInvoiceMessage, setProductionInvoiceMessage] = useState("");
   const [deletingDraftId, setDeletingDraftId] = useState("");
 
   useEffect(() => {
@@ -244,6 +311,67 @@ export default function WorkspaceInvoicesPage() {
     }
 
     loadInvoiceDrafts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadProductionInvoices() {
+      setIsLoadingProductionInvoices(true);
+      setProductionInvoiceMessage("");
+
+      try {
+        const response = await fetch("/api/local/invoices", {
+          method: "GET",
+          cache: "no-store"
+        });
+        const responseData = await readResponseBody(response);
+
+        if (!response.ok) {
+          if (isMounted) {
+            setProductionInvoices([]);
+            setProductionInvoiceMessage(
+              getApiErrorMessage(
+                responseData,
+                response.status,
+                "load production invoices"
+              )
+            );
+          }
+
+          return;
+        }
+
+        const apiData = responseData as ApiProductionInvoiceListResponse;
+        const records = Array.isArray(apiData?.records) ? apiData.records : [];
+        const normalizedInvoices = records
+          .map((item) => normalizeProductionInvoice(item))
+          .filter(
+            (item): item is ProductionInvoiceListItem => item !== null
+          );
+
+        if (isMounted) {
+          setProductionInvoices(normalizedInvoices);
+        }
+      } catch {
+        if (isMounted) {
+          setProductionInvoices([]);
+          setProductionInvoiceMessage(
+            "Production invoices are unavailable through the local API proxy. Signed-in workspace access may be required."
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingProductionInvoices(false);
+        }
+      }
+    }
+
+    loadProductionInvoices();
 
     return () => {
       isMounted = false;
@@ -437,6 +565,97 @@ export default function WorkspaceInvoicesPage() {
 
                 <strong>{invoice.amount}</strong>
               </div>
+            ))
+          )}
+        </div>
+      </section>
+
+      <section className="workspace-table-shell">
+        <div className="workspace-table-head">
+          <div>
+            <p>Production invoices</p>
+            <h3>Lifecycle records</h3>
+          </div>
+
+          <div className="confidence-label">internal lifecycle only</div>
+        </div>
+
+        {productionInvoiceMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{productionInvoiceMessage}</p>
+          </div>
+        ) : null}
+
+        <div className="workspace-table">
+          {isLoadingProductionInvoices ? (
+            <div className="workspace-table-row">
+              <div>
+                <strong>Loading production invoices</strong>
+                <span>Reading lifecycle records from the local API proxy.</span>
+              </div>
+
+              <div>
+                <CalendarDays size={15} />
+                <span>pending</span>
+              </div>
+
+              <div>
+                <span className="status-pill">loading</span>
+              </div>
+
+              <strong>API</strong>
+            </div>
+          ) : productionInvoices.length === 0 ? (
+            <div className="workspace-table-row">
+              <div>
+                <strong>No production invoices</strong>
+                <span>
+                  Drafts can be promoted to production lifecycle records when
+                  the signed-in workspace API is available.
+                </span>
+              </div>
+
+              <div>
+                <CalendarDays size={15} />
+                <span>waiting</span>
+              </div>
+
+              <div>
+                <span className="status-pill">empty</span>
+              </div>
+
+              <strong>0</strong>
+            </div>
+          ) : (
+            productionInvoices.map((invoice) => (
+              <Link
+                className="workspace-table-row invoice-click-row"
+                href={`/workspace/invoices/${encodeURIComponent(invoice.id)}`}
+                key={invoice.id}
+              >
+                <div>
+                  <strong>{invoice.invoiceNumber}</strong>
+                  <span>
+                    {invoice.buyer} - {invoice.buyerCountry}
+                  </span>
+                  <span>
+                    State {invoice.status}. Issued is an internal lifecycle
+                    state only, not authority acceptance or filing.
+                  </span>
+                </div>
+
+                <div>
+                  <CalendarDays size={15} />
+                  <span>{invoice.issueDate}</span>
+                </div>
+
+                <div>
+                  <span className="status-pill">{invoice.status}</span>
+                </div>
+
+                <strong>{invoice.payableAmount}</strong>
+              </Link>
             ))
           )}
         </div>

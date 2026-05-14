@@ -29,7 +29,13 @@ const apiModules = [
     icon: <Braces size={22} />,
     title: "XML validation jobs",
     description:
-      "Create metadata-only XML validation jobs for worker readiness, configuration-gated UBL XSD checks, and planned Schematron checks. Raw XML is not stored in job records."
+      "Create metadata-only XML validation jobs for worker readiness, xsd_ubl, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; raw XML is not stored in job records."
+  },
+  {
+    icon: <ShieldCheck size={22} />,
+    title: "VIES evidence checks",
+    description:
+      "POST VAT numbers to the backend VIES evidence endpoint through scoped API keys. VIES evidence is time-of-check evidence only and is separate from local format checks."
   },
   {
     icon: <ShieldCheck size={22} />,
@@ -174,7 +180,8 @@ curl -X POST http://localhost:4000/api/v1/invoices/validate \\
 
               <pre>{`# Create a metadata-only XML validation job.
 # Raw XML is accepted for processing but is not stored in job records or API request logs.
-# UBL XSD returns not_configured until local UBL XSD artefacts are configured.
+# UBL XSD and Schematron checks are guarded technical checks.
+# not_configured, disabled, unsupported, unsafe_input, and preflight_only are not success.
 
 curl -X POST http://localhost:4000/api/v1/xml/validation-jobs \\
   -H "content-type: application/json" \\
@@ -186,7 +193,8 @@ curl -X POST http://localhost:4000/api/v1/xml/validation-jobs \\
     "requestedChecks": [
       "worker_readiness",
       "xsd_ubl",
-      "schematron_peppol_placeholder"
+      "schematron_peppol",
+      "schematron_en16931"
     ]
   }'
 
@@ -196,14 +204,15 @@ curl -X POST http://localhost:4000/api/v1/xml/validation-jobs \\
     "requestedChecks": [
       "worker_readiness",
       "xsd_ubl",
-      "schematron_peppol_placeholder"
+      "schematron_peppol",
+      "schematron_en16931"
     ],
     "completedChecks": [
       "worker_readiness",
       "xsd_ubl"
     ],
     "failedChecks": [
-      "schematron_peppol_placeholder"
+      "schematron_peppol"
     ],
     "findings": [
       {
@@ -224,6 +233,47 @@ curl -X POST http://localhost:4000/api/v1/xml/validation-jobs \\
                 <span />
                 <span />
                 <span />
+                <p>VIES evidence</p>
+              </div>
+
+              <pre>{`# Optional VIES evidence check.
+# Local format-valid is not VIES-valid. VIES unavailable is not invalid.
+# VIES valid is not legal, tax, accounting, filing, or compliance proof.
+
+curl -X POST http://localhost:4000/api/v1/vat/check-vies \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d '{
+    "countryCode": "DE",
+    "vatNumber": "DE123456789",
+    "partyRole": "buyer"
+  }'
+
+{
+  "status": "valid_invalid_unavailable_error_not_checked_unsupported_or_rate_limited",
+  "formatCheck": {
+    "formatValid": true,
+    "message": "Local format result only."
+  },
+  "viesCheck": {
+    "status": "valid",
+    "viesValid": true,
+    "checkedAt": "<timestamp>",
+    "source": {
+      "label": "VAT Information Exchange System (VIES)"
+    }
+  },
+  "disclaimer": "VIES evidence is time-of-check evidence only."
+}`}</pre>
+            </div>
+          </Reveal>
+
+          <Reveal>
+            <div className="terminal-shell subpage-terminal">
+              <div className="terminal-top">
+                <span />
+                <span />
+                <span />
                 <p>Scopes</p>
               </div>
 
@@ -234,8 +284,16 @@ xml:validation_jobs      POST /api/v1/xml/validation-jobs
 xml:validation_jobs      GET  /api/v1/xml/validation-jobs
 xml:validation_jobs      GET  /api/v1/xml/validation-jobs/:id
 vat:validate_format      POST /api/v1/vat/validate-format
+vat:check_vies           POST /api/v1/vat/check-vies
 rules:read               GET  /api/v1/validation/rules
 validation_runs:read     GET  /api/v1/validation-runs/:id
+
+Signed-in workspace production invoice lifecycle routes use Supabase session auth:
+GET    /api/v1/invoices
+GET    /api/v1/invoices/:id
+POST   /api/v1/invoices/from-draft
+POST   /api/v1/invoices/:id/transition
+POST   /api/v1/invoices/:id/export/ubl
 
 Invoice Lantern API keys provide access to sandbox technical validation tools only.
 They are not official filing credentials and do not provide tax authority submission capability.
@@ -257,6 +315,7 @@ They do not store request bodies, XML payloads, full API keys, full VAT IDs, or 
               <pre>{`Sandbox developer API limits:
 rules:read               120 requests per 15 minutes per API key
 vat:validate_format       60 requests per 15 minutes per API key
+vat:check_vies            20 requests per 15 minutes per API key
 invoices:validate         30 requests per 15 minutes per API key
 invoices:export_ubl       30 requests per 15 minutes per API key
 invoices:parse_ubl        30 requests per 15 minutes per API key

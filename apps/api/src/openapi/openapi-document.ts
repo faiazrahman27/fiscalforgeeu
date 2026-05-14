@@ -2456,6 +2456,21 @@ const openApiDocument = {
           },
           evidenceId: {
             type: "string"
+          },
+          countryPackVersion: {
+            type: "string",
+            description:
+              "Country-pack version attached to source-linked country simulation findings when present."
+          },
+          countryPackStatus: {
+            type: "string",
+            description:
+              "Country-pack review status attached to country simulation findings when present."
+          },
+          countryPackCountryCode: {
+            type: "string",
+            description:
+              "Country-pack country code attached to country simulation findings when present."
           }
         }
       },
@@ -6539,10 +6554,12 @@ const openApiDocument = {
           "status",
           "version",
           "lastReviewedAt",
+          "reviewerLabel",
           "vatNumber",
           "vatRates",
           "eInvoicingStatus",
           "sourceReferences",
+          "sourceCoverageSummary",
           "rules",
           "warnings",
           "legalConfidence",
@@ -6581,6 +6598,9 @@ const openApiDocument = {
             type: ["string", "null"],
             format: "date"
           },
+          reviewerLabel: {
+            type: "string"
+          },
           vatNumber: ref("CountryPackVatNumber"),
           vatRates: ref("CountryPackVatRates"),
           eInvoicingStatus: ref("CountryPackEInvoicingStatus"),
@@ -6588,6 +6608,7 @@ const openApiDocument = {
             type: "array",
             items: ref("CountryPackSourceReference")
           },
+          sourceCoverageSummary: ref("CountryPackSourceCoverageSummary"),
           rules: {
             type: "array",
             items: ref("CountryPackRule")
@@ -6716,6 +6737,8 @@ const openApiDocument = {
           "pattern",
           "localFormatCheck",
           "checksumCheck",
+          "notes",
+          "sourceRefs",
           "sourceRefIds"
         ],
         properties: {
@@ -6733,6 +6756,18 @@ const openApiDocument = {
           checksumCheck: {
             type: "boolean"
           },
+          exampleFormat: {
+            type: "string"
+          },
+          notes: {
+            type: "string"
+          },
+          sourceRefs: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
           sourceRefIds: {
             type: "array",
             items: {
@@ -6743,13 +6778,51 @@ const openApiDocument = {
       },
       CountryPackVatRates: {
         type: "object",
-        required: ["standard", "reduced", "sourceRefIds", "lastReviewedAt"],
+        required: [
+          "standard",
+          "reduced",
+          "superReduced",
+          "parking",
+          "zero",
+          "notes",
+          "sourceRefs",
+          "sourceRefIds",
+          "lastReviewedAt",
+          "confidenceStatus"
+        ],
         properties: {
           standard: {
             type: ["string", "null"],
             example: "27"
           },
           reduced: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          superReduced: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          parking: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          zero: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          notes: {
+            type: "string"
+          },
+          sourceRefs: {
             type: "array",
             items: {
               type: "string"
@@ -6764,12 +6837,25 @@ const openApiDocument = {
           lastReviewedAt: {
             type: ["string", "null"],
             format: "date"
+          },
+          confidenceStatus: {
+            type: "string"
           }
         }
       },
       CountryPackEInvoicingStatus: {
         type: "object",
-        required: ["b2g", "b2bDomestic", "b2bCrossBorder", "clearanceModel"],
+        required: [
+          "b2g",
+          "b2bDomestic",
+          "b2bCrossBorder",
+          "clearanceModel",
+          "platformNotes",
+          "effectiveDateNotes",
+          "sourceRefs",
+          "sourceRefIds",
+          "confidenceStatus"
+        ],
         properties: {
           b2g: {
             type: "string"
@@ -6782,6 +6868,27 @@ const openApiDocument = {
           },
           clearanceModel: {
             type: "string"
+          },
+          platformNotes: {
+            type: "string"
+          },
+          effectiveDateNotes: {
+            type: "string"
+          },
+          sourceRefs: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          confidenceStatus: {
+            type: "string"
           }
         }
       },
@@ -6793,7 +6900,9 @@ const openApiDocument = {
           "jurisdiction",
           "publisher",
           "url",
+          "sourceType",
           "reviewedAt",
+          "confidenceStatus",
           "confidence"
         ],
         properties: {
@@ -6813,6 +6922,21 @@ const openApiDocument = {
             type: "string",
             format: "uri"
           },
+          sourceType: {
+            type: "string",
+            enum: [
+              "eu_law",
+              "eu_guidance",
+              "national_tax_authority",
+              "national_einvoicing_authority",
+              "standard",
+              "peppol",
+              "vies",
+              "country_pack",
+              "legal_notice",
+              "other"
+            ]
+          },
           reviewedAt: {
             type: "string"
           },
@@ -6820,6 +6944,12 @@ const openApiDocument = {
             type: "string"
           },
           effectiveUntil: {
+            type: "string"
+          },
+          effectiveTo: {
+            type: "string"
+          },
+          confidenceStatus: {
             type: "string"
           },
           confidence: {
@@ -6835,17 +6965,25 @@ const openApiDocument = {
         required: [
           "code",
           "title",
+          "message",
           "description",
           "category",
           "severity",
           "legalConfidence",
-          "sourceRefIds"
+          "sourceRefs",
+          "sourceRefIds",
+          "version",
+          "reviewStatus",
+          "professionalReviewRequired"
         ],
         properties: {
           code: {
             type: "string"
           },
           title: {
+            type: "string"
+          },
+          message: {
             type: "string"
           },
           description: {
@@ -6874,6 +7012,21 @@ const openApiDocument = {
             items: {
               type: "string"
             }
+          },
+          sourceRefs: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          version: {
+            type: "string"
+          },
+          reviewStatus: {
+            type: "string"
+          },
+          professionalReviewRequired: {
+            type: "boolean"
           }
         }
       },
@@ -6901,6 +7054,46 @@ const openApiDocument = {
               "educational_simulation",
               "professional_review_required"
             ]
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          }
+        }
+      },
+      CountryPackSourceCoverageSummary: {
+        type: "object",
+        required: [
+          "vatNumber",
+          "vatRates",
+          "eInvoicing",
+          "rules",
+          "overall",
+          "missingSourceWarnings"
+        ],
+        properties: {
+          vatNumber: {
+            type: "string"
+          },
+          vatRates: {
+            type: "string"
+          },
+          eInvoicing: {
+            type: "string"
+          },
+          rules: {
+            type: "string"
+          },
+          overall: {
+            type: "string"
+          },
+          missingSourceWarnings: {
+            type: "array",
+            items: {
+              type: "string"
+            }
           }
         }
       },

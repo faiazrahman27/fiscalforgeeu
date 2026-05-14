@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -16,6 +16,7 @@ type CountryPackWarning = {
   severity: string;
   message: string;
   legalConfidence: string;
+  sourceRefIds: string[];
 };
 
 type CountryPackSourceReference = {
@@ -24,9 +25,12 @@ type CountryPackSourceReference = {
   jurisdiction: string;
   publisher: string;
   url: string;
+  sourceType: string;
   reviewedAt: string;
   effectiveFrom?: string;
+  effectiveTo?: string;
   effectiveUntil?: string;
+  confidenceStatus: string;
   confidence: string;
   notes?: string;
 };
@@ -34,11 +38,16 @@ type CountryPackSourceReference = {
 type CountryPackRule = {
   code: string;
   title: string;
+  message: string;
   description: string;
   category: string;
   severity: string;
   legalConfidence: string;
+  sourceRefs: string[];
   sourceRefIds: string[];
+  version: string;
+  reviewStatus: string;
+  professionalReviewRequired: boolean;
 };
 
 type CountryPackRegistry = {
@@ -70,26 +79,49 @@ type CountryPack = {
   status: string;
   version: string;
   lastReviewedAt: string | null;
+  reviewerLabel: string;
   vatNumber: {
     prefix: string;
     pattern: string;
     localFormatCheck: boolean;
     checksumCheck: boolean;
+    exampleFormat: string | null;
+    notes: string;
+    sourceRefs: string[];
     sourceRefIds: string[];
   };
   vatRates: {
     standard: string | null;
     reduced: string[];
+    superReduced: string[];
+    parking: string[];
+    zero: string[];
+    notes: string;
+    sourceRefs: string[];
     sourceRefIds: string[];
     lastReviewedAt: string | null;
+    confidenceStatus: string;
   };
   eInvoicingStatus: {
     b2g: string;
     b2bDomestic: string;
     b2bCrossBorder: string;
     clearanceModel: string;
+    platformNotes: string;
+    effectiveDateNotes: string;
+    sourceRefs: string[];
+    sourceRefIds: string[];
+    confidenceStatus: string;
   };
   sourceReferences: CountryPackSourceReference[];
+  sourceCoverageSummary: {
+    vatNumber: string;
+    vatRates: string;
+    eInvoicing: string;
+    rules: string;
+    overall: string;
+    missingSourceWarnings: string[];
+  };
   rules: CountryPackRule[];
   warnings: CountryPackWarning[];
   legalConfidence: string;
@@ -270,9 +302,12 @@ function normalizeSourceReference(
     jurisdiction: readStringField(value, "jurisdiction", "unknown"),
     publisher: readStringField(value, "publisher", "unknown"),
     url: readStringField(value, "url"),
+    sourceType: readStringField(value, "sourceType", "other"),
     reviewedAt: readStringField(value, "reviewedAt", "not reviewed"),
     effectiveFrom: readStringField(value, "effectiveFrom"),
+    effectiveTo: readStringField(value, "effectiveTo"),
     effectiveUntil: readStringField(value, "effectiveUntil"),
+    confidenceStatus: readStringField(value, "confidenceStatus", "draft"),
     confidence: readStringField(value, "confidence", "draft"),
     notes: readStringField(value, "notes")
   };
@@ -297,7 +332,8 @@ function normalizeWarning(value: unknown): CountryPackWarning | null {
       value,
       "legalConfidence",
       "educational_simulation"
-    )
+    ),
+    sourceRefIds: readStringArrayField(value, "sourceRefIds")
   };
 }
 
@@ -315,6 +351,7 @@ function normalizeRule(value: unknown): CountryPackRule | null {
   return {
     code,
     title: readStringField(value, "title", code),
+    message: readStringField(value, "message"),
     description: readStringField(value, "description"),
     category: readStringField(value, "category", "COUNTRY_PACK"),
     severity: readStringField(value, "severity", "info"),
@@ -323,7 +360,14 @@ function normalizeRule(value: unknown): CountryPackRule | null {
       "legalConfidence",
       "educational_simulation"
     ),
-    sourceRefIds: readStringArrayField(value, "sourceRefIds")
+    sourceRefs: readStringArrayField(value, "sourceRefs"),
+    sourceRefIds: readStringArrayField(value, "sourceRefIds"),
+    version: readStringField(value, "version", "unversioned"),
+    reviewStatus: readStringField(value, "reviewStatus", "draft"),
+    professionalReviewRequired: readBooleanField(
+      value,
+      "professionalReviewRequired"
+    )
   };
 }
 
@@ -394,6 +438,9 @@ function normalizeCountryPack(value: unknown): CountryPack | null {
   const eInvoicingStatus = isPlainObject(value.eInvoicingStatus)
     ? value.eInvoicingStatus
     : {};
+  const sourceCoverageSummary = isPlainObject(value.sourceCoverageSummary)
+    ? value.sourceCoverageSummary
+    : {};
 
   return {
     countryCode,
@@ -403,18 +450,28 @@ function normalizeCountryPack(value: unknown): CountryPack | null {
     status: readStringField(value, "status", "draft"),
     version: readStringField(value, "version", "unversioned"),
     lastReviewedAt: readNullableStringField(value, "lastReviewedAt"),
+    reviewerLabel: readStringField(value, "reviewerLabel", "not recorded"),
     vatNumber: {
       prefix: readStringField(vatNumber, "prefix", countryCode),
       pattern: readStringField(vatNumber, "pattern"),
       localFormatCheck: readBooleanField(vatNumber, "localFormatCheck"),
       checksumCheck: readBooleanField(vatNumber, "checksumCheck"),
+      exampleFormat: readNullableStringField(vatNumber, "exampleFormat"),
+      notes: readStringField(vatNumber, "notes"),
+      sourceRefs: readStringArrayField(vatNumber, "sourceRefs"),
       sourceRefIds: readStringArrayField(vatNumber, "sourceRefIds")
     },
     vatRates: {
       standard: readNullableStringField(vatRates, "standard"),
       reduced: readStringArrayField(vatRates, "reduced"),
+      superReduced: readStringArrayField(vatRates, "superReduced"),
+      parking: readStringArrayField(vatRates, "parking"),
+      zero: readStringArrayField(vatRates, "zero"),
+      notes: readStringField(vatRates, "notes"),
+      sourceRefs: readStringArrayField(vatRates, "sourceRefs"),
       sourceRefIds: readStringArrayField(vatRates, "sourceRefIds"),
-      lastReviewedAt: readNullableStringField(vatRates, "lastReviewedAt")
+      lastReviewedAt: readNullableStringField(vatRates, "lastReviewedAt"),
+      confidenceStatus: readStringField(vatRates, "confidenceStatus", "unknown")
     },
     eInvoicingStatus: {
       b2g: readStringField(eInvoicingStatus, "b2g", "unknown"),
@@ -428,6 +485,18 @@ function normalizeCountryPack(value: unknown): CountryPack | null {
         eInvoicingStatus,
         "clearanceModel",
         "unknown"
+      ),
+      platformNotes: readStringField(eInvoicingStatus, "platformNotes"),
+      effectiveDateNotes: readStringField(
+        eInvoicingStatus,
+        "effectiveDateNotes"
+      ),
+      sourceRefs: readStringArrayField(eInvoicingStatus, "sourceRefs"),
+      sourceRefIds: readStringArrayField(eInvoicingStatus, "sourceRefIds"),
+      confidenceStatus: readStringField(
+        eInvoicingStatus,
+        "confidenceStatus",
+        "unknown"
       )
     },
     sourceReferences: Array.isArray(value.sourceReferences)
@@ -435,6 +504,21 @@ function normalizeCountryPack(value: unknown): CountryPack | null {
           .map((source) => normalizeSourceReference(source))
           .filter((source): source is CountryPackSourceReference => source !== null)
       : [],
+    sourceCoverageSummary: {
+      vatNumber: readStringField(sourceCoverageSummary, "vatNumber", "unknown"),
+      vatRates: readStringField(sourceCoverageSummary, "vatRates", "unknown"),
+      eInvoicing: readStringField(
+        sourceCoverageSummary,
+        "eInvoicing",
+        "unknown"
+      ),
+      rules: readStringField(sourceCoverageSummary, "rules", "unknown"),
+      overall: readStringField(sourceCoverageSummary, "overall", "unknown"),
+      missingSourceWarnings: readStringArrayField(
+        sourceCoverageSummary,
+        "missingSourceWarnings"
+      )
+    },
     rules: Array.isArray(value.rules)
       ? value.rules
           .map((rule) => normalizeRule(rule))
@@ -461,6 +545,9 @@ export default function WorkspaceCountryPacksPage() {
   const [countryPacksMessage, setCountryPacksMessage] = useState("");
   const [selectedCountryCode, setSelectedCountryCode] = useState("HU");
   const [catalogRegistrySource, setCatalogRegistrySource] = useState("unknown");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [coverageFilter, setCoverageFilter] = useState("all");
 
   useEffect(() => {
     let isMounted = true;
@@ -541,6 +628,26 @@ export default function WorkspaceCountryPacksPage() {
     [countryPacks, selectedCountryCode]
   );
 
+  const filteredCountryPacks = useMemo(() => {
+    const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+
+    return countryPacks.filter((countryPack) => {
+      const matchesSearch =
+        !normalizedSearchQuery ||
+        countryPack.countryCode.toLowerCase().includes(normalizedSearchQuery) ||
+        countryPack.countryName.toLowerCase().includes(normalizedSearchQuery);
+      const matchesStatus =
+        statusFilter === "all" || countryPack.status === statusFilter;
+      const matchesCoverage =
+        coverageFilter === "all" ||
+        countryPack.sourceCoverageSummary.overall === coverageFilter ||
+        countryPack.sourceCoverageSummary.vatRates === coverageFilter ||
+        countryPack.sourceCoverageSummary.eInvoicing === coverageFilter;
+
+      return matchesSearch && matchesStatus && matchesCoverage;
+    });
+  }, [countryPacks, coverageFilter, searchQuery, statusFilter]);
+
   const euMemberStateCount = useMemo(
     () => countryPacks.filter((countryPack) => countryPack.euMemberState).length,
     [countryPacks]
@@ -561,6 +668,25 @@ export default function WorkspaceCountryPacksPage() {
       countryPacks.filter(
         (countryPack) => countryPack.registry.registrySource === "database"
       ).length,
+    [countryPacks]
+  );
+
+  const availableStatuses = useMemo(
+    () => [...new Set(countryPacks.map((countryPack) => countryPack.status))].sort(),
+    [countryPacks]
+  );
+
+  const availableCoverageStatuses = useMemo(
+    () =>
+      [
+        ...new Set(
+          countryPacks.flatMap((countryPack) => [
+            countryPack.sourceCoverageSummary.overall,
+            countryPack.sourceCoverageSummary.vatRates,
+            countryPack.sourceCoverageSummary.eInvoicing
+          ])
+        )
+      ].sort(),
     [countryPacks]
   );
 
@@ -658,6 +784,47 @@ export default function WorkspaceCountryPacksPage() {
           </div>
         ) : null}
 
+        <div className="workspace-form-grid">
+          <label>
+            <span>Search</span>
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="DE, Hungary, EU"
+            />
+          </label>
+
+          <label>
+            <span>Status</span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">All statuses</option>
+              {availableStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {formatStatus(status)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <span>Source coverage</span>
+            <select
+              value={coverageFilter}
+              onChange={(event) => setCoverageFilter(event.target.value)}
+            >
+              <option value="all">All coverage levels</option>
+              {availableCoverageStatuses.map((status) => (
+                <option key={status} value={status}>
+                  {formatStatus(status)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
         <div className="workspace-data-grid">
           {isLoadingCountryPacks ? (
             <div className="workspace-data-card is-full">
@@ -674,8 +841,14 @@ export default function WorkspaceCountryPacksPage() {
                 wired into the API yet.
               </span>
             </div>
+          ) : filteredCountryPacks.length === 0 ? (
+            <div className="workspace-data-card is-full">
+              <p>No matching packs</p>
+              <strong>No country packs matched the active filters.</strong>
+              <span>Clear the search, status, or source-coverage filters.</span>
+            </div>
           ) : (
-            countryPacks.map((countryPack) => (
+            filteredCountryPacks.map((countryPack) => (
               <button
                 className="workspace-data-card is-wide"
                 key={countryPack.countryCode}
@@ -693,6 +866,10 @@ export default function WorkspaceCountryPacksPage() {
                   Lifecycle: {formatStatus(countryPack.registry.lifecycleStatus)}.
                   Version: {countryPack.registry.packVersion}. Currency:{" "}
                   {countryPack.defaultCurrency}.
+                </span>
+                <span>
+                  Pack status: {formatStatus(countryPack.status)}. Coverage:{" "}
+                  {formatStatus(countryPack.sourceCoverageSummary.overall)}.
                 </span>
               </button>
             ))
@@ -788,15 +965,64 @@ export default function WorkspaceCountryPacksPage() {
                     "country-specific review pending"}.
                 </p>
                 <p>
+                  Reviewer: {selectedCountryPack.reviewerLabel}. Legal
+                  confidence:{" "}
+                  {formatLegalConfidence(selectedCountryPack.legalConfidence)}.
+                </p>
+                <p>
                   B2G: {formatStatus(selectedCountryPack.eInvoicingStatus.b2g)}.
                   B2B domestic:{" "}
                   {formatStatus(selectedCountryPack.eInvoicingStatus.b2bDomestic)}.
                   Cross-border B2B:{" "}
                   {formatStatus(selectedCountryPack.eInvoicingStatus.b2bCrossBorder)}.
                 </p>
+                <p>
+                  Clearance model:{" "}
+                  {formatStatus(selectedCountryPack.eInvoicingStatus.clearanceModel)}.
+                  E-invoicing confidence:{" "}
+                  {formatStatus(
+                    selectedCountryPack.eInvoicingStatus.confidenceStatus
+                  )}.
+                </p>
+                <p>
+                  {selectedCountryPack.eInvoicingStatus.platformNotes ||
+                    "No platform notes returned."}
+                </p>
               </div>
 
               <span>{selectedCountryPack.status}</span>
+            </div>
+
+            <div className="finding-console-row">
+              <Layers3 size={18} />
+
+              <div>
+                <strong>{selectedCountryPack.countryCode}_SOURCE_COVERAGE</strong>
+                <p>
+                  Overall:{" "}
+                  {formatStatus(selectedCountryPack.sourceCoverageSummary.overall)}.
+                  VAT number:{" "}
+                  {formatStatus(selectedCountryPack.sourceCoverageSummary.vatNumber)}.
+                  VAT rates:{" "}
+                  {formatStatus(selectedCountryPack.sourceCoverageSummary.vatRates)}.
+                  E-invoicing:{" "}
+                  {formatStatus(
+                    selectedCountryPack.sourceCoverageSummary.eInvoicing
+                  )}.
+                </p>
+                <p>
+                  {selectedCountryPack.sourceCoverageSummary.missingSourceWarnings
+                    .length > 0
+                    ? selectedCountryPack.sourceCoverageSummary.missingSourceWarnings.join(
+                        " "
+                      )
+                    : "No source coverage warnings returned."}
+                </p>
+              </div>
+
+              <span>
+                {formatStatus(selectedCountryPack.sourceCoverageSummary.overall)}
+              </span>
             </div>
 
             <div className="finding-console-row">
@@ -809,6 +1035,15 @@ export default function WorkspaceCountryPacksPage() {
                   {selectedCountryPack.vatNumber.pattern || "not configured"}.
                 </p>
                 <p>
+                  Example:{" "}
+                  {selectedCountryPack.vatNumber.exampleFormat ??
+                    "not provided"}.
+                  Sources:{" "}
+                  {selectedCountryPack.vatNumber.sourceRefIds.length > 0
+                    ? selectedCountryPack.vatNumber.sourceRefIds.join(", ")
+                    : "not linked"}.
+                </p>
+                <p>
                   Local format check:{" "}
                   {selectedCountryPack.vatNumber.localFormatCheck
                     ? "enabled"
@@ -818,6 +1053,7 @@ export default function WorkspaceCountryPacksPage() {
                     ? "enabled"
                     : "not enabled"}.
                 </p>
+                <p>{selectedCountryPack.vatNumber.notes}</p>
               </div>
 
               <span>technical</span>
@@ -830,17 +1066,36 @@ export default function WorkspaceCountryPacksPage() {
                 <strong>{selectedCountryPack.countryCode}_VAT_RATES</strong>
                 <p>
                   Standard VAT rate:{" "}
-                  {selectedCountryPack.vatRates.standard ?? "not stored yet"}.
+                  {selectedCountryPack.vatRates.standard ??
+                    "not reviewed / professional review required"}.
                   Reduced rates:{" "}
                   {selectedCountryPack.vatRates.reduced.length > 0
                     ? selectedCountryPack.vatRates.reduced.join(", ")
-                    : "not stored yet"}.
+                    : "not reviewed / professional review required"}.
+                </p>
+                <p>
+                  Super-reduced:{" "}
+                  {selectedCountryPack.vatRates.superReduced.length > 0
+                    ? selectedCountryPack.vatRates.superReduced.join(", ")
+                    : "not reviewed"}
+                  . Parking:{" "}
+                  {selectedCountryPack.vatRates.parking.length > 0
+                    ? selectedCountryPack.vatRates.parking.join(", ")
+                    : "not reviewed"}
+                  . Zero:{" "}
+                  {selectedCountryPack.vatRates.zero.length > 0
+                    ? selectedCountryPack.vatRates.zero.join(", ")
+                    : "not reviewed"}
+                  .
                 </p>
                 <p>
                   VAT-rate review date:{" "}
                   {selectedCountryPack.vatRates.lastReviewedAt ??
                     "country-specific source review pending"}.
+                  Confidence:{" "}
+                  {formatStatus(selectedCountryPack.vatRates.confidenceStatus)}.
                 </p>
+                <p>{selectedCountryPack.vatRates.notes}</p>
               </div>
 
               <span>review</span>
@@ -868,6 +1123,10 @@ export default function WorkspaceCountryPacksPage() {
                   <p>
                     Legal confidence:{" "}
                     {formatLegalConfidence(warning.legalConfidence)}.
+                    Sources:{" "}
+                    {warning.sourceRefIds.length > 0
+                      ? warning.sourceRefIds.join(", ")
+                      : "not linked"}.
                   </p>
                 </div>
 
@@ -882,6 +1141,7 @@ export default function WorkspaceCountryPacksPage() {
                 <div>
                   <strong>{rule.code}</strong>
                   <p>{rule.title}</p>
+                  <p>{rule.message}</p>
                   <p>{rule.description}</p>
                   <p>
                     Category: {rule.category}. Legal confidence:{" "}
@@ -889,6 +1149,11 @@ export default function WorkspaceCountryPacksPage() {
                     {rule.sourceRefIds.length > 0
                       ? rule.sourceRefIds.join(", ")
                       : "No source reference"}.
+                  </p>
+                  <p>
+                    Version: {rule.version}. Review status:{" "}
+                    {formatStatus(rule.reviewStatus)}. Professional review:{" "}
+                    {rule.professionalReviewRequired ? "required" : "not flagged"}.
                   </p>
                 </div>
 
@@ -906,8 +1171,21 @@ export default function WorkspaceCountryPacksPage() {
                     Publisher: {sourceReference.publisher}. Jurisdiction:{" "}
                     {sourceReference.jurisdiction}. Reviewed:{" "}
                     {sourceReference.reviewedAt}. Confidence:{" "}
-                    {formatStatus(sourceReference.confidence)}.
+                    {formatStatus(sourceReference.confidenceStatus)}.
+                    Source type: {formatStatus(sourceReference.sourceType)}.
                   </p>
+                  {sourceReference.url ? (
+                    <p>
+                      URL:{" "}
+                      <a
+                        href={sourceReference.url}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        {sourceReference.url}
+                      </a>
+                    </p>
+                  ) : null}
                   <p>{sourceReference.notes || "No additional source notes."}</p>
                 </div>
 

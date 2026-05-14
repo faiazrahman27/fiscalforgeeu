@@ -1,6 +1,7 @@
 import {
   getCountryPack,
   listCountryPacks,
+  normalizeCountryCode,
   type CountryPack
 } from "@invoice-lantern/country-packs";
 import {
@@ -216,7 +217,7 @@ export async function listCountryPackCatalog(): Promise<CountryPackCatalog> {
 export async function getCountryPackCatalogItem(
   countryCode: string
 ): Promise<CountryPackCatalogItem | null> {
-  const normalizedCountryCode = countryCode.trim().toUpperCase();
+  const normalizedCountryCode = normalizeCountryCode(countryCode);
   const catalog = await listCountryPackCatalog();
   const catalogItem = catalog.countryPacks.find(
     (pack) => pack.countryCode === normalizedCountryCode

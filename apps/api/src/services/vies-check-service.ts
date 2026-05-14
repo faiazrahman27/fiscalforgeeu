@@ -120,7 +120,9 @@ export function resetViesServiceTestingOverrides() {
 }
 
 function normalizeCountryCode(value: string) {
-  return value.trim().toUpperCase();
+  const normalized = value.trim().toUpperCase();
+
+  return normalized === "GR" ? "EL" : normalized;
 }
 
 function stripCountryPrefix(normalizedVatNumber: string, countryCode: string) {
@@ -431,7 +433,7 @@ export async function checkViesEvidence(
   const vatNumberNormalized = formatCheck.normalized.trim().toUpperCase();
   const vatNumberWithoutPrefix = stripCountryPrefix(
     vatNumberNormalized,
-    countryCode
+    formatCheck.countryCode ?? countryCode
   );
 
   if (input.useCacheOnly) {

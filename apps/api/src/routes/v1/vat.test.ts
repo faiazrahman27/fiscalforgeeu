@@ -453,6 +453,51 @@ test("VIES endpoint parses and persists a valid mocked response safely", async (
   assert.doesNotMatch(rawStoredEvidence, /checkVatResponse/i);
 });
 
+test("VIES endpoint maps Greece country code to the EL VAT prefix", async (t) => {
+  const app = await buildApp();
+  let transportBody = "";
+
+  t.after(async () => {
+    resetViesServiceTestingOverrides();
+    await app.close();
+  });
+
+  enableMockedVies();
+  setViesTransportForTesting(async (request) => {
+    transportBody = request.body;
+
+    return {
+      statusCode: 200,
+      body: buildViesSoapResponse({
+        countryCode: "EL",
+        vatNumber: "123456789",
+        valid: true
+      }),
+      responseTimeMs: 30
+    };
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/vat/check-vies",
+    headers: apiHeaders(),
+    payload: JSON.stringify({
+      countryCode: "GR",
+      vatNumber: "123456789"
+    })
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(transportBody, /<urn:countryCode>EL<\/urn:countryCode>/);
+  assert.match(transportBody, /<urn:vatNumber>123456789<\/urn:vatNumber>/);
+
+  const body = response.json() as Record<string, unknown>;
+
+  assert.equal(body.status, "valid");
+  assert.equal((body.formatCheck as Record<string, unknown>).countryCode, "EL");
+  assert.equal((body.evidence as Record<string, unknown>).countryCode, "EL");
+});
+
 test("VIES endpoint parses a mocked invalid response without treating format as VIES-valid", async (t) => {
   const app = await buildApp();
 

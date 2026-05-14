@@ -466,6 +466,9 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
       const hasFatal = hasBlockingFinding(findings);
       const hasWarning = hasWarningFinding(findings);
       const isCrossBorder = isCrossBorderInvoice(payload);
+      const hasCountryPackFinding = findings.some(
+        (finding) => finding.category === "COUNTRY_PACK"
+      );
 
       /*
        * Local JSON fallback still uses a readable development ID.
@@ -482,14 +485,16 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
         : "ready";
 
       const countrySimulationStatus: ValidationRunRecord["countrySimulationStatus"] =
-        isCrossBorder ? "review_required" : "not_relevant";
+        isCrossBorder || hasCountryPackFinding ? "review_required" : "not_relevant";
 
       const vidaReadinessStatus: ValidationRunRecord["vidaReadinessStatus"] =
         isCrossBorder ? "relevant_simulation" : "not_relevant";
 
       const confidence: ValidationRunRecord["confidence"] = isCrossBorder
         ? "educational_simulation"
-        : "technical_preview";
+        : hasCountryPackFinding
+          ? "educational_simulation"
+          : "technical_preview";
 
       const disclaimer = `${buildSandboxDisclaimer("validation")} ${engineResult.disclaimer}`;
 

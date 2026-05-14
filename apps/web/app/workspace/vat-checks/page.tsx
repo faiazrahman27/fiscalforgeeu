@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -26,6 +26,61 @@ type VatCheckRecord = {
   warnings: string[];
   disclaimer: string;
   createdAt: string;
+};
+
+type ViesStatus =
+  | "valid"
+  | "invalid"
+  | "unavailable"
+  | "error"
+  | "not_checked"
+  | "unsupported"
+  | "rate_limited";
+
+type ViesFormatCheckResult = {
+  normalized: string;
+  countryCode: string | null;
+  countryName: string | null;
+  formatValid: boolean;
+  message: string;
+  warnings: string[];
+  disclaimer: string;
+};
+
+type ViesEvidenceSummary = {
+  id: string;
+  status: ViesStatus;
+  checkedAt: string;
+  sourceLabel: string | null;
+  sourceUrl: string | null;
+  responseTimeMs: number | null;
+  errorCode: string | null;
+  errorMessageSafe: string | null;
+  requestIdentifier: string | null;
+  viesName: string | null;
+  createdAt: string;
+};
+
+type ViesFinding = {
+  code: string;
+  severity: string;
+  category: string;
+  message: string;
+  legalConfidence: string;
+  fixSuggestion: string | null;
+  sourceLabels: string[];
+};
+
+type ViesCheckResult = {
+  status: ViesStatus;
+  viesValid: boolean | null;
+  checkedAt: string;
+  sourceLabel: string | null;
+  sourceUrl: string | null;
+  disclaimer: string;
+  formatCheck: ViesFormatCheckResult | null;
+  evidence: ViesEvidenceSummary | null;
+  findings: ViesFinding[];
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -64,6 +119,12 @@ function readNullableStringField(record: Record<string, unknown>, key: string) {
   return typeof value === "string" && value.trim().length > 0
     ? value.trim()
     : null;
+}
+
+function readNullableNumberField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function normalizePartyRole(value: unknown): VatCheckPartyRole | null {
@@ -121,6 +182,127 @@ function normalizeVatCheckRecord(value: unknown): VatCheckRecord | null {
   };
 }
 
+function normalizeViesStatus(value: unknown): ViesStatus | null {
+  if (
+    value === "valid" ||
+    value === "invalid" ||
+    value === "unavailable" ||
+    value === "error" ||
+    value === "not_checked" ||
+    value === "unsupported" ||
+    value === "rate_limited"
+  ) {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function normalizeViesFormatCheck(value: unknown): ViesFormatCheckResult | null {
+  if (!isPlainObject(value) || typeof value.formatValid !== "boolean") {
+    return null;
+  }
+
+  return {
+    normalized: readStringField(value, "normalized"),
+    countryCode: readNullableStringField(value, "countryCode"),
+    countryName: readNullableStringField(value, "countryName"),
+    formatValid: value.formatValid,
+    message: readStringField(value, "message"),
+    warnings: normalizeStringArray(value.warnings),
+    disclaimer: readStringField(value, "disclaimer")
+  };
+}
+
+function normalizeViesEvidence(value: unknown): ViesEvidenceSummary | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const status = normalizeViesStatus(value.status);
+  const id = readStringField(value, "id");
+  const checkedAt = readStringField(value, "checkedAt");
+  const createdAt = readStringField(value, "createdAt");
+
+  if (!status || !id || !checkedAt || !createdAt) {
+    return null;
+  }
+
+  return {
+    id,
+    status,
+    checkedAt,
+    sourceLabel: readNullableStringField(value, "sourceLabel"),
+    sourceUrl: readNullableStringField(value, "sourceUrl"),
+    responseTimeMs: readNullableNumberField(value, "responseTimeMs"),
+    errorCode: readNullableStringField(value, "errorCode"),
+    errorMessageSafe: readNullableStringField(value, "errorMessageSafe"),
+    requestIdentifier: readNullableStringField(value, "requestIdentifier"),
+    viesName: readNullableStringField(value, "viesName"),
+    createdAt
+  };
+}
+
+function normalizeViesFinding(value: unknown): ViesFinding | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const code = readStringField(value, "code");
+  const message = readStringField(value, "message");
+
+  if (!code || !message) {
+    return null;
+  }
+
+  return {
+    code,
+    severity: readStringField(value, "severity", "warning"),
+    category: readStringField(value, "category", "VIES"),
+    message,
+    legalConfidence: readStringField(value, "legalConfidence", "technical"),
+    fixSuggestion: readNullableStringField(value, "fixSuggestion"),
+    sourceLabels: normalizeStringArray(value.sourceLabels)
+  };
+}
+
+function normalizeViesCheckResult(value: unknown): ViesCheckResult | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const status = normalizeViesStatus(value.status);
+  const viesCheck = isPlainObject(value.viesCheck) ? value.viesCheck : {};
+  const source = isPlainObject(value.source) ? value.source : {};
+
+  if (!status) {
+    return null;
+  }
+
+  return {
+    status,
+    viesValid:
+      typeof viesCheck.viesValid === "boolean" ? viesCheck.viesValid : null,
+    checkedAt: readStringField(value, "checkedAt"),
+    sourceLabel: readNullableStringField(source, "label"),
+    sourceUrl: readNullableStringField(source, "url"),
+    disclaimer: readStringField(value, "disclaimer"),
+    formatCheck: normalizeViesFormatCheck(value.formatCheck),
+    evidence: normalizeViesEvidence(value.evidence),
+    findings: Array.isArray(value.findings)
+      ? value.findings
+          .map((finding) => normalizeViesFinding(finding))
+          .filter((finding): finding is ViesFinding => finding !== null)
+      : []
+  };
+}
+
 function getRecordsFromResponse(value: unknown) {
   if (!isPlainObject(value) || !Array.isArray(value.records)) {
     return [];
@@ -170,10 +352,32 @@ function formatSource(value: string) {
   return value.replaceAll("_", " ");
 }
 
+function formatViesStatus(value: ViesStatus) {
+  return value.replaceAll("_", " ");
+}
+
+function formatViesValidity(value: boolean | null) {
+  if (value === true) {
+    return "VIES valid at check time";
+  }
+
+  if (value === false) {
+    return "VIES invalid at check time";
+  }
+
+  return "No VIES validity evidence";
+}
+
 export default function WorkspaceVatChecksPage() {
   const [records, setRecords] = useState<VatCheckRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [viesCountryCode, setViesCountryCode] = useState("DE");
+  const [viesVatNumber, setViesVatNumber] = useState("");
+  const [viesPartyRole, setViesPartyRole] = useState<VatCheckPartyRole>("seller");
+  const [viesResult, setViesResult] = useState<ViesCheckResult | null>(null);
+  const [viesMessage, setViesMessage] = useState("");
+  const [isCheckingVies, setIsCheckingVies] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -225,6 +429,49 @@ export default function WorkspaceVatChecksPage() {
       isMounted = false;
     };
   }, []);
+
+  async function handleViesSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsCheckingVies(true);
+    setViesMessage("");
+    setViesResult(null);
+
+    try {
+      const response = await fetch("/api/local/vat/check-vies", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          countryCode: viesCountryCode.trim().toUpperCase(),
+          vatNumber: viesVatNumber.trim(),
+          partyRole: viesPartyRole
+        }),
+        cache: "no-store"
+      });
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setViesMessage(getApiErrorMessage(responseData));
+        return;
+      }
+
+      const normalizedResult = normalizeViesCheckResult(responseData);
+
+      if (!normalizedResult) {
+        setViesMessage("The VIES evidence response could not be read safely.");
+        return;
+      }
+
+      setViesResult(normalizedResult);
+    } catch {
+      setViesMessage(
+        "VIES evidence check is unavailable through the local API proxy. Make sure apps/api is running."
+      );
+    } finally {
+      setIsCheckingVies(false);
+    }
+  }
 
   const counts = useMemo(() => {
     return {
@@ -294,6 +541,190 @@ export default function WorkspaceVatChecksPage() {
             </p>
           </div>
         </div>
+      </section>
+
+      <section className="workspace-table-shell">
+        <div className="workspace-table-head">
+          <div>
+            <p>VIES evidence</p>
+            <h3>Optional time-of-check check</h3>
+          </div>
+
+          <span className="status-pill">
+            {viesResult ? formatViesStatus(viesResult.status) : "not checked"}
+          </span>
+        </div>
+
+        <form className="workspace-form-grid" onSubmit={handleViesSubmit}>
+          <label>
+            <span>Country code</span>
+            <input
+              maxLength={2}
+              value={viesCountryCode}
+              onChange={(event) => setViesCountryCode(event.target.value)}
+              placeholder="DE"
+            />
+          </label>
+
+          <label>
+            <span>VAT number</span>
+            <input
+              value={viesVatNumber}
+              onChange={(event) => setViesVatNumber(event.target.value)}
+              placeholder="DE123456789"
+            />
+          </label>
+
+          <label>
+            <span>Party role</span>
+            <select
+              value={viesPartyRole}
+              onChange={(event) =>
+                setViesPartyRole(event.target.value as VatCheckPartyRole)
+              }
+            >
+              <option value="seller">Seller</option>
+              <option value="buyer">Buyer</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+
+          <button
+            className="workspace-auth-action"
+            type="submit"
+            disabled={isCheckingVies || !viesVatNumber.trim() || !viesCountryCode.trim()}
+          >
+            {isCheckingVies ? "Checking VIES" : "Check VIES evidence"}
+          </button>
+        </form>
+
+        {viesMessage ? (
+          <div className="alert-item">
+            <span />
+            <p>{viesMessage}</p>
+          </div>
+        ) : null}
+
+        {viesResult ? (
+          <div className="workspace-data-grid">
+            <article className="workspace-data-card">
+              <span>Local format result</span>
+              <strong>
+                {viesResult.formatCheck?.formatValid
+                  ? "Format matched"
+                  : "Format did not match"}
+              </strong>
+              <p>
+                {viesResult.formatCheck?.message ??
+                  "Local format result was not returned."}
+              </p>
+              <p>
+                Country:{" "}
+                {viesResult.formatCheck?.countryCode ??
+                  (viesCountryCode.trim().toUpperCase() || "not detected")}
+                {viesResult.formatCheck?.countryName
+                  ? ` (${viesResult.formatCheck.countryName})`
+                  : ""}
+                . Warnings: {viesResult.formatCheck?.warnings.length ?? 0}.
+              </p>
+              <p>
+                Format valid is not VIES valid and is not proof of VAT
+                registration.
+              </p>
+            </article>
+
+            <article className="workspace-data-card">
+              <span>VIES evidence result</span>
+              <strong>{formatViesStatus(viesResult.status)}</strong>
+              <p>{formatViesValidity(viesResult.viesValid)}</p>
+              <p>
+                Checked:{" "}
+                {viesResult.checkedAt
+                  ? formatDateTime(viesResult.checkedAt)
+                  : "not recorded"}
+                . Source: {viesResult.sourceLabel ?? "VIES"}.
+              </p>
+              <p>
+                VIES unavailable is not invalid. VIES valid is not legal, tax,
+                accounting, filing, or compliance proof.
+              </p>
+            </article>
+
+            <article className="workspace-data-card">
+              <span>Evidence metadata</span>
+              <strong>{viesResult.evidence?.id ?? "No cached evidence"}</strong>
+              <p>
+                Status:{" "}
+                {viesResult.evidence
+                  ? formatViesStatus(viesResult.evidence.status)
+                  : "not checked"}
+                . Response time:{" "}
+                {viesResult.evidence?.responseTimeMs !== null &&
+                viesResult.evidence?.responseTimeMs !== undefined
+                  ? `${viesResult.evidence.responseTimeMs} ms`
+                  : "not recorded"}
+                .
+              </p>
+              <p>
+                Request ID: {viesResult.evidence?.requestIdentifier ?? "not returned"}.
+                Error: {viesResult.evidence?.errorCode ?? "none"}.
+              </p>
+              <p>
+                {viesResult.evidence?.errorMessageSafe ??
+                  "No safe VIES error message returned."}
+              </p>
+            </article>
+          </div>
+        ) : (
+          <div className="alert-item">
+            <span />
+            <p>
+              No VIES evidence check has been run in this page session. VIES
+              evidence depends on EU and national systems at the time of
+              checking.
+            </p>
+          </div>
+        )}
+
+        {viesResult?.disclaimer ? (
+          <div className="alert-item">
+            <span />
+            <p>{viesResult.disclaimer}</p>
+          </div>
+        ) : null}
+
+        {viesResult?.findings.length ? (
+          <div className="workspace-table">
+            {viesResult.findings.map((finding) => (
+              <div className="workspace-table-row" key={finding.code}>
+                <div>
+                  <strong>{finding.code}</strong>
+                  <span>{finding.message}</span>
+                  {finding.fixSuggestion ? <span>{finding.fixSuggestion}</span> : null}
+                  <span>
+                    Sources:{" "}
+                    {finding.sourceLabels.length > 0
+                      ? finding.sourceLabels.join(", ")
+                      : "not returned"}
+                    .
+                  </span>
+                </div>
+
+                <div>
+                  <span className="status-pill">{finding.severity}</span>
+                </div>
+
+                <div>
+                  <span>{finding.category}</span>
+                </div>
+
+                <strong>{formatSource(finding.legalConfidence)}</strong>
+
+                <ShieldAlert size={17} />
+              </div>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="workspace-table-shell">

@@ -108,11 +108,11 @@ const developerModules: DeveloperModule[] = [
   },
   {
     title: "VIES checks",
-    status: "planned",
-    actionLabel: "Planned",
+    status: "active",
+    actionLabel: "Open",
     description:
-      "VIES checks are planned for a later step and are not active in this sandbox API yet. Current VAT checks are local format checks only.",
-    href: "/boundaries",
+      "Run optional backend VIES evidence checks separately from local VAT format checks. VIES evidence is time-of-check evidence only, not legal or tax proof.",
+    href: "/workspace/vat-checks",
     icon: <ShieldAlert size={22} />
   }
 ];
@@ -128,8 +128,8 @@ export default function WorkspaceDeveloperPage() {
           boundaries for Invoice Lantern technical validation endpoints. API keys
           do not grant workspace UI permissions. API key management is reserved
           for owner, admin, and developer workspace roles. The API reference
-          documents active endpoints only; planned webhook and VIES work stays
-          inactive until implemented.
+          documents active endpoints only; webhook work stays inactive until
+          implemented.
         </p>
       </section>
 

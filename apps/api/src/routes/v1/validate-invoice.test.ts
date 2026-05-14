@@ -550,9 +550,18 @@ test("stored validation run payload includes VAT findings and warning counts", a
       (finding) => finding.code === "BUYER_VAT_ID_LOCAL_FORMAT_INVALID"
     )
   );
-  assert.equal(
+  assert.ok(
+    storedFindings.some(
+      (finding) =>
+        finding.category === "COUNTRY_PACK" &&
+        typeof finding.countryPackVersion === "string" &&
+        typeof finding.countryPackStatus === "string"
+    )
+  );
+  assert.equal(record.countrySimulationStatus, "review_required");
+  assert.ok(
     (reportSummary.findingCounts as Record<string, unknown>).warning,
-    1
+    "report summary should include warning findings"
   );
 });
 

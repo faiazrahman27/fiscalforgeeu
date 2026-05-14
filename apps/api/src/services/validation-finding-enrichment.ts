@@ -2,7 +2,15 @@ import {
   SCHEMATRON_EXECUTION_ADAPTER_VERSION,
   SCHEMATRON_FINDING_CONTRACT_VERSION
 } from "@invoice-lantern/ubl";
+import {
+  getCountryPack,
+  normalizeCountryCode,
+  type CountryPack,
+  type CountryPackSourceReference,
+  type CountryPackStatus
+} from "@invoice-lantern/country-packs";
 import type {
+  CanonicalInvoice,
   ValidationFinding as CoreValidationFinding,
   ValidationFindingSeverity,
   ValidationRuleSourceType,
@@ -34,6 +42,11 @@ export const VIES_RULE_VERSION = "2026.05.1";
 export const VIES_SOURCE_LABEL = "VAT Information Exchange System (VIES)";
 export const VIES_SOURCE_URL =
   "https://ec.europa.eu/taxation_customs/vies/";
+export const COUNTRY_PACK_RULE_SET_CODE =
+  "INVOICE_LANTERN_COUNTRY_PACKS";
+export const COUNTRY_PACK_RULE_VERSION = "2026.05.1";
+export const COUNTRY_PACK_SOURCE_LABEL =
+  "Invoice Lantern country-pack source metadata";
 
 const VALIDATION_ENGINE_SOURCE: ValidationSourceReference = {
   sourceName: VALIDATION_ENGINE_SOURCE_LABEL,
@@ -113,6 +126,61 @@ function normalizeSourceType(value: string | undefined) {
   return value && SOURCE_TYPE_VALUES.has(value as ValidationRuleSourceType)
     ? (value as ValidationRuleSourceType)
     : "internal_technical_policy";
+}
+
+function mapCountryPackSourceType(
+  value: CountryPackSourceReference["sourceType"]
+): ValidationRuleSourceType {
+  if (value === "national_tax_authority" || value === "national_einvoicing_authority") {
+    return "official_national_source";
+  }
+
+  if (value === "eu_law" || value === "eu_guidance" || value === "vies") {
+    return "official_eu_source";
+  }
+
+  if (value === "standard" || value === "peppol") {
+    return "standard_documentation";
+  }
+
+  if (value === "country_pack") {
+    return "public_reference";
+  }
+
+  return "internal_technical_policy";
+}
+
+function mapCountryPackSourceReference(
+  sourceReference: CountryPackSourceReference
+): ValidationSourceReference {
+  return {
+    id: sourceReference.id,
+    sourceName: sourceReference.title,
+    sourceLabel: sourceReference.title,
+    sourceType: mapCountryPackSourceType(sourceReference.sourceType),
+    sourceUrl: sourceReference.url,
+    jurisdiction: sourceReference.jurisdiction,
+    reviewedAt: sourceReference.reviewedAt,
+    ...(sourceReference.effectiveFrom
+      ? { effectiveFrom: sourceReference.effectiveFrom }
+      : {}),
+    ...(sourceReference.effectiveTo ?? sourceReference.effectiveUntil
+      ? { effectiveUntil: sourceReference.effectiveTo ?? sourceReference.effectiveUntil }
+      : {}),
+    notes: sourceReference.notes
+  };
+}
+
+function mapCountryPackSourceReferences(
+  pack: CountryPack,
+  sourceRefIds: string[]
+) {
+  const refs = sourceRefIds.length > 0 ? sourceRefIds : pack.sourceReferences.map((source) => source.id);
+  const sourceRefIdSet = new Set(refs);
+
+  return pack.sourceReferences
+    .filter((sourceReference) => sourceRefIdSet.has(sourceReference.id))
+    .map(mapCountryPackSourceReference);
 }
 
 function hasSourceContext(input: {
@@ -221,6 +289,9 @@ export function enrichValidationFinding(
     technicalCode?: string;
     technicalMessage?: string;
     businessRuleId?: string;
+    countryPackVersion?: string;
+    countryPackStatus?: string;
+    countryPackCountryCode?: string;
   },
   defaults: {
     category?: ValidationRuleCategory;
@@ -308,6 +379,18 @@ export function enrichValidationFinding(
     enriched.businessRuleId = finding.businessRuleId;
   }
 
+  if (finding.countryPackVersion) {
+    enriched.countryPackVersion = finding.countryPackVersion;
+  }
+
+  if (finding.countryPackStatus) {
+    enriched.countryPackStatus = finding.countryPackStatus;
+  }
+
+  if (finding.countryPackCountryCode) {
+    enriched.countryPackCountryCode = finding.countryPackCountryCode;
+  }
+
   return enrichedValidationFindingSchema.parse(enriched);
 }
 
@@ -363,6 +446,284 @@ export function mapXmlValidationFindingToEnriched(
       layer: finding.schematronLayer ?? finding.checkType
     }
   );
+}
+
+function buildCountryPackFinding(input: {
+  pack: CountryPack;
+  code: string;
+  title: string;
+  message: string;
+  fieldPath: string;
+  severity?: ValidationFindingSeverity;
+  legalConfidence?: LegalConfidence;
+  sourceRefIds?: string[];
+  fixSuggestion?: string;
+}): EnrichedValidationFinding {
+  const sourceRefIds = input.sourceRefIds ?? [];
+  const sourceReferences = mapCountryPackSourceReferences(input.pack, sourceRefIds);
+  const finding = {
+    code: input.code,
+    severity: input.severity ?? "warning",
+    category: "COUNTRY_PACK" as const,
+    field: input.fieldPath,
+    fieldPath: input.fieldPath,
+    message: input.message,
+    legalConfidence:
+      input.legalConfidence ?? "professional_review_required",
+    ruleId: input.code,
+    ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+    ruleVersion: COUNTRY_PACK_RULE_VERSION,
+    sourceRefIds,
+    sourceReferences,
+    sourceLabels: [
+      COUNTRY_PACK_SOURCE_LABEL,
+      ...sourceReferences
+        .map((sourceReference) => sourceReference.sourceLabel ?? sourceReference.sourceName)
+        .filter(hasText)
+    ],
+    checkType: "country_pack",
+    layer: "country_pack",
+    countryPackVersion: input.pack.version,
+    countryPackStatus: input.pack.status,
+    countryPackCountryCode: input.pack.countryCode
+  };
+
+  return enrichValidationFinding(
+    {
+      ...finding,
+      ...(input.fixSuggestion ? { fixSuggestion: input.fixSuggestion } : {})
+    },
+    {
+      category: "COUNTRY_PACK",
+      ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+      ruleVersion: COUNTRY_PACK_RULE_VERSION,
+      sourceReferences,
+      sourceLabels: [COUNTRY_PACK_SOURCE_LABEL],
+      legalConfidence: input.legalConfidence ?? "professional_review_required",
+      checkType: "country_pack",
+      layer: "country_pack"
+    }
+  );
+}
+
+function buildUnsupportedCountryPackFinding(input: {
+  countryCode: string;
+  fieldPath: string;
+}): EnrichedValidationFinding {
+  return enrichValidationFinding(
+    {
+      code: "COUNTRY_PACK_UNSUPPORTED_COUNTRY",
+      severity: "warning",
+      category: "COUNTRY_PACK",
+      field: input.fieldPath,
+      fieldPath: input.fieldPath,
+      message:
+        `No country pack is available for ${input.countryCode}. Invoice Lantern cannot simulate country-specific VAT or e-invoicing context for this country, and professional review is required.`,
+      fixSuggestion:
+        "Check the country code, use an available EU country pack where appropriate, or route the invoice for professional review.",
+      legalConfidence: "professional_review_required",
+      ruleId: "COUNTRY_PACK_UNSUPPORTED_COUNTRY",
+      ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+      ruleVersion: COUNTRY_PACK_RULE_VERSION,
+      sourceReferences: [VALIDATION_ENGINE_SOURCE],
+      sourceLabels: [COUNTRY_PACK_SOURCE_LABEL],
+      checkType: "country_pack",
+      layer: "country_pack",
+      countryPackCountryCode: input.countryCode
+    },
+    {
+      category: "COUNTRY_PACK",
+      ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+      ruleVersion: COUNTRY_PACK_RULE_VERSION,
+      sourceReferences: [VALIDATION_ENGINE_SOURCE],
+      sourceLabels: [COUNTRY_PACK_SOURCE_LABEL],
+      legalConfidence: "professional_review_required",
+      checkType: "country_pack",
+      layer: "country_pack"
+    }
+  );
+}
+
+function getPackContextFindings(input: {
+  pack: CountryPack;
+  fieldPath: string;
+}) {
+  const findings: EnrichedValidationFinding[] = [];
+  const pack = input.pack;
+
+  if (
+    pack.status !== "reviewed" ||
+    pack.legalConfidence === "professional_review_required"
+  ) {
+    findings.push(
+      buildCountryPackFinding({
+        pack,
+        code: "COUNTRY_PACK_REVIEW_REQUIRED",
+        title: "Country pack requires review",
+        fieldPath: input.fieldPath,
+        sourceRefIds: ["invoice-lantern-country-pack-legal-notice"],
+        message:
+          `${pack.countryName} country-pack status is ${pack.status}. Country-pack output is educational simulation only and requires professional review before real-world reliance.`,
+        fixSuggestion:
+          "Review the relevant national VAT and e-invoicing sources with a qualified professional before relying on this invoice."
+      })
+    );
+  }
+
+  if (
+    pack.sourceCoverageSummary.overall !== "reviewed" ||
+    pack.sourceCoverageSummary.missingSourceWarnings.length > 0
+  ) {
+    findings.push(
+      buildCountryPackFinding({
+        pack,
+        code: "COUNTRY_PACK_SOURCE_LIMITED",
+        title: "Country pack source coverage is limited",
+        fieldPath: input.fieldPath,
+        sourceRefIds: [
+          "eu-vat-country-specific-information",
+          "eu-einvoicing-country-factsheets"
+        ],
+        message:
+          `${pack.countryName} source coverage is ${pack.sourceCoverageSummary.overall}. ${pack.sourceCoverageSummary.missingSourceWarnings.join(" ")}`,
+        fixSuggestion:
+          "Treat missing or limited source coverage as a review task, not as a pass/fail compliance result."
+      })
+    );
+  }
+
+  if (
+    pack.vatRates.standard === null ||
+    pack.vatRates.confidenceStatus !== "reviewed"
+  ) {
+    findings.push(
+      buildCountryPackFinding({
+        pack,
+        code: "COUNTRY_PACK_UNKNOWN_RATE_CONTEXT",
+        title: "Country VAT rate context is not reviewed",
+        fieldPath: input.fieldPath,
+        sourceRefIds: pack.vatRates.sourceRefIds,
+        message:
+          `${pack.countryName} VAT-rate fields are ${pack.vatRates.confidenceStatus}; Invoice Lantern does not infer a national VAT rate from this country pack.`,
+        fixSuggestion:
+          "Verify VAT rate treatment against reviewed national sources and the transaction facts."
+      })
+    );
+  }
+
+  if (
+    pack.eInvoicingStatus.confidenceStatus !== "reviewed" ||
+    pack.eInvoicingStatus.b2bDomestic === "unknown" ||
+    pack.eInvoicingStatus.clearanceModel === "unknown"
+  ) {
+    findings.push(
+      buildCountryPackFinding({
+        pack,
+        code: "COUNTRY_PACK_EINVOICING_REVIEW_REQUIRED",
+        title: "Country e-invoicing context requires review",
+        fieldPath: input.fieldPath,
+        sourceRefIds: pack.eInvoicingStatus.sourceRefIds,
+        message:
+          `${pack.countryName} e-invoicing context is ${pack.eInvoicingStatus.confidenceStatus}. National B2G/B2B, platform, clearance, and effective-date details require professional review.`,
+        fixSuggestion:
+          "Review national e-invoicing obligations and platform requirements before operational use."
+      })
+    );
+  }
+
+  return findings;
+}
+
+function getInvoicePartyCountryContexts(invoice: CanonicalInvoice) {
+  return [
+    {
+      role: "seller" as const,
+      countryCode: invoice.seller.country,
+      fieldPath: "seller.country"
+    },
+    {
+      role: "buyer" as const,
+      countryCode: invoice.buyer.country,
+      fieldPath: "buyer.country"
+    }
+  ].filter((context) => hasText(context.countryCode));
+}
+
+export function buildCountryPackValidationFindings(
+  invoice: CanonicalInvoice
+): EnrichedValidationFinding[] {
+  const findings: EnrichedValidationFinding[] = [];
+  const seenCountryCodes = new Set<string>();
+  const partyContexts = getInvoicePartyCountryContexts(invoice).map((context) => {
+    const normalizedCountryCode = normalizeCountryCode(context.countryCode);
+    const pack = getCountryPack(normalizedCountryCode);
+
+    return {
+      ...context,
+      normalizedCountryCode,
+      pack
+    };
+  });
+
+  for (const context of partyContexts) {
+    if (seenCountryCodes.has(context.normalizedCountryCode)) {
+      continue;
+    }
+
+    seenCountryCodes.add(context.normalizedCountryCode);
+
+    if (!context.pack) {
+      findings.push(
+        buildUnsupportedCountryPackFinding({
+          countryCode: context.normalizedCountryCode,
+          fieldPath: context.fieldPath
+        })
+      );
+      continue;
+    }
+
+    findings.push(
+      ...getPackContextFindings({
+        pack: context.pack,
+        fieldPath: context.fieldPath
+      })
+    );
+  }
+
+  const sellerContext = partyContexts.find((context) => context.role === "seller");
+  const buyerContext = partyContexts.find((context) => context.role === "buyer");
+
+  if (
+    sellerContext?.pack?.euMemberState &&
+    buyerContext?.pack?.euMemberState &&
+    sellerContext.normalizedCountryCode !== buyerContext.normalizedCountryCode
+  ) {
+    const euPack = getCountryPack("EU");
+    const sourceRefIds = [
+      "eu-vat-country-specific-information",
+      "eu-einvoicing-country-factsheets"
+    ];
+
+    if (euPack) {
+      findings.push(
+        buildCountryPackFinding({
+          pack: euPack,
+          code: "COUNTRY_PACK_CROSS_BORDER_CONTEXT",
+          title: "EU cross-border country context",
+          fieldPath: "buyer.country",
+          severity: "warning",
+          legalConfidence: "educational_simulation",
+          sourceRefIds,
+          message:
+            `Seller country ${sellerContext.normalizedCountryCode} and buyer country ${buyerContext.normalizedCountryCode} are different EU member-state country packs. VAT treatment, e-invoicing obligations, and evidence needs require professional review.`,
+          fixSuggestion:
+            "Review seller and buyer country rules, VAT evidence, and transaction facts before relying on the invoice."
+        })
+      );
+    }
+  }
+
+  return findings;
 }
 
 export function buildViesFindingFromEvidence(input: {
@@ -650,6 +1011,113 @@ export function listValidationEngineRuleCatalog(): ValidationRuleSetMetadata[] {
           source: VALIDATION_ENGINE_SOURCE,
           ruleSetCode: VIES_RULE_SET_CODE,
           ruleVersion: VIES_RULE_VERSION
+        })
+      ]
+    },
+    {
+      code: COUNTRY_PACK_RULE_SET_CODE,
+      name: "Invoice Lantern Country-Pack Context Rules",
+      description:
+        "Source-linked country-pack context rules for EU VAT and e-invoicing simulation warnings. They are educational and professional-review-aware, not legal or tax conclusions.",
+      version: COUNTRY_PACK_RULE_VERSION,
+      status: "published",
+      legalConfidence: "professional_review_required",
+      rules: [
+        makeEngineRule({
+          code: "COUNTRY_PACK_REVIEW_REQUIRED",
+          title: "Country pack requires professional review",
+          description:
+            "Flags country packs whose review status is beta, draft, EU-core only, or professional-review required.",
+          category: "COUNTRY_PACK",
+          severity: "warning",
+          fieldPath: "seller.country",
+          messageTemplate: "{countryPackReviewMessage}",
+          fixSuggestion:
+            "Review national VAT and e-invoicing sources with a qualified professional before relying on the invoice.",
+          legalConfidence: "professional_review_required",
+          source: VALIDATION_ENGINE_SOURCE,
+          ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+          ruleVersion: COUNTRY_PACK_RULE_VERSION
+        }),
+        makeEngineRule({
+          code: "COUNTRY_PACK_SOURCE_LIMITED",
+          title: "Country pack source coverage is limited",
+          description:
+            "Flags missing or limited source coverage in source-linked country-pack sections.",
+          category: "COUNTRY_PACK",
+          severity: "warning",
+          fieldPath: "seller.country",
+          messageTemplate: "{countryPackSourceCoverageMessage}",
+          fixSuggestion:
+            "Treat missing source coverage as a review task, not as a pass/fail compliance result.",
+          legalConfidence: "professional_review_required",
+          source: VALIDATION_ENGINE_SOURCE,
+          ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+          ruleVersion: COUNTRY_PACK_RULE_VERSION
+        }),
+        makeEngineRule({
+          code: "COUNTRY_PACK_UNKNOWN_RATE_CONTEXT",
+          title: "Country VAT rate context is not reviewed",
+          description:
+            "Flags country packs where VAT-rate fields are null, unknown, or not reviewed.",
+          category: "COUNTRY_PACK",
+          severity: "warning",
+          fieldPath: "seller.country",
+          messageTemplate: "{countryPackVatRateMessage}",
+          fixSuggestion:
+            "Verify VAT rate treatment against reviewed national sources and transaction facts.",
+          legalConfidence: "professional_review_required",
+          source: VALIDATION_ENGINE_SOURCE,
+          ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+          ruleVersion: COUNTRY_PACK_RULE_VERSION
+        }),
+        makeEngineRule({
+          code: "COUNTRY_PACK_EINVOICING_REVIEW_REQUIRED",
+          title: "Country e-invoicing context requires review",
+          description:
+            "Flags country packs where B2G/B2B, platform, clearance, or effective-date details require professional review.",
+          category: "COUNTRY_PACK",
+          severity: "warning",
+          fieldPath: "seller.country",
+          messageTemplate: "{countryPackEInvoicingMessage}",
+          fixSuggestion:
+            "Review national e-invoicing obligations and platform requirements before operational use.",
+          legalConfidence: "professional_review_required",
+          source: VALIDATION_ENGINE_SOURCE,
+          ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+          ruleVersion: COUNTRY_PACK_RULE_VERSION
+        }),
+        makeEngineRule({
+          code: "COUNTRY_PACK_CROSS_BORDER_CONTEXT",
+          title: "EU cross-border country context",
+          description:
+            "Flags seller and buyer EU member-state country packs that differ, requiring professional review of cross-border treatment.",
+          category: "COUNTRY_PACK",
+          severity: "warning",
+          fieldPath: "buyer.country",
+          messageTemplate: "{countryPackCrossBorderMessage}",
+          fixSuggestion:
+            "Review seller and buyer country rules, VAT evidence, and transaction facts before relying on the invoice.",
+          legalConfidence: "educational_simulation",
+          source: VALIDATION_ENGINE_SOURCE,
+          ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+          ruleVersion: COUNTRY_PACK_RULE_VERSION
+        }),
+        makeEngineRule({
+          code: "COUNTRY_PACK_UNSUPPORTED_COUNTRY",
+          title: "Unsupported country pack",
+          description:
+            "Flags country codes without an available country pack. No national VAT or e-invoicing simulation is inferred.",
+          category: "COUNTRY_PACK",
+          severity: "warning",
+          fieldPath: "seller.country",
+          messageTemplate: "{countryPackUnsupportedMessage}",
+          fixSuggestion:
+            "Check the country code, use an available EU country pack where appropriate, or route the invoice for professional review.",
+          legalConfidence: "professional_review_required",
+          source: VALIDATION_ENGINE_SOURCE,
+          ruleSetCode: COUNTRY_PACK_RULE_SET_CODE,
+          ruleVersion: COUNTRY_PACK_RULE_VERSION
         })
       ]
     }

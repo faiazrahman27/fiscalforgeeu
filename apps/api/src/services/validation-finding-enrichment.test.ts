@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildCountryPackValidationFindings,
   buildValidationFindingSummary,
   enrichValidationFinding,
   mapXmlValidationFindingToEnriched
 } from "./validation-finding-enrichment.js";
+import type { CanonicalInvoice } from "@invoice-lantern/invoice-core";
 import type { XmlValidationJobFinding } from "./xml-validation-job-service.js";
 
 test("validation enrichment preserves rule metadata on calculation findings", () => {
@@ -75,6 +77,44 @@ test("validation enrichment maps Schematron failed assertions as style findings"
   assert.equal(finding.ruleId, "PEPPOL-EN16931-R001");
   assert.equal(finding.businessRuleId, "PEPPOL-EN16931-R001");
   assert.equal(finding.legalConfidence, "educational_simulation");
+});
+
+test("validation enrichment adds source-linked country-pack review context", () => {
+  const invoice = {
+    seller: {
+      country: "DE"
+    },
+    buyer: {
+      country: "HU"
+    }
+  } as CanonicalInvoice;
+  const findings = buildCountryPackValidationFindings(invoice);
+  const serialized = JSON.stringify(findings);
+
+  assert.ok(
+    findings.some((finding) => finding.code === "COUNTRY_PACK_CROSS_BORDER_CONTEXT")
+  );
+  assert.ok(
+    findings.some(
+      (finding) =>
+        finding.code === "COUNTRY_PACK_REVIEW_REQUIRED" &&
+        finding.countryPackCountryCode === "DE"
+    )
+  );
+  assert.ok(
+    findings.every(
+      (finding) =>
+        finding.checkType === "country_pack" &&
+        finding.layer === "country_pack" &&
+        finding.countryPackVersion &&
+        finding.countryPackStatus &&
+        finding.sourceReferences &&
+        finding.sourceReferences.length > 0
+    )
+  );
+  assert.doesNotMatch(serialized, /legally compliant/i);
+  assert.doesNotMatch(serialized, /tax compliant/i);
+  assert.doesNotMatch(serialized, /official filing/i);
 });
 
 test("validation enrichment downgrades legal confidence when source context is absent", () => {
