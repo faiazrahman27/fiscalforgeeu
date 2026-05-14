@@ -152,6 +152,29 @@ const envSchema = z
     SCHEMATRON_ENGINE: optionalPolicyStringSchema,
     SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION: optionalBooleanLikeSchema,
 
+    /*
+     * Optional live VIES evidence checks.
+     *
+     * Disabled by default. VAT format checks remain local technical checks and
+     * must never be treated as VIES evidence unless VIES_CHECK_ENABLED is true
+     * and a route explicitly requests a live check.
+     */
+    VIES_CHECK_ENABLED: optionalBooleanLikeSchema,
+    VIES_SERVICE_URL: optionalUrlSchema,
+    VIES_TIMEOUT_MS: z.coerce.number().int().min(500).max(30000).default(5000),
+    VIES_RATE_LIMIT_PER_ORG_PER_DAY: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(10000)
+      .default(100),
+    VIES_RATE_LIMIT_PER_VAT_PER_DAY: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(10),
+
     XML_TRANSIENT_PAYLOAD_DIR: optionalLocalPathSchema,
     XML_TRANSIENT_PAYLOAD_TTL_SECONDS: z.coerce
       .number()

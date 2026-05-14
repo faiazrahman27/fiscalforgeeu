@@ -10,6 +10,11 @@ import {
   saveValidationRun,
   type ValidationRunRecord
 } from "../../repositories/validation-run-repository.js";
+import {
+  resetViesServiceTestingOverrides,
+  setViesServiceConfigForTesting,
+  setViesTransportForTesting
+} from "../../services/vies-check-service.js";
 
 const validationRunDataPath = join(process.cwd(), ".data", "validation-runs.json");
 
@@ -62,6 +67,8 @@ before(async () => {
 });
 
 after(async () => {
+  resetViesServiceTestingOverrides();
+
   if (originalValidationRunData === null) {
     await rm(validationRunDataPath, {
       force: true
@@ -213,11 +220,20 @@ test("invoice validation returns richer rule metadata on findings", async (t) =>
     "Add the invoice document number before validation or export."
   );
   assert.equal(finding.legalConfidence, "technical");
+  assert.equal(finding.ruleId, "DOCUMENT_NUMBER_REQUIRED");
+  assert.equal(finding.checkType, "canonical");
+  assert.equal(finding.layer, "canonical");
   assert.equal(finding.ruleSetCode, "INVOICE_LANTERN_CORE");
   assert.equal(finding.ruleVersion, "2026.05.1");
   assert.deepEqual(finding.sourceLabels, [
-    "Invoice Lantern internal technical validation policy"
+    "Invoice Lantern internal technical validation policy",
+    "Invoice Lantern validation engine mapping policy"
   ]);
+  assert.equal(isPlainObject(body.validationSummary), true);
+  assert.equal(
+    (body.validationSummary as Record<string, unknown>).totalFindings,
+    (body.findings as unknown[]).length
+  );
 });
 
 test("invoice validation includes seller and buyer VAT local format info findings", async (t) => {
@@ -258,7 +274,8 @@ test("invoice validation includes seller and buyer VAT local format info finding
     assert.equal(finding.legalConfidence, "technical");
     assert.equal(finding.ruleSetCode, "INVOICE_LANTERN_VAT_FORMAT");
     assert.deepEqual(finding.sourceLabels, [
-      "Invoice Lantern VAT format rules"
+      "Invoice Lantern VAT format rules",
+      "Invoice Lantern validation engine mapping policy"
     ]);
     assert.match(String(finding.message), /not a VIES check/i);
     assert.match(String(finding.message), /does not confirm VAT registration/i);
@@ -268,6 +285,118 @@ test("invoice validation includes seller and buyer VAT local format info finding
   assert.equal(buyerFinding.fieldPath, "buyer.vatId");
   assert.match(String(sellerFinding.message), /Germany/i);
   assert.match(String(sellerFinding.message), /not legal\/tax advice/i);
+});
+
+test("invoice validation maps supplied XML worker findings into summary dimensions", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/invoices/validate",
+    headers: {
+      "x-api-key": env.DEV_API_KEY
+    },
+    payload: {
+      invoice: buildInvoicePayload(),
+      xmlFindings: [
+        {
+          code: "UBL_XSD_VALIDATION_FAILED",
+          severity: "fatal",
+          checkType: "xsd_ubl",
+          field: "Invoice/LegalMonetaryTotal",
+          message: "The UBL XML failed local XSD validation.",
+          status: "failed",
+          legalConfidence: "technical",
+          sourceLabels: ["UBL 2.1 local XSD artifact"]
+        },
+        {
+          code: "PEPPOL_SCHEMATRON_RULE_FAILED",
+          severity: "warning",
+          checkType: "schematron_peppol",
+          field: "/Invoice/cbc:CustomizationID",
+          message: "A guarded local Schematron assertion failed.",
+          status: "failed",
+          legalConfidence: "educational_simulation",
+          schematronLayer: "peppol_bis_billing",
+          businessRuleId: "PEPPOL-EN16931-R001"
+        }
+      ]
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+
+  const body = response.json() as Record<string, unknown>;
+  const xsdFinding = getFindingByCode(body, "UBL_XSD_VALIDATION_FAILED");
+  const schematronFinding = getFindingByCode(
+    body,
+    "PEPPOL_SCHEMATRON_RULE_FAILED"
+  );
+  const summary = body.validationSummary as Record<string, unknown>;
+
+  assert.equal(xsdFinding.category, "SCHEMA");
+  assert.equal(xsdFinding.checkType, "xsd_ubl");
+  assert.equal(schematronFinding.category, "PEPPOL");
+  assert.equal(schematronFinding.ruleId, "PEPPOL-EN16931-R001");
+  assert.equal(
+    (summary.byCheckType as Record<string, unknown>).xsd_ubl,
+    1
+  );
+  assert.equal(
+    (summary.byLegalConfidence as Record<string, unknown>)
+      .educational_simulation,
+    1
+  );
+});
+
+test("invoice validation keeps live VIES explicit and disabled by default", async (t) => {
+  const app = await buildApp();
+  let transportCalls = 0;
+
+  t.after(async () => {
+    resetViesServiceTestingOverrides();
+    await app.close();
+  });
+
+  setViesServiceConfigForTesting({
+    enabled: false
+  });
+  setViesTransportForTesting(async () => {
+    transportCalls += 1;
+    throw new Error("VIES transport should not run while disabled.");
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/invoices/validate",
+    headers: {
+      "x-api-key": env.DEV_API_KEY
+    },
+    payload: {
+      invoice: buildInvoicePayload({
+        sellerVatId: "DE123456789",
+        buyerVatId: "DE987654321"
+      }),
+      viesMode: "live"
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(transportCalls, 0);
+
+  const body = response.json() as Record<string, unknown>;
+  const viesChecks = body.viesChecks as Record<string, unknown>[];
+  const viesFinding = getFindingByCode(body, "VIES_EVIDENCE_NOT_CHECKED");
+
+  assert.equal(body.viesMode, "live");
+  assert.equal(viesChecks[0]?.status, "not_checked");
+  assert.equal(viesChecks[0]?.viesValid, null);
+  assert.equal(viesFinding.category, "VIES");
+  assert.match(String(body.disclaimer), /VAT format valid does not mean VIES valid/i);
 });
 
 test("invoice validation warns when buyer VAT local format is invalid", async (t) => {

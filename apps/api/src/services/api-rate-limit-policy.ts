@@ -33,6 +33,15 @@ export const API_RATE_LIMIT_POLICIES = {
     appliesTo: "api_key",
     requestPathPrefix: "/api/v1/vat/validate-format"
   },
+  vat_check_vies: {
+    policyKey: "vat_check_vies",
+    windowSeconds: 15 * 60,
+    maxRequests: 20,
+    scope: "vat:check_vies",
+    description: "Sandbox VIES evidence check API limit.",
+    appliesTo: "api_key",
+    requestPathPrefix: "/api/v1/vat/check-vies"
+  },
   transactions_simulate_vida: {
     policyKey: "transactions_simulate_vida",
     windowSeconds: 15 * 60,
@@ -129,6 +138,10 @@ export function getSandboxRateLimitMessage(policy: ApiRateLimitPolicy) {
 
   if (policy.policyKey === "vat_validate_format") {
     return "This API key exceeded the sandbox rate limit for VAT format checks.";
+  }
+
+  if (policy.policyKey === "vat_check_vies") {
+    return "This API key exceeded the sandbox rate limit for VIES evidence checks.";
   }
 
   if (policy.policyKey === "transactions_simulate_vida") {

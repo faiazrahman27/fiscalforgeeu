@@ -53,6 +53,7 @@ Current scopes are:
 - `invoices:import_ubl`
 - `xml:validation_jobs`
 - `vat:validate_format`
+- `vat:check_vies`
 - `transactions:simulate_vida`
 - `validation_runs:read`
 - `rules:read`
@@ -76,7 +77,8 @@ paths, require signed-in Supabase users.
 | Invoice drafts | Signed-in user | Read roles may view; edit roles may create/update; only owner/admin delete. |
 | Production invoice lifecycle | Signed-in user | Read roles may view; `owner`, `admin`, `accountant`, and `reviewer` may create, update, convert from draft, or transition; `developer` and `viewer` are read-only by default; organization API keys are rejected in Step 5. |
 | Validation runs and reports | Signed-in user or scoped API key | Report readers or `validation_runs:read`; object reads are organization-scoped. |
-| VAT format checks | Signed-in user or scoped API key | Validation roles or `vat:validate_format`; stored check history is signed-user only. |
+| VAT format checks | Signed-in user or scoped API key | Validation roles or `vat:validate_format`; stored local-format check history is signed-user only. |
+| VIES evidence checks | Signed-in user or scoped API key | Validation roles or `vat:check_vies`; live checks are explicit, disabled by default, rate-limited, safely persisted, and never make VAT format validity equivalent to VIES validity. |
 | ViDA simulation | Signed-in user or scoped API key | Validation roles or `transactions:simulate_vida`; simulation remains educational and technical only. |
 | XML validation jobs | Signed-in user or scoped API key | Validation/report roles or `xml:validation_jobs`; uploaded XML history remains signed-user only. |
 | Workspace activity | Signed-in user | `owner`, `admin`, or `developer`. |
@@ -110,6 +112,9 @@ new migrations only.
   metadata, and safe key prefix/name metadata only.
 - Validation/export/report endpoints return technical sandbox results and
   disclaimers, not official conclusions.
+- VIES evidence responses return time-of-check evidence, status metadata, safe
+  errors, source labels, and hashes only. They do not return raw SOAP bodies or
+  claim tax, accounting, filing, authority, or full transaction conclusions.
 - XML handling must preserve protections against DTDs, external entities,
   unsafe schema fetching, excessive size/nesting, and unsafe paths.
 - Production invoice lifecycle responses return canonical invoice data,
@@ -122,7 +127,7 @@ new migrations only.
 
 This document covers the Step 2 authorization hardening, Step 4 workspace
 member/invitation management rules, and Step 5 production invoice lifecycle
-route permissions. Later prompts may add the full editor/studio fields, CII,
-VIES, webhooks, expanded country packs, admin/source consoles, monitoring,
-legal-document workflows, and PWA/offline capabilities. Those are not
-implemented or claimed complete here.
+route permissions, plus the Step 10 explicit VIES evidence workflow. Later
+prompts may add the full editor/studio fields, CII, webhooks, expanded country
+packs, admin/source consoles, monitoring, legal-document workflows, and
+PWA/offline capabilities. Those are not implemented or claimed complete here.

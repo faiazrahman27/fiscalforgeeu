@@ -339,7 +339,7 @@ const openApiDocument = {
     {
       name: "VAT",
       description:
-        "Local VAT format checks only. These endpoints do not perform VIES checks or prove VAT registration."
+        "Local VAT format checks and optional explicit VIES time-of-check evidence. Format-valid is not VIES-valid, VIES unavailable is not invalid, and neither result is legal, tax, accounting, filing, or authority advice."
     },
     {
       name: "Validation Runs",
@@ -866,9 +866,15 @@ const openApiDocument = {
         scope: "invoices:validate",
         requestBody: {
           required: true,
-          content: jsonContent(ref("CanonicalInvoice"), {
+          content: jsonContent(ref("InvoiceValidationRequest"), {
             invoiceValidation: {
               value: exampleCanonicalInvoice
+            },
+            invoiceValidationWithViesSkipped: {
+              value: {
+                invoice: exampleCanonicalInvoice,
+                viesMode: "skip"
+              }
             }
           })
         },
@@ -1102,6 +1108,34 @@ const openApiDocument = {
             description: "Local VAT format result.",
             headers: rateLimitHeaders,
             content: jsonContent(ref("VatFormatResponse"))
+          }
+        }
+      })
+    },
+    "/vat/check-vies": {
+      post: scopedApiKeyOperation({
+        tags: ["VAT"],
+        summary: "Run an explicit VIES evidence check",
+        description:
+          "Runs a local VAT format check first, then optionally retrieves VIES time-of-check evidence only when live VIES is enabled server-side. If local format is invalid, VIES is not called. VIES unavailable is not invalid, VIES valid does not prove full transaction treatment, and this endpoint is not legal, tax, accounting, filing, or authority advice.",
+        scope: "vat:check_vies",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("ViesCheckRequest"), {
+            viesCheck: {
+              value: {
+                countryCode: "DE",
+                vatNumber: "DE123456789",
+                partyRole: "seller"
+              }
+            }
+          })
+        },
+        responses: {
+          "200": {
+            description: "VIES evidence result or safe not-checked status.",
+            headers: rateLimitHeaders,
+            content: jsonContent(ref("ViesCheckResponse"))
           }
         }
       })
@@ -1598,6 +1632,7 @@ const openApiDocument = {
           "invoices:import_ubl",
           "xml:validation_jobs",
           "vat:validate_format",
+          "vat:check_vies",
           "transactions:simulate_vida",
           "validation_runs:read",
           "rules:read"
@@ -2338,7 +2373,26 @@ const openApiDocument = {
           },
           category: {
             type: "string",
+            enum: [
+              "SCHEMA",
+              "CANONICAL",
+              "CALCULATION",
+              "VAT_ID",
+              "VIES",
+              "EN16931",
+              "PEPPOL",
+              "UBL",
+              "CII",
+              "COUNTRY_PACK",
+              "VIDA_SIMULATION",
+              "SECURITY",
+              "LEGAL_LABEL"
+            ],
             example: "CANONICAL"
+          },
+          field: {
+            type: "string",
+            example: "document.number"
           },
           fieldPath: {
             type: "string",
@@ -2368,11 +2422,84 @@ const openApiDocument = {
             type: "string",
             example: CORE_VALIDATION_RULE_VERSION
           },
+          ruleId: {
+            type: "string",
+            example: "DOCUMENT_NUMBER_REQUIRED"
+          },
+          checkType: {
+            type: "string",
+            example: "canonical"
+          },
+          layer: {
+            type: "string",
+            example: "canonical"
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
           sourceLabels: {
             type: "array",
             items: {
               type: "string"
             }
+          },
+          sourceReferences: {
+            type: "array",
+            items: ref("ValidationSourceReference")
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          evidenceId: {
+            type: "string"
+          }
+        }
+      },
+      ValidationSourceReference: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string"
+          },
+          sourceName: {
+            type: "string"
+          },
+          sourceLabel: {
+            type: "string"
+          },
+          sourceType: {
+            type: "string",
+            enum: [
+              "internal_technical_policy",
+              "standard_documentation",
+              "official_eu_source",
+              "official_national_source",
+              "public_reference",
+              "professional_review"
+            ]
+          },
+          sourceUrl: {
+            type: "string",
+            format: "uri"
+          },
+          jurisdiction: {
+            type: "string"
+          },
+          reviewedAt: {
+            type: "string"
+          },
+          effectiveFrom: {
+            type: "string"
+          },
+          effectiveUntil: {
+            type: "string"
+          },
+          notes: {
+            type: "string"
           }
         }
       },
@@ -2716,6 +2843,81 @@ const openApiDocument = {
           }
         }
       },
+      InvoiceValidationRequest: {
+        oneOf: [
+          ref("CanonicalInvoice"),
+          {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              invoice: ref("CanonicalInvoice"),
+              payload: ref("CanonicalInvoice"),
+              viesMode: {
+                type: "string",
+                enum: ["skip", "use_cached", "live"],
+                default: "skip",
+                description:
+                  "Optional VIES evidence behavior. Live checks are explicit and still require VIES_CHECK_ENABLED server-side."
+              },
+              xmlFindings: {
+                type: "array",
+                description:
+                  "Optional sanitized XML/XSD/Schematron findings to map into the unified validation summary.",
+                items: ref("XmlValidationJobFinding")
+              }
+            },
+            description:
+              "Wrapped validation request. Provide exactly one of invoice or payload. Direct canonical invoice payloads are also accepted for backwards compatibility."
+          }
+        ]
+      },
+      ValidationDimensionCounts: {
+        type: "object",
+        additionalProperties: {
+          type: "integer",
+          minimum: 0
+        }
+      },
+      ValidationEngineSummary: {
+        type: "object",
+        required: [
+          "totalFindings",
+          "bySeverity",
+          "byCategory",
+          "byLayer",
+          "byCheckType",
+          "byLegalConfidence",
+          "ruleVersions",
+          "sourceLabels",
+          "disclaimer"
+        ],
+        properties: {
+          totalFindings: {
+            type: "integer",
+            minimum: 0
+          },
+          bySeverity: ref("ValidationDimensionCounts"),
+          byCategory: ref("ValidationDimensionCounts"),
+          byLayer: ref("ValidationDimensionCounts"),
+          byCheckType: ref("ValidationDimensionCounts"),
+          byLegalConfidence: ref("ValidationDimensionCounts"),
+          ruleVersions: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          sourceLabels: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
       InvoiceValidationResponse: {
         type: "object",
         required: [
@@ -2727,6 +2929,9 @@ const openApiDocument = {
           "vidaReadinessStatus",
           "totals",
           "findings",
+          "validationSummary",
+          "viesMode",
+          "viesChecks",
           "disclaimer"
         ],
         properties: {
@@ -2756,6 +2961,15 @@ const openApiDocument = {
           findings: {
             type: "array",
             items: ref("ValidationFinding")
+          },
+          validationSummary: ref("ValidationEngineSummary"),
+          viesMode: {
+            type: "string",
+            enum: ["skip", "use_cached", "live"]
+          },
+          viesChecks: {
+            type: "array",
+            items: ref("ViesCheckSummary")
           },
           disclaimer: {
             type: "string"
@@ -5440,6 +5654,56 @@ const openApiDocument = {
           }
         }
       },
+      VatFormatCheckResult: {
+        type: "object",
+        required: [
+          "input",
+          "normalized",
+          "formatValid",
+          "checkLevel",
+          "source",
+          "message",
+          "warnings",
+          "disclaimer"
+        ],
+        properties: {
+          input: {
+            type: "string"
+          },
+          normalized: {
+            type: "string"
+          },
+          countryCode: {
+            type: "string"
+          },
+          countryName: {
+            type: "string"
+          },
+          formatValid: {
+            type: "boolean"
+          },
+          checkLevel: {
+            type: "string",
+            const: "local_format"
+          },
+          source: {
+            type: "string",
+            const: "invoice_lantern_vat_format_rules"
+          },
+          message: {
+            type: "string"
+          },
+          warnings: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
       VatFormatResponse: {
         type: "object",
         required: [
@@ -5494,6 +5758,207 @@ const openApiDocument = {
           },
           checkRecordId: {
             type: "string"
+          }
+        }
+      },
+      ViesCheckRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["countryCode", "vatNumber"],
+        properties: {
+          countryCode: {
+            type: "string",
+            minLength: 2,
+            maxLength: 8,
+            example: "DE"
+          },
+          vatNumber: {
+            type: "string",
+            minLength: 1,
+            maxLength: 64,
+            example: "DE123456789"
+          },
+          invoiceDraftId: {
+            type: "string",
+            maxLength: 120
+          },
+          validationRunId: {
+            type: "string",
+            maxLength: 120
+          },
+          partyRole: {
+            type: "string",
+            enum: ["seller", "buyer", "other"]
+          }
+        }
+      },
+      ViesStatus: {
+        type: "string",
+        enum: [
+          "valid",
+          "invalid",
+          "unavailable",
+          "error",
+          "not_checked",
+          "unsupported",
+          "rate_limited"
+        ]
+      },
+      ViesEvidence: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string"
+          },
+          organizationId: {
+            type: "string"
+          },
+          invoiceDraftId: {
+            type: ["string", "null"]
+          },
+          validationRunId: {
+            type: ["string", "null"]
+          },
+          partyRole: {
+            type: ["string", "null"],
+            enum: ["seller", "buyer", "other", null]
+          },
+          countryCode: {
+            type: "string"
+          },
+          vatNumberNormalized: {
+            type: "string"
+          },
+          vatNumberDisplay: {
+            type: "string"
+          },
+          requestSource: {
+            type: "string",
+            enum: ["local_format", "vies"]
+          },
+          status: ref("ViesStatus"),
+          viesValid: {
+            type: ["boolean", "null"]
+          },
+          viesName: {
+            type: ["string", "null"]
+          },
+          viesAddress: {
+            type: ["string", "null"]
+          },
+          requestIdentifier: {
+            type: ["string", "null"]
+          },
+          checkedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          sourceLabel: {
+            type: "string"
+          },
+          sourceUrl: {
+            type: "string",
+            format: "uri"
+          },
+          responseTimeMs: {
+            type: ["integer", "null"]
+          },
+          errorCode: {
+            type: ["string", "null"]
+          },
+          errorMessageSafe: {
+            type: ["string", "null"]
+          },
+          rawResponseHash: {
+            type: ["string", "null"],
+            description:
+              "SHA-256 hash of the raw VIES response body when available. The raw body is not returned."
+          },
+          metadata: {
+            type: "object",
+            additionalProperties: true
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      ViesCheckSummary: {
+        type: "object",
+        required: ["status", "viesValid", "checkedAt", "source", "evidence"],
+        properties: {
+          status: ref("ViesStatus"),
+          viesValid: {
+            type: ["boolean", "null"]
+          },
+          checkedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          source: {
+            type: "object",
+            required: ["label", "url"],
+            properties: {
+              label: {
+                type: "string",
+                example: "VAT Information Exchange System (VIES)"
+              },
+              url: {
+                type: "string",
+                format: "uri"
+              }
+            }
+          },
+          evidence: {
+            oneOf: [ref("ViesEvidence"), { type: "null" }]
+          }
+        }
+      },
+      ViesCheckResponse: {
+        type: "object",
+        required: [
+          "formatCheck",
+          "viesCheck",
+          "evidence",
+          "status",
+          "checkedAt",
+          "source",
+          "disclaimer",
+          "findings"
+        ],
+        properties: {
+          formatCheck: ref("VatFormatCheckResult"),
+          viesCheck: ref("ViesCheckSummary"),
+          evidence: {
+            oneOf: [ref("ViesEvidence"), { type: "null" }]
+          },
+          status: ref("ViesStatus"),
+          checkedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          source: {
+            type: "object",
+            required: ["label", "url"],
+            properties: {
+              label: {
+                type: "string"
+              },
+              url: {
+                type: "string",
+                format: "uri"
+              }
+            }
+          },
+          disclaimer: {
+            type: "string",
+            description:
+              "VIES evidence is time-of-check evidence only. Format valid is not VIES valid, unavailable is not invalid, and VIES valid is not full transaction treatment."
+          },
+          findings: {
+            type: "array",
+            items: ref("ValidationFinding")
           }
         }
       },

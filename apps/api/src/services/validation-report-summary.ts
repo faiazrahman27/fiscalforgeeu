@@ -5,6 +5,7 @@ import type {
 } from "../repositories/validation-run-repository.js";
 
 export type ValidationReportFindingCounts = Record<FindingSeverity, number>;
+export type ValidationReportDimensionCounts = Record<string, number>;
 
 export type ValidationReportRuleSetSummary = {
   code: string;
@@ -25,6 +26,10 @@ export type ValidationReportSummary = {
   technicalStatus: ValidationRunRecord["technicalStatus"];
   standardStatus: ValidationRunRecord["standardStatus"];
   findingCounts: ValidationReportFindingCounts;
+  categoryCounts: ValidationReportDimensionCounts;
+  layerCounts: ValidationReportDimensionCounts;
+  checkTypeCounts: ValidationReportDimensionCounts;
+  legalConfidenceCounts: ValidationReportDimensionCounts;
   legalConfidenceSummary: string;
   ruleSetsUsed: ValidationReportRuleSetSummary[];
   disclaimer: string;
@@ -49,6 +54,23 @@ function countFindingsBySeverity(findings: Finding[]) {
     },
     { ...EMPTY_FINDING_COUNTS }
   );
+}
+
+function incrementDimension(counts: ValidationReportDimensionCounts, key: string) {
+  counts[key] = (counts[key] ?? 0) + 1;
+}
+
+function countFindingsByDimension(
+  findings: Finding[],
+  readKey: (finding: Finding) => string
+) {
+  const counts: ValidationReportDimensionCounts = {};
+
+  for (const finding of findings) {
+    incrementDimension(counts, readKey(finding));
+  }
+
+  return counts;
 }
 
 function buildOverallStatus(counts: ValidationReportFindingCounts) {
@@ -166,6 +188,22 @@ export function buildValidationReportSummary(
     technicalStatus: run.technicalStatus,
     standardStatus: run.standardStatus,
     findingCounts,
+    categoryCounts: countFindingsByDimension(
+      run.findings,
+      (finding) => finding.category || "uncategorized"
+    ),
+    layerCounts: countFindingsByDimension(
+      run.findings,
+      (finding) => finding.layer ?? "not_recorded"
+    ),
+    checkTypeCounts: countFindingsByDimension(
+      run.findings,
+      (finding) => finding.checkType ?? "not_recorded"
+    ),
+    legalConfidenceCounts: countFindingsByDimension(
+      run.findings,
+      (finding) => finding.legalConfidence
+    ),
     legalConfidenceSummary: buildLegalConfidenceSummary(run.findings),
     ruleSetsUsed: buildRuleSetsUsed(run.findings),
     disclaimer: VALIDATION_REPORT_DISCLAIMER,

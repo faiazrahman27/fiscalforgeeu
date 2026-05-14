@@ -28,6 +28,7 @@ export type ValidationRuleCategory =
   | "PEPPOL"
   | "COUNTRY_PACK"
   | "VIDA_SIMULATION"
+  | "SECURITY"
   | "LEGAL_LABEL";
 
 export type ValidationRuleSourceType =
@@ -42,6 +43,10 @@ export type ValidationRuleSourceMetadata = {
   sourceName: string;
   sourceType: ValidationRuleSourceType;
   jurisdiction: string;
+  sourceUrl?: string;
+  reviewedAt?: string;
+  effectiveFrom?: string;
+  effectiveUntil?: string;
   notes: string;
 };
 

@@ -30,6 +30,16 @@ import {
   type ValidationRunRecord
 } from "../../repositories/validation-run-repository.js";
 import {
+  runValidationEngine,
+  type ValidationEngineResult
+} from "../../services/validation-engine-service.js";
+import { enrichValidationFindings } from "../../services/validation-finding-enrichment.js";
+import {
+  viesModeSchema,
+  type ViesMode
+} from "../../schemas/validation-engine.js";
+import type { XmlValidationJobFinding } from "../../services/xml-validation-job-service.js";
+import {
   hasAuthenticatedInvoiceExportContext,
   saveAuthenticatedInvoiceExportRecord,
   saveOrganizationInvoiceExportRecord,
@@ -43,6 +53,33 @@ type UblExportRequestPayload = {
   invoiceDraftId: string | null;
   validationRunId: string | null;
 };
+
+type InvoiceValidationRequestPayload = {
+  invoiceInput: unknown;
+  viesMode: ViesMode;
+  xmlFindings: XmlValidationJobFinding[];
+};
+
+const validationRequestWrapperSchema = z
+  .object({
+    invoice: z.unknown().optional(),
+    payload: z.unknown().optional(),
+    viesMode: viesModeSchema.optional(),
+    xmlFindings: z.array(z.object({}).passthrough()).max(200).optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const hasInvoice = value.invoice !== undefined;
+    const hasPayload = value.payload !== undefined;
+
+    if (hasInvoice === hasPayload) {
+      context.addIssue({
+        code: "custom",
+        path: ["invoice"],
+        message: "Provide exactly one invoice or payload wrapper field."
+      });
+    }
+  });
 
 function getAuthenticatedValidationRunContext(
   request: FastifyRequest
@@ -59,6 +96,27 @@ function getAuthenticatedValidationRunContext(
       : null;
 
   return hasAuthenticatedValidationRunContext(context) ? context : null;
+}
+
+function resolveValidationOrganizationContext(request: FastifyRequest) {
+  if (request.authenticatedApiKey) {
+    return {
+      organizationId: request.authenticatedApiKey.organizationId,
+      userId: request.authenticatedApiKey.createdBy
+    };
+  }
+
+  if (request.workspaceAuthorization) {
+    return {
+      organizationId: request.workspaceAuthorization.organizationId,
+      userId: request.workspaceAuthorization.userId
+    };
+  }
+
+  return {
+    organizationId: "local",
+    userId: request.authenticatedUser?.id ?? null
+  };
 }
 
 function getAuthenticatedInvoiceDraftContext(
@@ -187,6 +245,48 @@ function getWrappedInvoiceInput(value: Record<string, unknown>) {
   return undefined;
 }
 
+function readInvoicePayloadForValidation(
+  requestBody: unknown
+):
+  | { success: true; data: InvoiceValidationRequestPayload }
+  | { success: false; error: z.ZodError } {
+  if (
+    !isPlainObject(requestBody) ||
+    (!("invoice" in requestBody) &&
+      !("payload" in requestBody) &&
+      !("viesMode" in requestBody) &&
+      !("xmlFindings" in requestBody))
+  ) {
+    return {
+      success: true,
+      data: {
+        invoiceInput: requestBody,
+        viesMode: "skip",
+        xmlFindings: []
+      }
+    };
+  }
+
+  const parsedWrapper = validationRequestWrapperSchema.safeParse(requestBody);
+
+  if (!parsedWrapper.success) {
+    return {
+      success: false,
+      error: parsedWrapper.error
+    };
+  }
+
+  return {
+    success: true,
+    data: {
+      invoiceInput: parsedWrapper.data.invoice ?? parsedWrapper.data.payload,
+      viesMode: parsedWrapper.data.viesMode ?? "skip",
+      xmlFindings: (parsedWrapper.data.xmlFindings ??
+        []) as XmlValidationJobFinding[]
+    }
+  };
+}
+
 function isDraftOnlyUblExportRequest(request: FastifyRequest) {
   if (!isPlainObject(request.body)) {
     return false;
@@ -261,6 +361,34 @@ function calculateXmlSha256(xml: string) {
   return createHash("sha256").update(xml, "utf8").digest("hex");
 }
 
+function buildValidationViesChecks(result: ValidationEngineResult) {
+  return result.viesChecks.map((check) => ({
+    status: check.status,
+    viesValid: check.viesValid,
+    checkedAt: check.checkedAt,
+    source: check.source,
+    evidence: check.evidence
+      ? {
+          id: check.evidence.id,
+          countryCode: check.evidence.countryCode,
+          vatNumberNormalized: check.evidence.vatNumberNormalized,
+          vatNumberDisplay: check.evidence.vatNumberDisplay,
+          requestSource: check.evidence.requestSource,
+          status: check.evidence.status,
+          viesValid: check.evidence.viesValid,
+          requestIdentifier: check.evidence.requestIdentifier,
+          checkedAt: check.evidence.checkedAt,
+          sourceLabel: check.evidence.sourceLabel,
+          sourceUrl: check.evidence.sourceUrl,
+          responseTimeMs: check.evidence.responseTimeMs,
+          errorCode: check.evidence.errorCode,
+          errorMessageSafe: check.evidence.errorMessageSafe,
+          rawResponseHash: check.evidence.rawResponseHash
+        }
+      : null
+  }));
+}
+
 export async function validateInvoiceRoutes(app: FastifyInstance) {
   app.post(
     "/validate",
@@ -276,23 +404,64 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
       ]
     },
     async (request, reply) => {
-      const parsedBody = validateCanonicalInvoice(request.body);
+      const validationRequest = readInvoicePayloadForValidation(request.body);
+
+      if (!validationRequest.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VALIDATION_REQUEST_INVALID",
+            message: "Request body failed validation request validation.",
+            details: formatZodError(validationRequest.error)
+          },
+          disclaimer: buildSandboxDisclaimer("validation")
+        });
+      }
+
+      if (request.authenticatedApiKey && !request.authenticatedApiKey.createdBy) {
+        return reply.status(403).send({
+          error: {
+            code: "API_KEY_WORKSPACE_ACTOR_REQUIRED",
+            message:
+              "This API key cannot create workspace validation records because it is not linked to a creating workspace user.",
+            details: null
+          }
+        });
+      }
+
+      const parsedBody = validateCanonicalInvoice(
+        validationRequest.data.invoiceInput
+      );
 
       if (!parsedBody.success) {
+        const findings = enrichValidationFindings(
+          parsedBody.findings.map((finding) => ({
+            ...finding,
+            field: finding.fieldPath
+          }))
+        );
+
         return reply.status(400).send({
           error: {
             code: "VALIDATION_ERROR",
             message: "Request body failed schema validation.",
             details: formatZodError(parsedBody.error)
           },
-          findings: parsedBody.findings,
+          findings,
           disclaimer: buildSandboxDisclaimer("validation")
         });
       }
 
       const payload = parsedBody.invoice;
-      const findings = buildValidationFindings(payload);
-      const totals = calculateValidationTotals(payload);
+      const organizationContext = resolveValidationOrganizationContext(request);
+      const engineResult = await runValidationEngine({
+        invoice: payload,
+        organizationId: organizationContext.organizationId,
+        createdBy: organizationContext.userId ?? null,
+        viesMode: validationRequest.data.viesMode,
+        xmlFindings: validationRequest.data.xmlFindings
+      });
+      const findings = engineResult.findings;
+      const totals = engineResult.totals;
 
       const hasFatal = hasBlockingFinding(findings);
       const hasWarning = hasWarningFinding(findings);
@@ -322,7 +491,7 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
         ? "educational_simulation"
         : "technical_preview";
 
-      const disclaimer = buildSandboxDisclaimer("validation");
+      const disclaimer = `${buildSandboxDisclaimer("validation")} ${engineResult.disclaimer}`;
 
       const record: ValidationRunRecord = {
         id: localValidationRunId,
@@ -347,17 +516,6 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
 
       try {
         const authenticatedContext = getAuthenticatedValidationRunContext(request);
-
-        if (request.authenticatedApiKey && !request.authenticatedApiKey.createdBy) {
-          return reply.status(403).send({
-            error: {
-              code: "API_KEY_WORKSPACE_ACTOR_REQUIRED",
-              message:
-                "This API key cannot create workspace validation records because it is not linked to a creating workspace user.",
-              details: null
-            }
-          });
-        }
 
         const savedRecord = request.authenticatedApiKey
           ? await saveOrganizationValidationRun(
@@ -385,6 +543,9 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
           vidaReadinessStatus,
           totals,
           findings,
+          validationSummary: engineResult.summary,
+          viesMode: engineResult.viesMode,
+          viesChecks: buildValidationViesChecks(engineResult),
           disclaimer
         });
       } catch (error) {

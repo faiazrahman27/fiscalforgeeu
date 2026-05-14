@@ -91,6 +91,12 @@ test("validation report summary counts finding severities", () => {
   });
   assert.equal(summary.overallStatus, "technical_issues_found");
   assert.equal(summary.ruleSetsUsed[0]?.code, "INVOICE_LANTERN_CORE");
+  assert.equal(summary.categoryCounts.CANONICAL, 2);
+  assert.equal(summary.categoryCounts.CALCULATION, 1);
+  assert.equal(summary.legalConfidenceCounts.technical, 3);
+  assert.equal(summary.legalConfidenceCounts.professional_review_required, 1);
+  assert.equal(summary.layerCounts.not_recorded, 4);
+  assert.equal(summary.checkTypeCounts.not_recorded, 4);
 });
 
 test("validation report summary includes the legally safe disclaimer", () => {
@@ -162,6 +168,8 @@ test("validation report summary counts VAT format warnings", () => {
   );
 
   assert.equal(summary.findingCounts.warning, 1);
+  assert.equal(summary.categoryCounts.VAT_ID, 1);
+  assert.equal(summary.legalConfidenceCounts.technical, 1);
   assert.equal(summary.overallStatus, "warnings_require_review");
   assert.equal(summary.ruleSetsUsed[0]?.code, "INVOICE_LANTERN_VAT_FORMAT");
 });

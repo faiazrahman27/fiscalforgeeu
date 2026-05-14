@@ -23,6 +23,11 @@ import {
   type AuthenticatedVatNumberCheckContext,
   type VatNumberCheckRecord
 } from "../../repositories/vat-number-check-repository.js";
+import {
+  buildViesFindingFromEvidence,
+  buildViesFindingFromStatus
+} from "../../services/validation-finding-enrichment.js";
+import { checkViesEvidence } from "../../services/vies-check-service.js";
 import { formatZodError } from "../../utils/zod-error.js";
 
 const vatFormatRequestSchema = z.object({
@@ -40,6 +45,16 @@ const vatCheckListQuerySchema = z
     validationRunId: z.string().trim().min(1).max(120).optional(),
     partyRole: z.enum(["seller", "buyer", "other"]).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional()
+  })
+  .strict();
+
+const viesCheckRequestSchema = z
+  .object({
+    countryCode: z.string().trim().min(2).max(8),
+    vatNumber: z.string().trim().min(1).max(64),
+    invoiceDraftId: z.string().trim().min(1).max(120).optional(),
+    validationRunId: z.string().trim().min(1).max(120).optional(),
+    partyRole: z.enum(["seller", "buyer", "other"]).optional()
   })
   .strict();
 
@@ -61,15 +76,36 @@ function getAuthenticatedVatNumberCheckContext(
 }
 
 function sendVatCheckStorageError(reply: FastifyReply, error: unknown) {
-  console.error("VAT number check storage error:", error);
+  console.error("VAT/VIES check storage error:", error);
 
   return reply.status(500).send({
     error: {
       code: "VAT_CHECK_STORAGE_ERROR",
-      message: "Could not complete the VAT format check evidence operation.",
+      message: "Could not complete the VAT/VIES evidence operation.",
       details: error instanceof Error ? error.message : null
     }
   });
+}
+
+function resolveViesOrganizationContext(request: FastifyRequest) {
+  if (request.authenticatedApiKey) {
+    return {
+      organizationId: request.authenticatedApiKey.organizationId,
+      userId: request.authenticatedApiKey.createdBy
+    };
+  }
+
+  if (request.workspaceAuthorization) {
+    return {
+      organizationId: request.workspaceAuthorization.organizationId,
+      userId: request.workspaceAuthorization.userId
+    };
+  }
+
+  return {
+    organizationId: "local",
+    userId: request.authenticatedUser?.id ?? null
+  };
 }
 
 function buildVatCheckCreateInput(
@@ -105,6 +141,40 @@ function buildVatCheckSummary(record: VatNumberCheckRecord) {
     message: record.message,
     warnings: record.warnings,
     disclaimer: record.disclaimer,
+    createdAt: record.createdAt
+  };
+}
+
+function buildViesEvidenceSummary(
+  record: Awaited<ReturnType<typeof checkViesEvidence>>["evidence"]
+) {
+  if (!record) {
+    return null;
+  }
+
+  return {
+    id: record.id,
+    organizationId: record.organizationId,
+    invoiceDraftId: record.invoiceDraftId,
+    validationRunId: record.validationRunId,
+    partyRole: record.partyRole,
+    countryCode: record.countryCode,
+    vatNumberNormalized: record.vatNumberNormalized,
+    vatNumberDisplay: record.vatNumberDisplay,
+    requestSource: record.requestSource,
+    status: record.status,
+    viesValid: record.viesValid,
+    viesName: record.viesName,
+    viesAddress: record.viesAddress,
+    requestIdentifier: record.requestIdentifier,
+    checkedAt: record.checkedAt,
+    sourceLabel: record.sourceLabel,
+    sourceUrl: record.sourceUrl,
+    responseTimeMs: record.responseTimeMs,
+    errorCode: record.errorCode,
+    errorMessageSafe: record.errorMessageSafe,
+    rawResponseHash: record.rawResponseHash,
+    metadata: record.metadata,
     createdAt: record.createdAt
   };
 }
@@ -178,6 +248,90 @@ export async function vatRoutes(app: FastifyInstance) {
           ...vatFormatResult,
           persisted: true,
           checkRecordId: record.id
+        };
+      } catch (error) {
+        return sendVatCheckStorageError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/check-vies",
+    {
+      preHandler: [
+        requireApiKeyScopes(["vat:check_vies"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceValidators, {
+          code: "VAT_CHECK_VIES_ROLE_REQUIRED",
+          message:
+            "VIES evidence checks require an organization owner, admin, accountant, developer, or reviewer role."
+        }),
+        requireApiKeyRateLimitPolicy("vat_check_vies")
+      ]
+    },
+    async (request, reply) => {
+      const parsedBody = viesCheckRequestSchema.safeParse(request.body);
+
+      if (!parsedBody.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VIES_CHECK_REQUEST_INVALID",
+            message: "Request body failed VIES evidence request validation.",
+            details: formatZodError(parsedBody.error)
+          }
+        });
+      }
+
+      try {
+        const organizationContext = resolveViesOrganizationContext(request);
+        const result = await checkViesEvidence({
+          organizationId: organizationContext.organizationId,
+          countryCode: parsedBody.data.countryCode,
+          vatNumber: parsedBody.data.vatNumber,
+          invoiceDraftId: parsedBody.data.invoiceDraftId ?? null,
+          validationRunId: parsedBody.data.validationRunId ?? null,
+          partyRole: parsedBody.data.partyRole ?? null,
+          createdBy: organizationContext.userId ?? null
+        });
+        const findings = [
+          result.evidence
+            ? buildViesFindingFromEvidence({
+                record: result.evidence,
+                fieldPath:
+                  parsedBody.data.partyRole === "seller"
+                    ? "seller.vatId"
+                    : parsedBody.data.partyRole === "buyer"
+                      ? "buyer.vatId"
+                      : "parties.vatId"
+              })
+            : buildViesFindingFromStatus({
+                status: result.status,
+                countryCode: parsedBody.data.countryCode,
+                vatNumberDisplay: parsedBody.data.vatNumber,
+                fieldPath:
+                  parsedBody.data.partyRole === "seller"
+                    ? "seller.vatId"
+                    : parsedBody.data.partyRole === "buyer"
+                      ? "buyer.vatId"
+                      : "parties.vatId",
+                checkedAt: result.checkedAt
+              })
+        ];
+
+        return {
+          formatCheck: result.formatCheck,
+          viesCheck: {
+            status: result.status,
+            viesValid: result.viesValid,
+            checkedAt: result.checkedAt,
+            source: result.source,
+            evidence: buildViesEvidenceSummary(result.evidence)
+          },
+          evidence: buildViesEvidenceSummary(result.evidence),
+          status: result.status,
+          checkedAt: result.checkedAt,
+          source: result.source,
+          disclaimer: result.disclaimer,
+          findings
         };
       } catch (error) {
         return sendVatCheckStorageError(reply, error);

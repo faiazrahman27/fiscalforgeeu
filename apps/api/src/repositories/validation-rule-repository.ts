@@ -13,12 +13,18 @@ import {
   getSupabaseServiceRoleClient,
   hasSupabaseServerConfig
 } from "../lib/supabase/server-client.js";
+import { listValidationEngineRuleCatalog } from "../services/validation-finding-enrichment.js";
 import { listVatFormatValidationRuleCatalog } from "../services/vat-format-validation-findings.js";
 
 export type ValidationRuleCatalogSource = {
   sourceName: string;
   sourceType: ValidationRuleSourceType;
   jurisdiction?: string;
+  sourceUrl?: string;
+  reviewedAt?: string;
+  effectiveFrom?: string;
+  effectiveUntil?: string;
+  notes?: string;
 };
 
 export type ValidationRuleCatalogRule = {
@@ -79,8 +85,13 @@ export type ValidationRuleRow = {
 export type ValidationRuleSourceRow = {
   rule_id: string;
   source_name: string;
+  source_url?: string | null;
   source_type: ValidationRuleSourceType;
   jurisdiction: string | null;
+  reviewed_at?: string | null;
+  effective_from?: string | null;
+  effective_until?: string | null;
+  notes?: string | null;
 };
 
 function toCatalogRuleSets(
@@ -112,7 +123,16 @@ function toCatalogRuleSets(
           sources: rule.sources.map((source) => ({
             sourceName: source.sourceName,
             sourceType: source.sourceType,
-            jurisdiction: source.jurisdiction
+            jurisdiction: source.jurisdiction,
+            ...(source.sourceUrl ? { sourceUrl: source.sourceUrl } : {}),
+            ...(source.reviewedAt ? { reviewedAt: source.reviewedAt } : {}),
+            ...(source.effectiveFrom
+              ? { effectiveFrom: source.effectiveFrom }
+              : {}),
+            ...(source.effectiveUntil
+              ? { effectiveUntil: source.effectiveUntil }
+              : {}),
+            ...(source.notes ? { notes: source.notes } : {})
           }))
         }))
     }));
@@ -153,7 +173,8 @@ function toStaticRuleCatalog(): ValidationRuleCatalog {
   return {
     ruleSets: toCatalogRuleSets([
       ...listCoreValidationRuleCatalog(),
-      ...listVatFormatValidationRuleCatalog()
+      ...listVatFormatValidationRuleCatalog(),
+      ...listValidationEngineRuleCatalog()
     ])
   };
 }
@@ -180,6 +201,26 @@ export function buildRuleCatalogFromRows(
 
     if (source.jurisdiction) {
       catalogSource.jurisdiction = source.jurisdiction;
+    }
+
+    if (source.source_url) {
+      catalogSource.sourceUrl = source.source_url;
+    }
+
+    if (source.reviewed_at) {
+      catalogSource.reviewedAt = source.reviewed_at;
+    }
+
+    if (source.effective_from) {
+      catalogSource.effectiveFrom = source.effective_from;
+    }
+
+    if (source.effective_until) {
+      catalogSource.effectiveUntil = source.effective_until;
+    }
+
+    if (source.notes) {
+      catalogSource.notes = source.notes;
     }
 
     existingSources.push(catalogSource);
@@ -284,7 +325,9 @@ async function listDatabasePublishedValidationRules() {
 
   const { data: sourceData, error: sourceError } = await supabase
     .from("validation_rule_sources")
-    .select("rule_id, source_name, source_type, jurisdiction")
+    .select(
+      "rule_id, source_name, source_url, source_type, jurisdiction, reviewed_at, effective_from, effective_until, notes"
+    )
     .in("rule_id", ruleIds)
     .order("source_name", {
       ascending: true
@@ -313,7 +356,11 @@ export async function listPublishedValidationRules() {
   try {
     return mergeRuleCatalogWithBundledFallback(
       await listDatabasePublishedValidationRules(),
-      [...listCoreValidationRuleCatalog(), ...listVatFormatValidationRuleCatalog()]
+      [
+        ...listCoreValidationRuleCatalog(),
+        ...listVatFormatValidationRuleCatalog(),
+        ...listValidationEngineRuleCatalog()
+      ]
     );
   } catch (error) {
     console.warn(

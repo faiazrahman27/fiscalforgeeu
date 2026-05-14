@@ -3,7 +3,6 @@ import {
   buildCoreValidationFindings,
   calculateInvoiceTotals,
   type LegalConfidence,
-  type ValidationFinding as CoreValidationFinding,
   type ValidationFindingSeverity
 } from "@invoice-lantern/invoice-core";
 import type { InvoiceValidationRequest } from "../schemas/invoice.js";
@@ -12,13 +11,37 @@ import {
   getSupabaseUserClient,
   hasSupabaseServerConfig
 } from "../lib/supabase/server-client.js";
+import type { ValidationSourceReference } from "../schemas/validation-engine.js";
+import { enrichValidationFindings } from "../services/validation-finding-enrichment.js";
 import { buildVatFormatValidationFindings } from "../services/vat-format-validation-findings.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
 export type FindingSeverity = ValidationFindingSeverity;
 
-export type Finding = CoreValidationFinding & {
+export type Finding = {
+  code: string;
+  severity: ValidationFindingSeverity;
+  category: string;
   field: string;
+  fieldPath: string;
+  message: string;
+  fixSuggestion?: string | undefined;
+  legalConfidence: LegalConfidence;
+  ruleSetCode?: string | undefined;
+  ruleVersion?: string | undefined;
+  sourceLabels?: string[] | undefined;
+  ruleId?: string | undefined;
+  sourceRefIds?: string[] | undefined;
+  sourceReferences?: ValidationSourceReference[] | undefined;
+  checkType?: string | undefined;
+  layer?: string | undefined;
+  createdAt?: string | undefined;
+  status?: string | undefined;
+  evidenceId?: string | undefined;
+  xmlLine?: number | undefined;
+  technicalCode?: string | undefined;
+  technicalMessage?: string | undefined;
+  businessRuleId?: string | undefined;
 };
 
 export type ValidationTotals = {
@@ -184,6 +207,64 @@ function readStringArrayField(record: Record<string, unknown>, key: string) {
     .filter(Boolean);
 }
 
+function readOptionalNumberField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function readSourceReferencesField(
+  record: Record<string, unknown>,
+  key: string
+): ValidationSourceReference[] {
+  const value = record[key];
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (item): item is Record<string, unknown> =>
+        typeof item === "object" && item !== null && !Array.isArray(item)
+    )
+    .map((item) => {
+      const sourceName = readStringField(item, "sourceName");
+
+      if (!sourceName) {
+        return null;
+      }
+
+      const source: ValidationSourceReference = {
+        sourceName
+      };
+      const optionalFields = [
+        "id",
+        "sourceLabel",
+        "sourceType",
+        "sourceUrl",
+        "jurisdiction",
+        "reviewedAt",
+        "effectiveFrom",
+        "effectiveUntil",
+        "notes"
+      ] as const;
+
+      for (const optionalField of optionalFields) {
+        const fieldValue = readStringField(item, optionalField);
+
+        if (fieldValue) {
+          source[optionalField] = fieldValue;
+        }
+      }
+
+      return source;
+    })
+    .filter((item): item is ValidationSourceReference => item !== null);
+}
+
 function sortValidationRunsByCreatedAt(records: ValidationRunRecord[]) {
   return [...records].sort((first, second) =>
     second.createdAt.localeCompare(first.createdAt)
@@ -256,6 +337,18 @@ function normalizeFinding(value: unknown): Finding | null {
   const ruleSetCode = readStringField(value, "ruleSetCode");
   const ruleVersion = readStringField(value, "ruleVersion");
   const sourceLabels = readStringArrayField(value, "sourceLabels");
+  const sourceRefIds = readStringArrayField(value, "sourceRefIds");
+  const sourceReferences = readSourceReferencesField(value, "sourceReferences");
+  const ruleId = readStringField(value, "ruleId");
+  const checkType = readStringField(value, "checkType");
+  const layer = readStringField(value, "layer");
+  const createdAt = readStringField(value, "createdAt");
+  const status = readStringField(value, "status");
+  const evidenceId = readStringField(value, "evidenceId");
+  const technicalCode = readStringField(value, "technicalCode");
+  const technicalMessage = readStringField(value, "technicalMessage");
+  const businessRuleId = readStringField(value, "businessRuleId");
+  const xmlLine = readOptionalNumberField(value, "xmlLine");
 
   if (!code || !field || !message) {
     return null;
@@ -301,6 +394,54 @@ function normalizeFinding(value: unknown): Finding | null {
 
   if (sourceLabels.length > 0) {
     finding.sourceLabels = sourceLabels;
+  }
+
+  if (sourceRefIds.length > 0) {
+    finding.sourceRefIds = sourceRefIds;
+  }
+
+  if (sourceReferences.length > 0) {
+    finding.sourceReferences = sourceReferences;
+  }
+
+  if (ruleId) {
+    finding.ruleId = ruleId;
+  }
+
+  if (checkType) {
+    finding.checkType = checkType;
+  }
+
+  if (layer) {
+    finding.layer = layer;
+  }
+
+  if (createdAt) {
+    finding.createdAt = createdAt;
+  }
+
+  if (status) {
+    finding.status = status;
+  }
+
+  if (evidenceId) {
+    finding.evidenceId = evidenceId;
+  }
+
+  if (typeof xmlLine === "number") {
+    finding.xmlLine = xmlLine;
+  }
+
+  if (technicalCode) {
+    finding.technicalCode = technicalCode;
+  }
+
+  if (technicalMessage) {
+    finding.technicalMessage = technicalMessage;
+  }
+
+  if (businessRuleId) {
+    finding.businessRuleId = businessRuleId;
   }
 
   return finding;
@@ -588,13 +729,13 @@ export function calculateValidationTotals(
 export function buildValidationFindings(
   payload: InvoiceValidationRequest
 ): Finding[] {
-  return [
+  return enrichValidationFindings([
     ...buildCoreValidationFindings(payload).map((finding) => ({
       ...finding,
       field: finding.fieldPath
     })),
     ...buildVatFormatValidationFindings(payload)
-  ];
+  ]) as Finding[];
 }
 
 /* -------------------------------------------------------------------------- */

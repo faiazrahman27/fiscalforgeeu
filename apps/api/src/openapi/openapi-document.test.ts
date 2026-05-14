@@ -339,6 +339,7 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/xml/validation-jobs",
     "/xml/validation-jobs/{id}",
     "/vat/validate-format",
+    "/vat/check-vies",
     "/country-packs",
     "/country-packs/{countryCode}",
     "/transactions/simulate-vida",
@@ -354,8 +355,29 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
   const documentedPathNames = Object.keys(paths).join("\n").toLowerCase();
 
   assert.equal(paths["/invoices/import/ubl"], undefined);
-  assert.doesNotMatch(documentedPathNames, /vies/);
+  assert.match(documentedPathNames, /\/vat\/check-vies/);
   assert.doesNotMatch(documentedPathNames, /webhook/);
+});
+
+test("OpenAPI documents VIES evidence as explicit and legally cautious", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+  const apiKeyScopeSchema = readRecord(schemas, "ApiKeyScope");
+  const apiKeyScopeEnum = apiKeyScopeSchema.enum;
+  const viesPath = JSON.stringify(readRecord(paths, "/vat/check-vies"));
+  const viesResponse = JSON.stringify(readRecord(schemas, "ViesCheckResponse"));
+  const findingSchema = JSON.stringify(readRecord(schemas, "ValidationFinding"));
+
+  assert.equal(Array.isArray(apiKeyScopeEnum), true);
+  assert.ok((apiKeyScopeEnum as unknown[]).includes("vat:check_vies"));
+  assert.match(viesPath, /VIES time-of-check evidence/i);
+  assert.match(viesPath, /VIES unavailable is not invalid/i);
+  assert.match(viesResponse, /Format valid is not VIES valid/i);
+  assert.match(findingSchema, /legalConfidence/);
+  assert.match(findingSchema, /sourceReferences/);
+  assert.match(findingSchema, /ruleVersion/);
 });
 
 test("OpenAPI documents production invoice lifecycle endpoints and safe boundaries", () => {
