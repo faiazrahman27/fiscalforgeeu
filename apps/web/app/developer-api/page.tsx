@@ -29,7 +29,7 @@ const apiModules = [
     icon: <Braces size={22} />,
     title: "XML validation jobs",
     description:
-      "Create metadata-only XML validation jobs for worker readiness, xsd_ubl, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; raw XML is not stored in job records."
+      "Create XML validation jobs for worker readiness, xsd_ubl, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; raw XML is not stored in job records."
   },
   {
     icon: <ShieldCheck size={22} />,
@@ -53,13 +53,13 @@ const apiModules = [
     icon: <KeyRound size={22} />,
     title: "API key management",
     description:
-      "Organization owners and admins can create scoped keys that are shown once, stored hashed, revocable, expirable, and tracked by last use."
+      "Organization owners, admins, and developers can create scoped keys that are shown once, stored hashed, revocable, expirable, and tracked by last use."
   },
   {
     icon: <Braces size={22} />,
     title: "Request log metadata",
     description:
-      "Workspace admins can review API usage logs with method, path, status, duration, key prefix, IP, user agent, and timestamps. Request bodies, XML payloads, full API keys, and full VAT IDs are not stored."
+      "Owner, admin, and developer workspace roles can review API usage logs with method, path, status, duration, key prefix, IP, user agent, and timestamps. Request bodies, XML payloads, full API keys, and full VAT IDs are not stored."
   },
   {
     icon: <ShieldCheck size={22} />,
@@ -234,8 +234,8 @@ curl -X POST http://localhost:4000/api/v1/transactions/simulate-vida \\
                 <p>XML validation jobs</p>
               </div>
 
-              <pre>{`# Create a metadata-only XML validation job.
-# Raw XML is accepted for processing but is not stored in job records or API request logs.
+              <pre>{`# Create an XML validation job.
+# Job records store metadata and sanitized results, not raw XML.
 # UBL XSD and Schematron checks are guarded technical checks.
 # not_configured, disabled, unsupported, unsafe_input, and preflight_only are not success.
 
@@ -336,6 +336,7 @@ curl -X POST http://localhost:4000/api/v1/vat/check-vies \\
               <pre>{`invoices:validate        POST /api/v1/invoices/validate
 invoices:export_ubl      POST /api/v1/invoices/export/ubl
 invoices:parse_ubl       POST /api/v1/invoices/parse/ubl
+invoices:import_ubl      reserved; editable UBL draft import is signed-user-only
 xml:validation_jobs      POST /api/v1/xml/validation-jobs
 xml:validation_jobs      GET  /api/v1/xml/validation-jobs
 xml:validation_jobs      GET  /api/v1/xml/validation-jobs/:id
@@ -343,6 +344,7 @@ vat:validate_format      POST /api/v1/vat/validate-format
 vat:check_vies           POST /api/v1/vat/check-vies
 transactions:simulate_vida POST /api/v1/transactions/simulate-vida
 rules:read               GET  /api/v1/validation/rules
+validation_runs:read     GET  /api/v1/validation-runs
 validation_runs:read     GET  /api/v1/validation-runs/:id
 
 Signed-in workspace production invoice lifecycle routes use Supabase session auth:
@@ -352,6 +354,7 @@ POST   /api/v1/invoices/from-draft
 POST   /api/v1/invoices/:id/transition
 POST   /api/v1/invoices/:id/export/ubl
 POST   /api/v1/invoices/:id/simulate-vida
+POST   /api/v1/invoices/import/ubl
 
 Invoice Lantern API keys provide access to sandbox technical validation tools only.
 They are not official filing credentials and do not provide tax authority submission capability.
@@ -374,6 +377,7 @@ They do not store request bodies, XML payloads, full API keys, full VAT IDs, or 
 rules:read               120 requests per 15 minutes per API key
 vat:validate_format       60 requests per 15 minutes per API key
 vat:check_vies            20 requests per 15 minutes per API key
+transactions:simulate_vida 30 requests per 15 minutes per API key
 invoices:validate         30 requests per 15 minutes per API key
 invoices:export_ubl       30 requests per 15 minutes per API key
 invoices:parse_ubl        30 requests per 15 minutes per API key

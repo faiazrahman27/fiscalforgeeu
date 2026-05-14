@@ -28,6 +28,14 @@ function getPaths(document: Record<string, unknown>) {
   return readRecord(document, "paths");
 }
 
+function readOperation(
+  paths: Record<string, unknown>,
+  path: string,
+  method: string
+) {
+  return readRecord(readRecord(paths, path), method);
+}
+
 test("GET /api/v1/openapi.json returns the active OpenAPI document", async (t) => {
   const app = await buildApp();
 
@@ -66,6 +74,133 @@ test("OpenAPI includes X-API-Key auth and signed-in workspace auth", () => {
   assert.equal(apiKeyAuth.name, "X-API-Key");
   assert.equal(bearerAuth.type, "http");
   assert.equal(bearerAuth.scheme, "bearer");
+});
+
+test("OpenAPI documents the implemented developer-facing API route surface", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+
+  const requiredOperations = [
+    ["/api-keys", "get"],
+    ["/api-keys", "post"],
+    ["/api-keys/{id}/revoke", "post"],
+    ["/api-requests", "get"],
+    ["/api-requests/summary", "get"],
+    ["/api-usage/policies", "get"],
+    ["/api-usage/current", "get"],
+    ["/invoices", "get"],
+    ["/invoices", "post"],
+    ["/invoices/from-draft", "post"],
+    ["/invoices/{id}", "get"],
+    ["/invoices/{id}", "patch"],
+    ["/invoices/{id}/transition", "post"],
+    ["/invoices/{id}/lifecycle-events", "get"],
+    ["/invoices/{id}/export/ubl", "post"],
+    ["/invoices/{id}/simulate-vida", "post"],
+    ["/invoices/validate", "post"],
+    ["/invoices/export/ubl", "post"],
+    ["/invoices/parse/ubl", "post"],
+    ["/invoices/import/ubl", "post"],
+    ["/invoices/exports", "get"],
+    ["/xml/validation-jobs", "get"],
+    ["/xml/validation-jobs", "post"],
+    ["/xml/validation-jobs/{id}", "get"],
+    ["/xml/uploads", "get"],
+    ["/xml/uploads/{id}", "get"],
+    ["/xml/uploads/{id}", "delete"],
+    ["/xml/inspect", "post"],
+    ["/vat/validate-format", "post"],
+    ["/vat/check-vies", "post"],
+    ["/vat/checks", "get"],
+    ["/validation/rules", "get"],
+    ["/validation-runs", "get"],
+    ["/validation-runs/{id}", "get"],
+    ["/validation-runs/{id}", "delete"],
+    ["/validation-runs/{id}/report.pdf", "get"],
+    ["/country-packs", "get"],
+    ["/country-packs/{countryCode}", "get"],
+    ["/transactions/simulate-vida", "post"],
+    ["/transactions/vida-simulations", "get"],
+    ["/transactions/vida-simulations/{id}", "get"]
+  ] as const;
+
+  for (const [path, method] of requiredOperations) {
+    assert.ok(paths[path], `Expected OpenAPI path ${path}`);
+    assert.ok(
+      readRecord(paths, path)[method],
+      `Expected OpenAPI operation ${method.toUpperCase()} ${path}`
+    );
+  }
+
+  for (const schemaName of [
+    "UblImportResponse",
+    "InvoiceExportListResponse",
+    "XmlInspectResponse",
+    "XmlUploadListResponse",
+    "VatCheckListResponse",
+    "ValidationRunListResponse",
+    "DeleteResponse"
+  ]) {
+    assert.ok(schemas[schemaName], `Expected schema ${schemaName}`);
+  }
+});
+
+test("OpenAPI documents scopes and signed-user-only API boundaries", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+
+  const scopedOperations = [
+    ["/invoices/validate", "post", "invoices:validate"],
+    ["/invoices/export/ubl", "post", "invoices:export_ubl"],
+    ["/invoices/parse/ubl", "post", "invoices:parse_ubl"],
+    ["/xml/validation-jobs", "post", "xml:validation_jobs"],
+    ["/xml/validation-jobs", "get", "xml:validation_jobs"],
+    ["/vat/validate-format", "post", "vat:validate_format"],
+    ["/vat/check-vies", "post", "vat:check_vies"],
+    ["/transactions/simulate-vida", "post", "transactions:simulate_vida"],
+    ["/validation/rules", "get", "rules:read"],
+    ["/validation-runs", "get", "validation_runs:read"],
+    ["/validation-runs/{id}", "get", "validation_runs:read"],
+    ["/validation-runs/{id}/report.pdf", "get", "validation_runs:read"]
+  ] as const;
+
+  for (const [path, method, scope] of scopedOperations) {
+    const operation = readOperation(paths, path, method);
+    assert.equal(operation["x-required-scope"], scope);
+    assert.match(JSON.stringify(operation), new RegExp(scope.replace(":", ":")));
+  }
+
+  const importUbl = readOperation(paths, "/invoices/import/ubl", "post");
+  const importSecurity = JSON.stringify(importUbl.security);
+
+  assert.equal(importUbl["x-required-scope"], undefined);
+  assert.match(importSecurity, /SupabaseBearerAuth/);
+  assert.doesNotMatch(importSecurity, /ApiKeyAuth/);
+  assert.match(
+    String(importUbl.description),
+    /Organization API keys are intentionally rejected/
+  );
+  assert.match(String(importUbl.description), /reserved invoices:import_ubl/);
+  assert.match(String(importUbl.description), /use POST \/invoices\/parse\/ubl/);
+
+  for (const [path, method] of [
+    ["/api-keys", "get"],
+    ["/api-requests", "get"],
+    ["/api-usage/current", "get"],
+    ["/invoices/exports", "get"],
+    ["/vat/checks", "get"],
+    ["/xml/inspect", "post"],
+    ["/xml/uploads", "get"],
+    ["/validation-runs/{id}", "delete"]
+  ] as const) {
+    const operation = readOperation(paths, path, method);
+    const security = JSON.stringify(operation.security);
+
+    assert.match(security, /SupabaseBearerAuth/);
+    assert.doesNotMatch(security, /ApiKeyAuth/);
+  }
 });
 
 test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boundary", () => {
@@ -361,16 +496,23 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/invoices/validate",
     "/invoices/export/ubl",
     "/invoices/parse/ubl",
+    "/invoices/import/ubl",
+    "/invoices/exports",
     "/xml/validation-jobs",
     "/xml/validation-jobs/{id}",
+    "/xml/uploads",
+    "/xml/uploads/{id}",
+    "/xml/inspect",
     "/vat/validate-format",
     "/vat/check-vies",
+    "/vat/checks",
     "/country-packs",
     "/country-packs/{countryCode}",
     "/transactions/simulate-vida",
     "/transactions/vida-simulations",
     "/transactions/vida-simulations/{id}",
     "/validation/rules",
+    "/validation-runs",
     "/validation-runs/{id}",
     "/validation-runs/{id}/report.pdf"
   ]) {
@@ -378,8 +520,9 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
   }
 
   const documentedPathNames = Object.keys(paths).join("\n").toLowerCase();
+  const importUblPath = JSON.stringify(readRecord(paths, "/invoices/import/ubl"));
 
-  assert.equal(paths["/invoices/import/ubl"], undefined);
+  assert.match(importUblPath, /Organization API keys are intentionally rejected/);
   assert.match(documentedPathNames, /\/vat\/check-vies/);
   assert.doesNotMatch(documentedPathNames, /webhook/);
 });
@@ -1096,4 +1239,18 @@ test("OpenAPI avoids sensitive key fields and only documents one-time create sec
   assert.doesNotMatch(serialized, /API_KEY_HASH_SECRET/);
   assert.doesNotMatch(serialized, /INVOICE_LANTERN_DEV_API_KEY/);
   assert.doesNotMatch(serialized, /DEV_API_KEY/);
+});
+
+test("OpenAPI keeps public examples legal-safe and Invoice Lantern branded", () => {
+  const serialized = JSON.stringify(openApiDocument);
+
+  assert.match(serialized, /Invoice Lantern Developer API/);
+  assert.match(serialized, /il_test_your_key_here/);
+  assert.match(serialized, /non-official/i);
+  assert.match(serialized, /professional review/i);
+  assert.doesNotMatch(serialized, /FiscalForge/i);
+  assert.doesNotMatch(
+    serialized,
+    /\bViDA compliant\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bauthority accepted\b|\baccepted by authority\b|\bofficial filing software\b|\bproves compliance\b/i
+  );
 });

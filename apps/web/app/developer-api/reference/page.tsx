@@ -17,11 +17,13 @@ const scopeRows = [
   ["invoices:validate", "POST /api/v1/invoices/validate"],
   ["invoices:export_ubl", "POST /api/v1/invoices/export/ubl"],
   ["invoices:parse_ubl", "POST /api/v1/invoices/parse/ubl"],
+  ["invoices:import_ubl", "Reserved; draft import is signed-user-only"],
   ["xml:validation_jobs", "POST/GET /api/v1/xml/validation-jobs"],
   ["vat:validate_format", "POST /api/v1/vat/validate-format"],
+  ["vat:check_vies", "POST /api/v1/vat/check-vies"],
   ["transactions:simulate_vida", "POST /api/v1/transactions/simulate-vida"],
   ["rules:read", "GET /api/v1/validation/rules"],
-  ["validation_runs:read", "GET /api/v1/validation-runs/:id"]
+  ["validation_runs:read", "GET /api/v1/validation-runs and /:id"]
 ];
 
 const publicReadOnlyRows = [
@@ -52,10 +54,11 @@ export default function DeveloperApiReferencePage() {
             <p className="subpage-lead">
               This reference documents the implemented Invoice Lantern
               Developer API surface. It covers sandbox technical validation,
-              UBL export and parsing, XML validation job metadata, local VAT
-              format checks, ViDA-readiness simulations, country-pack catalogue
-              reads, validation-rule metadata, validation-run detail reads, API
-              key management, usage logs, and rate-limit policy views. It is not
+              UBL export and parsing, signed-user-only UBL draft import, XML
+              validation jobs, local VAT format checks, explicit VIES evidence,
+              ViDA-readiness simulations, country-pack catalogue reads,
+              validation-rule metadata, validation-run list/detail reads, API key
+              management, usage logs, and rate-limit policy views. It is not
               official filing, not authority submission, not tax, legal, or
               accounting advice, and not a compliance guarantee.
             </p>
@@ -184,7 +187,7 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
             <section className="reference-scope-table">
               <div className="reference-table-head">
                 <div>
-                  <p>Scopes</p>
+                <p>Scopes</p>
                   <h2>Current API-key scopes</h2>
                 </div>
                 <ShieldCheck size={22} />
@@ -201,8 +204,9 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
 
               <p>
                 The reserved `invoices:import_ubl` scope can exist on keys, but
-                UBL draft import is not documented as an active organization
-                API-key endpoint in this reference.
+                UBL draft import is documented as a signed-user-only workspace
+                route. Organization API keys can parse UBL XML; they cannot
+                create editable drafts in this step.
               </p>
             </section>
           </Reveal>

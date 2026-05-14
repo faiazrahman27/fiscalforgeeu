@@ -50,7 +50,8 @@ Current scopes are:
 - `invoices:validate`
 - `invoices:export_ubl`
 - `invoices:parse_ubl`
-- `invoices:import_ubl`
+- `invoices:import_ubl` (reserved in the scope enum; editable draft import is
+  currently signed-user-only and rejects organization API keys)
 - `xml:validation_jobs`
 - `vat:validate_format`
 - `vat:check_vies`

@@ -73,11 +73,33 @@ const fallbackRows: EndpointRow[] = [
   },
   {
     method: "POST",
+    path: "/api/v1/invoices/import/ubl",
+    tag: "UBL",
+    summary: "Import UBL into editable draft",
+    description:
+      "Signed-user-only workspace route. Organization API keys can parse UBL but cannot create editable drafts in this step.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["201", "400", "401", "403", "413", "415", "422", "500"]
+  },
+  {
+    method: "GET",
+    path: "/api/v1/invoices/exports",
+    tag: "UBL",
+    summary: "List UBL export metadata",
+    description:
+      "Signed-user-only workspace route for safe UBL export metadata. XML bodies, full keys, and key hashes are not returned.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "500"]
+  },
+  {
+    method: "POST",
     path: "/api/v1/xml/validation-jobs",
     tag: "XML Validation Jobs",
     summary: "Create an XML validation job",
     description:
-      "Creates a metadata-only XML validation job. Supported checks include xsd_ubl, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; not_configured, disabled, unsupported, unsafe_input, and preflight_only are not success.",
+      "Creates an XML validation job with sanitized metadata and results. Supported checks include xsd_ubl, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; not_configured, disabled, unsupported, unsafe_input, and preflight_only are not success.",
     scope: "xml:validation_jobs",
     auth: "X-API-Key",
     responses: ["200", "400", "401", "403", "413", "429", "500"]
@@ -88,7 +110,7 @@ const fallbackRows: EndpointRow[] = [
     tag: "XML Validation Jobs",
     summary: "List XML validation jobs",
     description:
-      "Lists metadata-only XML validation jobs for the caller organization. Raw XML is never returned.",
+      "Lists XML validation jobs for the caller organization with sanitized metadata and results. Raw XML is never returned.",
     scope: "xml:validation_jobs",
     auth: "X-API-Key",
     responses: ["200", "400", "401", "403", "429", "500"]
@@ -106,6 +128,28 @@ const fallbackRows: EndpointRow[] = [
   },
   {
     method: "POST",
+    path: "/api/v1/xml/inspect",
+    tag: "XML Validation Jobs",
+    summary: "Inspect XML readiness",
+    description:
+      "Signed-user-only workspace route for sanitized XML readiness inspection. Raw XML is not returned.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "413", "415", "500"]
+  },
+  {
+    method: "GET",
+    path: "/api/v1/xml/uploads",
+    tag: "XML Validation Jobs",
+    summary: "List XML upload records",
+    description:
+      "Signed-user-only workspace route for sanitized XML upload inspection history.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "500"]
+  },
+  {
+    method: "POST",
     path: "/api/v1/transactions/simulate-vida",
     tag: "Transactions",
     summary: "Run ViDA-readiness simulation",
@@ -114,6 +158,17 @@ const fallbackRows: EndpointRow[] = [
     scope: "transactions:simulate_vida",
     auth: "X-API-Key or Bearer user token",
     responses: ["200", "400", "401", "403", "429", "500"]
+  },
+  {
+    method: "GET",
+    path: "/api/v1/transactions/vida-simulations",
+    tag: "Transactions",
+    summary: "List saved ViDA simulations",
+    description:
+      "Signed-user-only workspace history for persisted educational ViDA-readiness simulations.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "500"]
   },
   {
     method: "POST",
@@ -150,6 +205,17 @@ const fallbackRows: EndpointRow[] = [
   },
   {
     method: "GET",
+    path: "/api/v1/vat/checks",
+    tag: "VAT",
+    summary: "List VAT format checks",
+    description:
+      "Signed-user-only workspace history for local VAT format checks. This is not VIES evidence.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "500"]
+  },
+  {
+    method: "GET",
     path: "/api/v1/validation/rules",
     tag: "Validation Rules",
     summary: "List validation rules",
@@ -158,6 +224,28 @@ const fallbackRows: EndpointRow[] = [
     scope: "rules:read",
     auth: "X-API-Key",
     responses: ["200", "400", "401", "403", "429", "500"]
+  },
+  {
+    method: "GET",
+    path: "/api/v1/validation-runs",
+    tag: "Validation Runs",
+    summary: "List validation run summaries",
+    description:
+      "Lists organization-owned validation run summaries for API keys with validation_runs:read.",
+    scope: "validation_runs:read",
+    auth: "X-API-Key or Bearer user token",
+    responses: ["200", "400", "401", "403", "429", "500"]
+  },
+  {
+    method: "GET",
+    path: "/api/v1/api-keys",
+    tag: "Authentication / API Keys",
+    summary: "List organization API keys",
+    description:
+      "Signed-user-only workspace route that returns safe API key metadata without full secrets or key hashes.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["200", "400", "401", "403", "500"]
   }
 ];
 

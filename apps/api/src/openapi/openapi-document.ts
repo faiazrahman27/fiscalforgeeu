@@ -229,7 +229,23 @@ const commonErrorResponses = {
     "INSUFFICIENT_SCOPE"
   ),
   "404": errorResponse("The requested resource was not found.", "NOT_FOUND"),
-  "500": errorResponse("Unexpected internal API error.", "INTERNAL_ERROR")
+  "409": errorResponse(
+    "The requested state conflicts with the current resource state.",
+    "CONFLICT"
+  ),
+  "413": errorResponse(
+    "The request payload is too large for this sandbox endpoint.",
+    "PAYLOAD_TOO_LARGE"
+  ),
+  "422": errorResponse(
+    "The request was understood but could not be processed safely.",
+    "UNPROCESSABLE_ENTITY"
+  ),
+  "500": errorResponse("Unexpected internal API error.", "INTERNAL_ERROR"),
+  "503": errorResponse(
+    "A configured external dependency is unavailable. Treat the result as unavailable, not invalid.",
+    "EXTERNAL_SERVICE_UNAVAILABLE"
+  )
 };
 
 const rateLimitResponse = {
@@ -256,16 +272,16 @@ const rateLimitResponse = {
 
 function apiKeyResponses(success: Record<string, unknown>) {
   return {
-    ...success,
     ...commonErrorResponses,
+    ...success,
     "429": rateLimitResponse
   };
 }
 
 function workspaceResponses(success: Record<string, unknown>) {
   return {
-    ...success,
-    ...commonErrorResponses
+    ...commonErrorResponses,
+    ...success
   };
 }
 
@@ -373,7 +389,7 @@ const openApiDocument = {
     {
       name: "Country Packs",
       description:
-        "Read-only country-pack catalogue endpoints for educational VAT, e-invoicing, source-reference, capability, lifecycle, and registry metadata. Country packs are not legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority compliance guarantees."
+        "Read-only country-pack catalogue endpoints for educational VAT, e-invoicing, source-linked, capability, lifecycle, and registry metadata. Country packs are professional-review-aware context only and are not legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority compliance guarantees."
     },
     {
       name: "Transactions",
@@ -922,6 +938,53 @@ const openApiDocument = {
         }
       })
     },
+    "/invoices/exports": {
+      get: bearerOperation({
+        tags: ["UBL"],
+        summary: "List technical UBL export metadata",
+        description:
+          "Lists safe UBL export metadata for the signed-in workspace. This endpoint returns filenames, hashes, sizes, profiles, statuses, and timestamps only; generated XML bodies, API-key secrets, and key hashes are not returned. Organization API keys are not accepted for this signed-user history endpoint.",
+        parameters: [
+          {
+            name: "invoiceDraftId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          },
+          {
+            name: "validationRunId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 25
+            }
+          }
+        ],
+        responses: {
+          "200": response(
+            "Safe technical UBL export metadata.",
+            ref("InvoiceExportListResponse")
+          )
+        }
+      })
+    },
     "/invoices/validate": {
       post: scopedApiKeyOperation({
         tags: ["Invoices"],
@@ -1050,6 +1113,53 @@ const openApiDocument = {
         }
       })
     },
+    "/invoices/import/ubl": {
+      post: bearerOperation({
+        tags: ["UBL"],
+        summary: "Import UBL XML into an editable invoice draft",
+        description:
+          "Parses safe UBL XML into the Invoice Lantern canonical model and creates an editable workspace invoice draft for a signed-in workspace user with an allowed draft-edit role. Organization API keys are intentionally rejected for editable draft creation in this step; use POST /invoices/parse/ubl with the invoices:parse_ubl scope for API-key parsing. The reserved invoices:import_ubl scope documents future access control intent but is not an active organization API-key draft creation route.",
+        requestBody: {
+          required: true,
+          content: {
+            ...jsonContent(ref("UblParseJsonRequest"), {
+              jsonXml: {
+                value: {
+                  xml: tinyUblXml
+                }
+              }
+            }),
+            "application/xml": {
+              schema: {
+                type: "string"
+              },
+              example: tinyUblXml
+            },
+            "text/xml": {
+              schema: {
+                type: "string"
+              },
+              example: tinyUblXml
+            }
+          }
+        },
+        responses: {
+          "201": response(
+            "Editable draft created from parsed UBL XML.",
+            ref("UblImportResponse")
+          ),
+          "413": errorResponse("XML body is too large.", "XML_BODY_TOO_LARGE"),
+          "415": errorResponse(
+            "Use raw XML or JSON with an xml string for UBL draft import.",
+            "UNSUPPORTED_MEDIA_TYPE"
+          ),
+          "422": response(
+            "UBL XML could not be safely represented as an editable draft.",
+            ref("UblImportResponse")
+          )
+        }
+      })
+    },
     "/xml/validation-jobs": {
       get: scopedApiKeyOperation({
         tags: ["XML Validation Jobs"],
@@ -1118,6 +1228,12 @@ const openApiDocument = {
             headers: rateLimitHeaders,
             content: jsonContent(ref("XmlValidationJobResponse"))
           },
+          "202": {
+            description:
+              "Queued XML validation job metadata for async worker processing.",
+            headers: rateLimitHeaders,
+            content: jsonContent(ref("XmlValidationJobResponse"))
+          },
           "413": errorResponse("XML body is too large.", "XML_BODY_TOO_LARGE")
         }
       })
@@ -1147,6 +1263,100 @@ const openApiDocument = {
             headers: rateLimitHeaders,
             content: jsonContent(ref("XmlValidationJobResponse"))
           }
+        }
+      })
+    },
+    "/xml/uploads": {
+      get: bearerOperation({
+        tags: ["XML Validation Jobs"],
+        summary: "List XML upload inspection records",
+        description:
+          "Lists signed-in workspace XML readiness inspection records. The endpoint returns sanitized extracted metadata, readiness statuses, findings, summaries, and disclaimers only. Raw XML is not returned, and organization API keys are not accepted for this signed-user upload history route.",
+        responses: {
+          "200": response("XML upload inspection records.", ref("XmlUploadListResponse"))
+        }
+      })
+    },
+    "/xml/uploads/{id}": {
+      get: bearerOperation({
+        tags: ["XML Validation Jobs"],
+        summary: "Get XML upload inspection record",
+        description:
+          "Returns one signed-in workspace XML readiness inspection record with sanitized metadata and findings. Raw XML is not returned.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          }
+        ],
+        responses: {
+          "200": response("XML upload inspection record.", {
+            type: "object",
+            required: ["record"],
+            properties: {
+              record: ref("XmlUploadRecord")
+            }
+          })
+        }
+      }),
+      delete: bearerOperation({
+        tags: ["XML Validation Jobs"],
+        summary: "Delete XML upload inspection record",
+        description:
+          "Deletes one signed-in workspace XML readiness inspection record. This owner/admin workspace action deletes stored inspection metadata only and does not affect any official filing or authority system.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          }
+        ],
+        responses: {
+          "200": response("Deleted XML upload inspection metadata.", ref("DeleteResponse"))
+        }
+      })
+    },
+    "/xml/inspect": {
+      post: bearerOperation({
+        tags: ["XML Validation Jobs"],
+        summary: "Inspect XML readiness for a signed-in workspace",
+        description:
+          "Performs a signed-user technical XML readiness inspection and stores sanitized inspection metadata. The route accepts an XML media type, rejects unsafe or oversized XML, and does not store or return the raw XML payload. This is not official XML validation, Peppol certification, EN 16931 certification, ViDA compliance, legal advice, tax advice, accounting advice, filing, or authority acceptance.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/xml": {
+              schema: {
+                type: "string"
+              },
+              example: tinyUblXml
+            },
+            "text/xml": {
+              schema: {
+                type: "string"
+              },
+              example: tinyUblXml
+            }
+          }
+        },
+        responses: {
+          "200": response("Stored XML readiness inspection.", ref("XmlInspectResponse")),
+          "413": errorResponse("XML body is too large.", "XML_BODY_TOO_LARGE"),
+          "415": errorResponse(
+            "Use content-type text/xml, application/xml, or another XML media type.",
+            "UNSUPPORTED_MEDIA_TYPE"
+          )
         }
       })
     },
@@ -1205,12 +1415,65 @@ const openApiDocument = {
         }
       })
     },
+    "/vat/checks": {
+      get: bearerOperation({
+        tags: ["VAT"],
+        summary: "List saved VAT format check records",
+        description:
+          "Lists signed-in workspace VAT format check history records. This signed-user endpoint returns local format evidence only; organization API keys are not accepted. Stored records do not prove VAT registration, VIES validity, transaction treatment, tax compliance, filing, or authority acceptance.",
+        parameters: [
+          {
+            name: "invoiceDraftId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          },
+          {
+            name: "validationRunId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          },
+          {
+            name: "partyRole",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["seller", "buyer", "other"]
+            }
+          },
+          {
+            name: "limit",
+            in: "query",
+            required: false,
+            schema: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 25
+            }
+          }
+        ],
+        responses: {
+          "200": response("Saved local VAT format check records.", ref("VatCheckListResponse"))
+        }
+      })
+    },
     "/country-packs": {
       get: {
         tags: ["Country Packs"],
         summary: "List country packs",
         description:
-          "Returns the Invoice Lantern country-pack catalogue with bundled pack data and registry metadata when the database registry is configured. Country packs are educational simulations only. They do not certify legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority compliance.",
+          "Returns the Invoice Lantern country-pack catalogue with bundled pack data, source-linked warnings, and registry metadata when the database registry is configured. Country packs are educational simulations and professional-review-aware context only. They do not certify legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority compliance.",
         responses: {
           "200": response("Country-pack catalogue.", ref("CountryPackCatalogResponse")),
           "500": commonErrorResponses["500"]
@@ -1222,7 +1485,7 @@ const openApiDocument = {
         tags: ["Country Packs"],
         summary: "Get country-pack detail",
         description:
-          "Returns one Invoice Lantern country pack by two-letter country code, including VAT-format metadata, e-invoicing status, warnings, source references, rules, disclaimer text, and registry lifecycle metadata when available. This is a sandbox educational endpoint only.",
+          "Returns one Invoice Lantern country pack by two-letter country code, including VAT-format metadata, e-invoicing status, warnings, source references, rules, disclaimer text, and registry lifecycle metadata when available. This is a sandbox educational endpoint only, and unknown or source-limited items require professional review.",
         parameters: [
           {
             name: "countryCode",
@@ -1418,6 +1681,29 @@ const openApiDocument = {
         }
       })
     },
+    "/validation-runs": {
+      get: {
+        tags: ["Validation Runs"],
+        summary: "List validation run summaries",
+        description:
+          "Lists stored validation run summaries for the caller's organization. Organization API keys require the `validation_runs:read` scope and can only read runs owned by their organization. Signed-in workspace users may also list runs permitted by workspace authorization. Results are technical sandbox records only and are not legal, tax, accounting, filing, compliance, or authority determinations.",
+        security: [
+          {
+            ApiKeyAuth: []
+          },
+          {
+            SupabaseBearerAuth: []
+          }
+        ],
+        "x-required-scope": "validation_runs:read",
+        responses: apiKeyResponses({
+          "200": response(
+            "Validation run summaries.",
+            ref("ValidationRunListResponse")
+          )
+        })
+      }
+    },
     "/validation-runs/{id}": {
       get: {
         tags: ["Validation Runs"],
@@ -1455,7 +1741,28 @@ const openApiDocument = {
             }
           })
         })
-      }
+      },
+      delete: bearerOperation({
+        tags: ["Validation Runs"],
+        summary: "Delete a validation run",
+        description:
+          "Deletes one signed-in workspace validation run record. This owner/admin workspace action is not available to organization API keys and has no effect on any official filing or authority system.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              minLength: 1,
+              maxLength: 120
+            }
+          }
+        ],
+        responses: {
+          "200": response("Deleted validation run metadata.", ref("DeleteResponse"))
+        }
+      })
     },
     "/validation-runs/{id}/report.pdf": {
       get: {
@@ -1552,6 +1859,12 @@ const openApiDocument = {
                   "INSUFFICIENT_SCOPE",
                   "API_KEY_SCOPE_INSUFFICIENT",
                   "NOT_FOUND",
+                  "CONFLICT",
+                  "PAYLOAD_TOO_LARGE",
+                  "XML_BODY_TOO_LARGE",
+                  "UNSUPPORTED_MEDIA_TYPE",
+                  "UNPROCESSABLE_ENTITY",
+                  "EXTERNAL_SERVICE_UNAVAILABLE",
                   "INTERNAL_ERROR"
                 ]
               },
@@ -3181,6 +3494,77 @@ const openApiDocument = {
           }
         }
       },
+      InvoiceExportSummary: {
+        type: "object",
+        required: [
+          "id",
+          "invoiceDraftId",
+          "validationRunId",
+          "exportType",
+          "format",
+          "profile",
+          "filename",
+          "contentType",
+          "xmlSha256",
+          "xmlSizeBytes",
+          "status",
+          "createdAt"
+        ],
+        properties: {
+          id: {
+            type: "string"
+          },
+          invoiceDraftId: {
+            type: ["string", "null"]
+          },
+          validationRunId: {
+            type: ["string", "null"]
+          },
+          exportType: {
+            type: "string",
+            const: "ubl_invoice"
+          },
+          format: {
+            type: "string",
+            const: "xml"
+          },
+          profile: {
+            type: "string"
+          },
+          filename: {
+            type: "string"
+          },
+          contentType: {
+            type: "string"
+          },
+          xmlSha256: {
+            type: "string",
+            description:
+              "SHA-256 hash of the generated XML. The XML body is not returned by export-history endpoints."
+          },
+          xmlSizeBytes: {
+            type: "integer"
+          },
+          status: {
+            type: "string",
+            enum: ["generated", "downloaded", "failed", "deleted"]
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      InvoiceExportListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("InvoiceExportSummary")
+          }
+        }
+      },
       UblParseJsonRequest: {
         type: "object",
         required: ["xml"],
@@ -3216,6 +3600,48 @@ const openApiDocument = {
           },
           disclaimer: {
             type: "string"
+          }
+        }
+      },
+      UblImportResponse: {
+        type: "object",
+        required: ["created", "detected", "findings", "totals", "disclaimer"],
+        properties: {
+          created: {
+            type: "boolean"
+          },
+          reason: {
+            type: "string"
+          },
+          invoiceDraftId: {
+            type: "string",
+            format: "uuid"
+          },
+          redirectPath: {
+            type: "string",
+            example: "/workspace/invoices/00000000-0000-4000-8000-000000000001"
+          },
+          detected: {
+            type: "object",
+            additionalProperties: true
+          },
+          findings: {
+            type: "array",
+            items: ref("ValidationFinding")
+          },
+          totals: {
+            oneOf: [ref("InvoiceTotals"), { type: "null" }]
+          },
+          summary: {
+            type: "object",
+            additionalProperties: true,
+            description:
+              "Safe editable draft summary. Raw XML and API-key material are not returned."
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "This imported draft was created from parsed UBL XML for technical sandbox use. It is not official XML validation, Peppol certification, tax advice, legal advice, accounting advice, or authority acceptance."
           }
         }
       },
@@ -5703,6 +6129,199 @@ const openApiDocument = {
           }
         }
       },
+      XmlUploadRecord: {
+        type: "object",
+        required: [
+          "id",
+          "fileName",
+          "fileSize",
+          "uploadedAt",
+          "detectedDocument",
+          "rootElement",
+          "invoiceId",
+          "issueDate",
+          "currency",
+          "apiStatus",
+          "status",
+          "disclaimer",
+          "technicalStatus",
+          "readinessStatus",
+          "documentStatus",
+          "calculationStatus",
+          "profileStatus",
+          "extractedData",
+          "findings",
+          "summary"
+        ],
+        properties: {
+          id: {
+            type: "string"
+          },
+          fileName: {
+            type: "string"
+          },
+          fileSize: {
+            type: "string",
+            example: "3.2 KB"
+          },
+          uploadedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          detectedDocument: {
+            type: "string"
+          },
+          rootElement: {
+            type: "string"
+          },
+          invoiceId: {
+            type: "string"
+          },
+          issueDate: {
+            type: "string"
+          },
+          currency: {
+            type: "string"
+          },
+          apiStatus: {
+            type: "string",
+            enum: ["parsed", "review_required"]
+          },
+          status: {
+            type: "string",
+            enum: ["accepted", "rejected"]
+          },
+          note: {
+            type: "string"
+          },
+          disclaimer: {
+            type: "string",
+            description:
+              "Technical readiness disclaimer. XML readiness inspection is not official validation, certification, filing, legal advice, tax advice, accounting advice, or authority acceptance."
+          },
+          technicalStatus: {
+            type: "string"
+          },
+          readinessStatus: {
+            type: "string"
+          },
+          documentStatus: {
+            type: "string"
+          },
+          calculationStatus: {
+            type: "string"
+          },
+          profileStatus: {
+            type: "string"
+          },
+          extractedData: {
+            type: "object",
+            additionalProperties: true
+          },
+          findings: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true
+            }
+          },
+          summary: {
+            type: "object",
+            additionalProperties: true
+          }
+        }
+      },
+      XmlUploadListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("XmlUploadRecord")
+          }
+        }
+      },
+      XmlInspectResponse: {
+        type: "object",
+        required: [
+          "uploadInspectionId",
+          "detectedDocument",
+          "rootElement",
+          "status",
+          "technicalStatus",
+          "readinessStatus",
+          "findings",
+          "disclaimer",
+          "record"
+        ],
+        properties: {
+          uploadInspectionId: {
+            type: "string"
+          },
+          detectedDocument: {
+            type: "string"
+          },
+          rootElement: {
+            type: "string"
+          },
+          invoiceId: {
+            type: "string"
+          },
+          issueDate: {
+            type: "string"
+          },
+          currency: {
+            type: "string"
+          },
+          status: {
+            type: "string",
+            enum: ["parsed", "review_required"]
+          },
+          technicalStatus: {
+            type: "string"
+          },
+          readinessStatus: {
+            type: "string"
+          },
+          documentStatus: {
+            type: "string"
+          },
+          calculationStatus: {
+            type: "string"
+          },
+          profileStatus: {
+            type: "string"
+          },
+          extractedData: {
+            type: "object",
+            additionalProperties: true
+          },
+          findings: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true
+            }
+          },
+          disclaimer: {
+            type: "string"
+          },
+          record: ref("XmlUploadRecord")
+        }
+      },
+      DeleteResponse: {
+        type: "object",
+        required: ["deleted", "id"],
+        properties: {
+          deleted: {
+            type: "boolean",
+            const: true
+          },
+          id: {
+            type: "string"
+          }
+        }
+      },
       VatFormatRequest: {
         type: "object",
         required: ["vatId"],
@@ -5838,6 +6457,88 @@ const openApiDocument = {
           },
           checkRecordId: {
             type: "string"
+          }
+        }
+      },
+      VatCheckRecord: {
+        type: "object",
+        required: [
+          "id",
+          "invoiceDraftId",
+          "validationRunId",
+          "partyRole",
+          "inputCountryHint",
+          "detectedCountryCode",
+          "normalizedVatId",
+          "checkLevel",
+          "source",
+          "formatValid",
+          "message",
+          "warnings",
+          "disclaimer",
+          "createdAt"
+        ],
+        properties: {
+          id: {
+            type: "string"
+          },
+          invoiceDraftId: {
+            type: ["string", "null"]
+          },
+          validationRunId: {
+            type: ["string", "null"]
+          },
+          partyRole: {
+            type: ["string", "null"],
+            enum: ["seller", "buyer", "other", null]
+          },
+          inputCountryHint: {
+            type: ["string", "null"]
+          },
+          detectedCountryCode: {
+            type: ["string", "null"]
+          },
+          normalizedVatId: {
+            type: "string",
+            description:
+              "Normalized VAT ID display value for a local format check. Full raw request bodies are not returned in API request logs."
+          },
+          checkLevel: {
+            type: "string",
+            const: "local_format"
+          },
+          source: {
+            type: "string",
+            const: "invoice_lantern_vat_format_rules"
+          },
+          formatValid: {
+            type: "boolean"
+          },
+          message: {
+            type: "string"
+          },
+          warnings: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          },
+          disclaimer: {
+            type: "string"
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      VatCheckListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("VatCheckRecord")
           }
         }
       },
@@ -7875,6 +8576,170 @@ const openApiDocument = {
           },
           disclaimer: {
             type: "string"
+          }
+        }
+      },
+      ValidationRunVidaSimulationSeed: {
+        type: "object",
+        required: [
+          "validationRunId",
+          "sellerCountry",
+          "buyerCountry",
+          "sellerVatId",
+          "buyerVatId",
+          "buyerType",
+          "transactionType",
+          "invoiceDate",
+          "currency",
+          "amount"
+        ],
+        properties: {
+          validationRunId: {
+            type: "string"
+          },
+          sellerCountry: {
+            type: "string"
+          },
+          buyerCountry: {
+            type: "string"
+          },
+          sellerVatId: {
+            type: "string"
+          },
+          buyerVatId: {
+            type: "string"
+          },
+          buyerType: {
+            type: "string",
+            enum: ["business", "consumer", "public_authority", "unknown"]
+          },
+          transactionType: {
+            type: "string",
+            enum: ["goods", "services", "digital_service", "mixed", "unknown"]
+          },
+          invoiceDate: {
+            type: "string"
+          },
+          currency: {
+            type: "string"
+          },
+          amount: {
+            type: "string",
+            description:
+              "Decimal money amount represented as a string for technical simulation input."
+          }
+        }
+      },
+      ValidationRunSummary: {
+        type: "object",
+        required: [
+          "id",
+          "invoiceNumber",
+          "buyer",
+          "seller",
+          "buyerCountry",
+          "sellerCountry",
+          "buyerVatId",
+          "sellerVatId",
+          "issueDate",
+          "createdAt",
+          "technicalStatus",
+          "standardStatus",
+          "countrySimulationStatus",
+          "vidaReadinessStatus",
+          "confidence",
+          "profile",
+          "currency",
+          "overallStatus",
+          "findingCounts",
+          "findingsCount",
+          "payableAmount",
+          "reportLabel",
+          "vidaSimulationSeed"
+        ],
+        properties: {
+          id: {
+            type: "string"
+          },
+          invoiceNumber: {
+            type: "string"
+          },
+          buyer: {
+            type: "string"
+          },
+          seller: {
+            type: "string"
+          },
+          buyerCountry: {
+            type: "string"
+          },
+          sellerCountry: {
+            type: "string"
+          },
+          buyerVatId: {
+            type: "string"
+          },
+          sellerVatId: {
+            type: "string"
+          },
+          issueDate: {
+            type: "string"
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          technicalStatus: {
+            type: "string"
+          },
+          standardStatus: {
+            type: "string"
+          },
+          countrySimulationStatus: {
+            type: "string"
+          },
+          vidaReadinessStatus: {
+            type: "string"
+          },
+          confidence: {
+            type: "string"
+          },
+          profile: {
+            type: "string"
+          },
+          currency: {
+            type: "string"
+          },
+          overallStatus: {
+            type: "string"
+          },
+          findingCounts: {
+            type: "object",
+            additionalProperties: {
+              type: "integer"
+            }
+          },
+          findingsCount: {
+            type: "integer"
+          },
+          payableAmount: {
+            type: "string",
+            description: "Decimal string."
+          },
+          reportLabel: {
+            type: "string",
+            example: "sandbox report"
+          },
+          vidaSimulationSeed: ref("ValidationRunVidaSimulationSeed")
+        }
+      },
+      ValidationRunListResponse: {
+        type: "object",
+        required: ["records"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("ValidationRunSummary")
           }
         }
       },

@@ -117,7 +117,9 @@ type ApiTestEndpointId =
   | "vies-check"
   | "vida-simulation"
   | "invoice-validation"
+  | "ubl-export"
   | "ubl-parse"
+  | "validation-runs"
   | "xml-validation-jobs";
 
 type ApiTestEndpoint = {
@@ -165,7 +167,7 @@ const scopeOptions: {
   {
     value: "invoices:import_ubl",
     label: "Import UBL",
-    description: "Reserved until draft ownership is API-key safe"
+    description: "Reserved; editable draft import is signed-user-only"
   },
   {
     value: "xml:validation_jobs",
@@ -190,7 +192,7 @@ const scopeOptions: {
   {
     value: "validation_runs:read",
     label: "Read reports",
-    description: "GET /api/v1/validation-runs/:id"
+    description: "GET /api/v1/validation-runs and /:id"
   },
   {
     value: "rules:read",
@@ -228,17 +230,27 @@ const invoiceValidationSample = {
     type: "invoice",
     number: "INV-API-TEST-001",
     currency: "EUR",
-    issueDate: "2026-04-30"
+    issueDate: "2026-04-30",
+    dueDate: "2026-05-30",
+    profile: "EN16931"
   },
   seller: {
     name: "Invoice Lantern Seller GmbH",
     country: "DE",
-    vatId: "DE123456789"
+    vatId: "DE123456789",
+    city: "Berlin",
+    postalCode: "10115",
+    street: "Example Street 1",
+    electronicAddress: "seller@example.test"
   },
   buyer: {
     name: "Invoice Lantern Buyer Kft",
     country: "HU",
-    vatId: "HU12345678"
+    vatId: "HU12345678",
+    city: "Budapest",
+    postalCode: "1051",
+    street: "Example Utca 2",
+    electronicAddress: "buyer@example.test"
   },
   lines: [
     {
@@ -247,10 +259,36 @@ const invoiceValidationSample = {
       quantity: "1",
       unitCode: "EA",
       unitPrice: "100.00",
+      netAmount: "100.00",
       vatCategory: "S",
       vatRate: "27"
     }
-  ]
+  ],
+  taxBreakdown: [
+    {
+      taxCategory: "S",
+      taxScheme: "VAT",
+      vatRate: "27",
+      taxableAmount: "100.00",
+      taxAmount: "27.00"
+    }
+  ],
+  taxSubtotals: [
+    {
+      vatCategory: "S",
+      vatRate: "27",
+      taxableAmount: "100.00",
+      taxAmount: "27.00"
+    }
+  ],
+  totals: {
+    lineExtensionAmount: "100.00",
+    taxExclusiveAmount: "100.00",
+    taxAmount: "27.00",
+    taxTotalAmount: "27.00",
+    taxInclusiveAmount: "127.00",
+    payableAmount: "127.00"
+  }
 };
 
 const vidaSimulationSample = {
@@ -360,6 +398,16 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
     body: invoiceValidationSample
   },
   {
+    id: "ubl-export",
+    label: "UBL export",
+    method: "POST",
+    path: "/api/v1/invoices/export/ubl",
+    scope: "invoices:export_ubl",
+    body: {
+      invoice: invoiceValidationSample
+    }
+  },
+  {
     id: "ubl-parse",
     label: "UBL parse",
     method: "POST",
@@ -368,6 +416,14 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
     body: {
       xml: tinyUblXmlSample
     }
+  },
+  {
+    id: "validation-runs",
+    label: "Validation run list",
+    method: "GET",
+    path: "/api/v1/validation-runs",
+    scope: "validation_runs:read",
+    body: null
   },
   {
     id: "xml-validation-jobs",
@@ -2063,6 +2119,22 @@ curl -X POST http://localhost:4000/api/v1/transactions/simulate-vida \\
   -H "content-type: application/json" \\
   -H "X-API-Key: il_test_your_key_here" \\
   -d '{"sellerCountry":"DE","buyerCountry":"HU","buyerType":"business","transactionType":"services"}'
+
+# UBL parse accepts raw XML or JSON with an xml string.
+curl -X POST http://localhost:4000/api/v1/invoices/parse/ubl \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d '{"xml":"<Invoice xmlns=\\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\\"></Invoice>"}'
+
+# UBL export uses canonical invoice JSON. Editable UBL draft import is signed-user-only.
+curl -X POST http://localhost:4000/api/v1/invoices/export/ubl \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d @canonical-invoice.json
+
+# Validation run summaries
+curl http://localhost:4000/api/v1/validation-runs \\
+  -H "X-API-Key: il_test_your_key_here"
 
 # Full keys are shown once only during creation.
 # Request bodies, XML payloads, full API keys, and full VAT IDs are not stored in API usage logs.`}</pre>

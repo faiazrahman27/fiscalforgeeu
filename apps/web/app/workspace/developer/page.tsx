@@ -66,7 +66,7 @@ const developerModules: DeveloperModule[] = [
     status: "active",
     actionLabel: "Open",
     description:
-      "Export, parse, and import UBL XML through scoped sandbox developer API endpoints.",
+      "Export and parse UBL XML through scoped sandbox developer API endpoints. Editable UBL draft import remains signed-user-only.",
     href: "/developer-api",
     icon: <FileCode2 size={22} />
   },
