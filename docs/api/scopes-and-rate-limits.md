@@ -28,6 +28,11 @@ endpoint management, signing secret rotation, test delivery, delivery logs, and
 retry actions are also signed-user-only; no `webhooks:*` API-key scope is active
 in this step.
 
+Platform rule intelligence, source-register management, and country-pack review
+overlays under `/api/v1/admin/*` are signed-user and platform-admin-only. There
+is no API-key scope for these operations. `rules:read` remains limited to the
+published technical rule catalog.
+
 ## Sandbox Rate Policies
 
 Current default policies are per API key unless otherwise noted:

@@ -119,6 +119,17 @@ const envSchema = z
      */
     DEV_API_KEY: optionalSecretSchema,
 
+    /*
+     * Backend-only platform administration allow-list.
+     *
+     * This is intentionally not exposed to the web app. Platform rule,
+     * source-register, and country-pack review writes require a signed-in
+     * Supabase user whose normalized email is present in this comma-separated
+     * list. Organization API keys and workspace owner/admin roles do not grant
+     * platform administration.
+     */
+    PLATFORM_ADMIN_EMAILS: optionalSecretSchema,
+
     RATE_LIMIT_MAX: z.coerce.number().int().min(1).max(10000).default(100),
     RATE_LIMIT_WINDOW: z.string().min(1).default("1 minute"),
 

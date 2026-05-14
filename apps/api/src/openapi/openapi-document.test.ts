@@ -133,7 +133,27 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
     ["/country-packs/{countryCode}", "get"],
     ["/transactions/simulate-vida", "post"],
     ["/transactions/vida-simulations", "get"],
-    ["/transactions/vida-simulations/{id}", "get"]
+    ["/transactions/vida-simulations/{id}", "get"],
+    ["/admin/context", "get"],
+    ["/admin/rules", "get"],
+    ["/admin/rules", "post"],
+    ["/admin/rules/{id}", "get"],
+    ["/admin/rules/{id}", "patch"],
+    ["/admin/rules/{id}/submit-review", "post"],
+    ["/admin/rules/{id}/publish", "post"],
+    ["/admin/rules/{id}/deprecate", "post"],
+    ["/admin/rules/{id}/archive", "post"],
+    ["/admin/rules/{id}/disable", "post"],
+    ["/admin/sources", "get"],
+    ["/admin/sources", "post"],
+    ["/admin/sources/{id}", "get"],
+    ["/admin/sources/{id}", "patch"],
+    ["/admin/sources/{id}/deprecate", "post"],
+    ["/admin/country-packs", "get"],
+    ["/admin/country-packs/{countryCode}", "get"],
+    ["/admin/country-packs/{countryCode}/review", "patch"],
+    ["/admin/country-packs/{countryCode}/sources", "post"],
+    ["/admin/country-packs/{countryCode}/sources/{sourceId}", "delete"]
   ] as const;
 
   for (const [path, method] of requiredOperations) {
@@ -152,6 +172,10 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
     "VatCheckListResponse",
     "WebhookEndpoint",
     "WebhookDelivery",
+    "AdminValidationRule",
+    "AdminSourceReference",
+    "AdminCountryPack",
+    "AdminLifecycleEvent",
     "ValidationRunListResponse",
     "DeleteResponse"
   ]) {
@@ -224,6 +248,56 @@ test("OpenAPI documents scopes and signed-user-only API boundaries", () => {
     assert.doesNotMatch(security, /ApiKeyAuth/);
   }
 });
+
+test("OpenAPI documents platform admin rule/source/country-pack boundaries", () => {
+  const document = getOpenApiDocument(openApiDocument);
+  const paths = getPaths(document);
+  const components = readRecord(document, "components");
+  const schemas = readRecord(components, "schemas");
+  const errorEnvelope = JSON.stringify(readRecord(schemas, "ErrorEnvelope"));
+
+  for (const [path, method] of [
+    ["/admin/rules", "post"],
+    ["/admin/rules/{id}/publish", "post"],
+    ["/admin/sources", "post"],
+    ["/admin/country-packs/{countryCode}/review", "patch"]
+  ] as const) {
+    const operation = readOperation(paths, path, method);
+    const serialized = JSON.stringify(operation);
+
+    assert.match(JSON.stringify(operation.security), /SupabaseBearerAuth/);
+    assert.doesNotMatch(JSON.stringify(operation.security), /ApiKeyAuth/);
+    assert.match(serialized, /Platform-admin boundary/);
+    assert.match(serialized, /Organization API keys/);
+    assert.match(serialized, /source/i);
+    assert.match(serialized, /traceability/);
+  }
+
+  const publishOperation = JSON.stringify(
+    readOperation(paths, "/admin/rules/{id}/publish", "post")
+  );
+  const countryPackOperation = JSON.stringify(
+    readOperation(paths, "/admin/country-packs/{countryCode}/review", "patch")
+  );
+  const adminSchemas = JSON.stringify({
+    rule: readRecord(schemas, "AdminValidationRule"),
+    source: readRecord(schemas, "AdminSourceReference"),
+    countryPack: readRecord(schemas, "AdminCountryPack"),
+    lifecycle: readRecord(schemas, "AdminLifecycleEvent")
+  });
+
+  assert.match(errorEnvelope, /PLATFORM_ADMIN_REQUIRED/);
+  assert.match(errorEnvelope, /SOURCE_REQUIRED/);
+  assert.match(publishOperation, /SOURCE_REQUIRED|source reference/i);
+  assert.match(countryPackOperation, /maps to the GR country pack/);
+  assert.match(adminSchemas, /no|traceability|professional review/i);
+  assert.doesNotMatch(adminSchemas, /FiscalForge/i);
+  assert.doesNotMatch(
+    `${publishOperation}${countryPackOperation}${adminSchemas}`,
+    /\bofficial validation\b|\bofficial filing\b|\bPeppol certified\b|\bEN 16931 compliant\b|\bViDA compliant\b|\bauthority accepted\b|\bproves compliance\b/i
+  );
+});
+
 
 test("OpenAPI documents ViDA simulation endpoint, scope, schemas, and legal boundary", () => {
   const document = getOpenApiDocument(openApiDocument);

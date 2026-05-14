@@ -68,6 +68,20 @@ runs are not rewritten when catalog rows evolve. The additive migration
 catalog/API-scope vocabulary and seeds new rule sets; it does not alter prior
 validation findings.
 
+The platform admin rule console adds source-linked rule intelligence
+management through `/api/v1/admin/rules`. Draft and review records may be
+edited by signed-in platform admins only. Published, deprecated, archived,
+disabled, suspended, and bundled catalog entries remain readable so old reports
+stay explainable. Rule identity changes should be published as a new version,
+not by rewriting old published metadata.
+
+Legal, tax, standards, VIES, country-pack, Peppol-style, EN 16931-style, or
+ViDA-simulation metadata cannot be published without at least one source
+reference. Source references support traceability and review workflow only;
+they do not prove legal compliance, tax compliance, official validation, filing
+readiness, Peppol certification, EN 16931 certification, or authority
+acceptance.
+
 ## Report Summary
 
 Validation summaries now group findings by:

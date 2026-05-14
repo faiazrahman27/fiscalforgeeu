@@ -174,6 +174,51 @@ const webhookDeliveryIdParameter = {
   }
 };
 
+const adminRuleIdParameter = {
+  name: "id",
+  in: "path",
+  required: true,
+  schema: {
+    type: "string",
+    maxLength: 240,
+    pattern: "^[A-Za-z0-9:_.-]+$"
+  }
+};
+
+const adminSourceIdParameter = {
+  name: "id",
+  in: "path",
+  required: true,
+  schema: {
+    type: "string",
+    format: "uuid"
+  }
+};
+
+const adminCountryCodeParameter = {
+  name: "countryCode",
+  in: "path",
+  required: true,
+  schema: {
+    type: "string",
+    minLength: 2,
+    maxLength: 2,
+    example: "GR"
+  },
+  description:
+    "Use GR for Greece. EL is accepted by the API as VAT-prefix compatibility and maps to the GR country pack."
+};
+
+const adminCountryPackSourceIdParameter = {
+  name: "sourceId",
+  in: "path",
+  required: true,
+  schema: {
+    type: "string",
+    format: "uuid"
+  }
+};
+
 const rateLimitHeaders = {
   "X-RateLimit-Limit": {
     description: "Maximum requests allowed for the active sandbox window.",
@@ -342,6 +387,25 @@ function workspaceResponses(success: Record<string, unknown>) {
   };
 }
 
+const platformAdminRequiredResponse = errorResponse(
+  "Platform administrator access is required. Workspace owner/admin roles and organization API keys do not grant platform rule intelligence writes.",
+  "PLATFORM_ADMIN_REQUIRED"
+);
+
+const sourceRequiredResponse = errorResponse(
+  "A source reference is required before publishing legal, tax, standards, VIES, country-pack, Peppol-style, EN 16931-style, or ViDA-simulation metadata.",
+  "SOURCE_REQUIRED"
+);
+
+function platformAdminResponses(success: Record<string, unknown>) {
+  return {
+    ...commonErrorResponses,
+    ...success,
+    "403": platformAdminRequiredResponse,
+    "409": sourceRequiredResponse
+  };
+}
+
 function scopedApiKeyOperation(input: {
   tags: string[];
   summary: string;
@@ -387,6 +451,29 @@ function bearerOperation(input: {
     ...(input.parameters ? { parameters: input.parameters } : {}),
     ...(input.requestBody ? { requestBody: input.requestBody } : {}),
     responses: workspaceResponses(input.responses)
+  };
+}
+
+function platformAdminOperation(input: {
+  tags: string[];
+  summary: string;
+  description: string;
+  requestBody?: Record<string, unknown>;
+  parameters?: Record<string, unknown>[];
+  responses: Record<string, unknown>;
+}) {
+  return {
+    tags: input.tags,
+    summary: input.summary,
+    description: `${input.description}\n\nPlatform-admin boundary: requires a signed Supabase user whose email is allowed by backend-only platform administration configuration. Organization API keys and workspace owner/admin roles alone are rejected. Source links support traceability, not legal certainty.`,
+    security: [
+      {
+        SupabaseBearerAuth: []
+      }
+    ],
+    ...(input.parameters ? { parameters: input.parameters } : {}),
+    ...(input.requestBody ? { requestBody: input.requestBody } : {}),
+    responses: platformAdminResponses(input.responses)
   };
 }
 
@@ -444,6 +531,11 @@ const openApiDocument = {
         "Published Invoice Lantern technical sandbox rule catalog."
     },
     {
+      name: "Platform Rule Admin",
+      description:
+        "Signed-user and platform-admin-only console APIs for validation rule intelligence, source-register metadata, and country-pack review overlays. These endpoints are non-official, source-linked, professional-review-aware metadata workflows and do not create legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority compliance certainty."
+    },
+    {
       name: "Country Packs",
       description:
         "Read-only country-pack catalogue endpoints for educational VAT, e-invoicing, source-linked, capability, lifecycle, and registry metadata. Country packs are professional-review-aware context only and are not legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority compliance guarantees."
@@ -483,6 +575,400 @@ const openApiDocument = {
           "500": commonErrorResponses["500"]
         }
       }
+    },
+    "/admin/context": {
+      get: bearerOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Read platform-admin context",
+        description:
+          "Returns a signed-user-only boolean indicating whether the caller is a platform administrator. The backend-only allow-list is never returned.",
+        responses: {
+          "200": response("Platform-admin context.", ref("AdminContextResponse"))
+        }
+      })
+    },
+    "/admin/rules": {
+      get: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "List validation rule intelligence",
+        description:
+          "Lists platform-admin validation rule intelligence, including draft/review metadata and published catalog entries. Deprecated, disabled, archived, and bundled entries remain readable for historical explanation.",
+        responses: {
+          "200": response("Validation rule intelligence.", {
+            type: "object",
+            required: ["rules", "disclaimer"],
+            properties: {
+              rules: {
+                type: "array",
+                items: ref("AdminValidationRule")
+              },
+              disclaimer: {
+                type: "string",
+                example: SANDBOX_DISCLAIMER
+              }
+            }
+          })
+        }
+      }),
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Create draft validation rule metadata",
+        description:
+          "Creates platform-level rule metadata. Legal, tax, standards, VIES, country-pack, Peppol-style, EN 16931-style, or ViDA-simulation metadata cannot be published without a source reference.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("AdminValidationRuleInput"))
+        },
+        responses: {
+          "201": response("Created validation rule metadata.", {
+            type: "object",
+            required: ["rule", "disclaimer"],
+            properties: {
+              rule: ref("AdminValidationRule"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/rules/{id}": {
+      get: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Read validation rule intelligence",
+        description:
+          "Reads one validation rule metadata record and lifecycle events where available. Bundled catalog entries are view-only.",
+        parameters: [adminRuleIdParameter],
+        responses: {
+          "200": response("Validation rule detail.", {
+            type: "object",
+            required: ["rule", "events", "disclaimer"],
+            properties: {
+              rule: ref("AdminValidationRule"),
+              events: {
+                type: "array",
+                items: ref("AdminLifecycleEvent")
+              },
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      }),
+      patch: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Update draft/review validation rule metadata",
+        description:
+          "Updates draft or review rule metadata. Published, deprecated, archived, disabled, suspended, and bundled entries are not edited in place so historical validation reports remain explainable.",
+        parameters: [adminRuleIdParameter],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("AdminValidationRulePatch"))
+        },
+        responses: {
+          "200": response("Updated validation rule metadata.", {
+            type: "object",
+            required: ["rule", "disclaimer"],
+            properties: {
+              rule: ref("AdminValidationRule"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/rules/{id}/submit-review": {
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Submit rule metadata for review",
+        description:
+          "Moves draft rule metadata into review state without claiming legal, tax, accounting, filing, or authority certainty.",
+        parameters: [adminRuleIdParameter],
+        responses: {
+          "200": response("Rule submitted for review.", ref("AdminRuleEnvelope"))
+        }
+      })
+    },
+    "/admin/rules/{id}/publish": {
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Publish a validation rule version",
+        description:
+          "Publishes a sourced rule version. Legal, tax, standards, VIES, country-pack, Peppol-style, EN 16931-style, or ViDA-simulation metadata is rejected when no source reference is linked.",
+        parameters: [adminRuleIdParameter],
+        responses: {
+          "200": response("Published rule version.", ref("AdminRuleEnvelope"))
+        }
+      })
+    },
+    "/admin/rules/{id}/deprecate": {
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Deprecate rule metadata",
+        description:
+          "Marks rule metadata deprecated while keeping it readable for historical explanation.",
+        parameters: [adminRuleIdParameter],
+        responses: {
+          "200": response("Deprecated rule metadata.", ref("AdminRuleEnvelope"))
+        }
+      })
+    },
+    "/admin/rules/{id}/archive": {
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Archive rule metadata",
+        description:
+          "Archives rule metadata without deleting historical validation report context.",
+        parameters: [adminRuleIdParameter],
+        responses: {
+          "200": response("Archived rule metadata.", ref("AdminRuleEnvelope"))
+        }
+      })
+    },
+    "/admin/rules/{id}/disable": {
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Disable rule metadata",
+        description:
+          "Disables rule metadata for new DB-backed rule usage while preserving the record for historical explanation.",
+        parameters: [adminRuleIdParameter],
+        responses: {
+          "200": response("Disabled rule metadata.", ref("AdminRuleEnvelope"))
+        }
+      })
+    },
+    "/admin/sources": {
+      get: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "List source references",
+        description:
+          "Lists metadata-only source references. The API does not fetch, crawl, scrape, or store whole source documents in this step.",
+        responses: {
+          "200": response("Source references.", {
+            type: "object",
+            required: ["sources", "disclaimer"],
+            properties: {
+              sources: {
+                type: "array",
+                items: ref("AdminSourceReference")
+              },
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      }),
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Create source reference",
+        description:
+          "Creates a metadata-only source reference with an http(s) URL. javascript:, data:, file:, and other non-http(s) schemes are rejected.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("AdminSourceReferenceInput"))
+        },
+        responses: {
+          "201": response("Created source reference.", {
+            type: "object",
+            required: ["source", "disclaimer"],
+            properties: {
+              source: ref("AdminSourceReference"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/sources/{id}": {
+      get: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Read source reference",
+        description:
+          "Reads one metadata-only source reference and lifecycle events where available.",
+        parameters: [adminSourceIdParameter],
+        responses: {
+          "200": response("Source reference detail.", {
+            type: "object",
+            required: ["source", "events", "disclaimer"],
+            properties: {
+              source: ref("AdminSourceReference"),
+              events: {
+                type: "array",
+                items: ref("AdminLifecycleEvent")
+              },
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      }),
+      patch: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Update source reference",
+        description:
+          "Updates metadata-only source fields. Source references support traceability and professional review workflows, not legal certainty.",
+        parameters: [adminSourceIdParameter],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("AdminSourceReferencePatch"))
+        },
+        responses: {
+          "200": response("Updated source reference.", {
+            type: "object",
+            required: ["source", "disclaimer"],
+            properties: {
+              source: ref("AdminSourceReference"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/sources/{id}/deprecate": {
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Deprecate source reference",
+        description:
+          "Marks a source reference deprecated while keeping it readable for rule and country-pack traceability.",
+        parameters: [adminSourceIdParameter],
+        responses: {
+          "200": response("Deprecated source reference.", {
+            type: "object",
+            required: ["source", "disclaimer"],
+            properties: {
+              source: ref("AdminSourceReference"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/country-packs": {
+      get: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "List country-pack review metadata",
+        description:
+          "Lists EU core plus all 27 EU country-pack simulations with package metadata and optional platform review overlays. Review metadata is not national tax authority endorsement.",
+        responses: {
+          "200": response("Country-pack review metadata.", {
+            type: "object",
+            required: ["countryPacks", "disclaimer"],
+            properties: {
+              countryPacks: {
+                type: "array",
+                items: ref("AdminCountryPack")
+              },
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/country-packs/{countryCode}": {
+      get: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Read country-pack review metadata",
+        description:
+          "Reads one country-pack package summary and platform review overlay. GR is the Greece country pack; EL maps to GR as VAT-prefix compatibility.",
+        parameters: [adminCountryCodeParameter],
+        responses: {
+          "200": response("Country-pack admin detail.", {
+            type: "object",
+            required: ["countryPack", "disclaimer"],
+            properties: {
+              countryPack: ref("AdminCountryPack"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/country-packs/{countryCode}/review": {
+      patch: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Update country-pack review overlay",
+        description:
+          "Updates source-linked country-pack review metadata only. It does not mutate static package rule data or create official country tax guidance.",
+        parameters: [adminCountryCodeParameter],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("AdminCountryPackReviewPatch"))
+        },
+        responses: {
+          "200": response("Updated country-pack review overlay.", {
+            type: "object",
+            required: ["countryPack", "disclaimer"],
+            properties: {
+              countryPack: ref("AdminCountryPack"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/country-packs/{countryCode}/sources": {
+      post: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Link source to country-pack review overlay",
+        description:
+          "Links an existing source reference to a country-pack review overlay. This is review metadata only and does not change package code or tax facts.",
+        parameters: [adminCountryCodeParameter],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("AdminCountryPackSourceLinkRequest"))
+        },
+        responses: {
+          "201": response("Linked source reference.", {
+            type: "object",
+            required: ["countryPack", "disclaimer"],
+            properties: {
+              countryPack: ref("AdminCountryPack"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/admin/country-packs/{countryCode}/sources/{sourceId}": {
+      delete: platformAdminOperation({
+        tags: ["Platform Rule Admin"],
+        summary: "Unlink source from country-pack review overlay",
+        description:
+          "Removes a review-overlay source link without deleting the source reference or changing static country-pack package data.",
+        parameters: [adminCountryCodeParameter, adminCountryPackSourceIdParameter],
+        responses: {
+          "200": response("Unlinked source reference.", {
+            type: "object",
+            required: ["countryPack", "disclaimer"],
+            properties: {
+              countryPack: ref("AdminCountryPack"),
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
     },
     "/api-keys": {
       get: bearerOperation({
@@ -2145,6 +2631,11 @@ const openApiDocument = {
                   "AUTH_TOKEN_REQUIRED",
                   "INSUFFICIENT_SCOPE",
                   "API_KEY_SCOPE_INSUFFICIENT",
+                  "PLATFORM_ADMIN_REQUIRED",
+                  "SOURCE_REQUIRED",
+                  "RULE_VERSION_CONFLICT",
+                  "RULE_LIFECYCLE_CONFLICT",
+                  "SOURCE_REFERENCE_NOT_FOUND",
                   "NOT_FOUND",
                   "CONFLICT",
                   "PAYLOAD_TOO_LARGE",
@@ -2216,6 +2707,662 @@ const openApiDocument = {
                 type: "integer"
               }
             }
+          }
+        }
+      },
+      AdminContextResponse: {
+        type: "object",
+        required: ["isPlatformAdmin", "disclaimer"],
+        properties: {
+          isPlatformAdmin: {
+            type: "boolean",
+            description:
+              "True when the signed-in user is present in the backend-only platform-admin allow-list. The allow-list itself is never returned."
+          },
+          disclaimer: {
+            type: "string",
+            example:
+              "Platform metadata supports traceability and professional review workflows only; it is not official legal, tax, accounting, filing, or compliance advice."
+          }
+        }
+      },
+      AdminRuleStatus: {
+        type: "string",
+        enum: [
+          "draft",
+          "review",
+          "published",
+          "deprecated",
+          "archived",
+          "disabled",
+          "suspended"
+        ]
+      },
+      AdminLegalConfidence: {
+        type: "string",
+        enum: [
+          "technical",
+          "standard_based",
+          "official_source_derived",
+          "educational_simulation",
+          "professional_review_required"
+        ]
+      },
+      AdminValidationRule: {
+        type: "object",
+        required: [
+          "id",
+          "code",
+          "title",
+          "description",
+          "category",
+          "severity",
+          "legalConfidence",
+          "ruleSet",
+          "ruleVersion",
+          "status",
+          "sourceRefIds",
+          "sourceCount",
+          "professionalReviewRequired",
+          "createdAt",
+          "updatedAt",
+          "catalogSource"
+        ],
+        properties: {
+          id: {
+            type: "string"
+          },
+          code: {
+            type: "string",
+            example: "VAT_RATE_SOURCE_REQUIRED"
+          },
+          title: {
+            type: "string"
+          },
+          description: {
+            type: "string"
+          },
+          message: {
+            type: "string"
+          },
+          category: {
+            type: "string",
+            enum: [
+              "CANONICAL",
+              "CALCULATION",
+              "SCHEMA",
+              "UBL",
+              "CII",
+              "EN16931",
+              "PEPPOL",
+              "VAT_ID",
+              "VIES",
+              "COUNTRY_PACK",
+              "VIDA_SIMULATION",
+              "API",
+              "SECURITY",
+              "LEGAL_LABEL",
+              "OTHER"
+            ]
+          },
+          severity: {
+            type: "string",
+            enum: ["info", "warning", "fatal"]
+          },
+          legalConfidence: ref("AdminLegalConfidence"),
+          checkType: {
+            type: ["string", "null"]
+          },
+          layer: {
+            type: ["string", "null"]
+          },
+          jurisdiction: {
+            type: "string"
+          },
+          countryCode: {
+            type: ["string", "null"]
+          },
+          ruleSet: {
+            type: "string"
+          },
+          ruleVersion: {
+            type: "string"
+          },
+          status: ref("AdminRuleStatus"),
+          effectiveFrom: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          effectiveTo: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          reviewedAt: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          reviewerLabel: {
+            type: ["string", "null"]
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string",
+              format: "uuid"
+            }
+          },
+          sourceCount: {
+            type: "integer"
+          },
+          fixSuggestion: {
+            type: ["string", "null"]
+          },
+          professionalReviewRequired: {
+            type: "boolean"
+          },
+          internalNotes: {
+            type: ["string", "null"],
+            description:
+              "Restricted platform-admin notes. Request logs must not include raw note bodies."
+          },
+          metadata: {
+            type: "object",
+            additionalProperties: true
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          },
+          catalogSource: {
+            type: "string",
+            enum: ["admin", "database", "bundled"]
+          }
+        }
+      },
+      AdminValidationRuleInput: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "code",
+          "title",
+          "description",
+          "category",
+          "ruleVersion"
+        ],
+        properties: {
+          code: {
+            type: "string"
+          },
+          title: {
+            type: "string"
+          },
+          description: {
+            type: "string"
+          },
+          message: {
+            type: ["string", "null"]
+          },
+          category: {
+            type: "string"
+          },
+          severity: {
+            type: "string",
+            enum: ["info", "warning", "fatal"],
+            default: "warning"
+          },
+          legalConfidence: ref("AdminLegalConfidence"),
+          checkType: {
+            type: ["string", "null"]
+          },
+          layer: {
+            type: ["string", "null"]
+          },
+          jurisdiction: {
+            type: "string",
+            default: "EU"
+          },
+          countryCode: {
+            type: ["string", "null"]
+          },
+          ruleSet: {
+            type: "string",
+            default: "INVOICE_LANTERN_ADMIN_RULES"
+          },
+          ruleVersion: {
+            type: "string"
+          },
+          status: ref("AdminRuleStatus"),
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string",
+              format: "uuid"
+            }
+          },
+          fixSuggestion: {
+            type: ["string", "null"]
+          },
+          professionalReviewRequired: {
+            type: "boolean",
+            default: true
+          },
+          internalNotes: {
+            type: ["string", "null"]
+          }
+        }
+      },
+      AdminValidationRulePatch: {
+        allOf: [
+          ref("AdminValidationRuleInput"),
+          {
+            type: "object",
+            description:
+              "Patch form excludes code, ruleSet, and ruleVersion in the API schema. Use a new version instead of editing published identity fields."
+          }
+        ]
+      },
+      AdminRuleEnvelope: {
+        type: "object",
+        required: ["rule", "disclaimer"],
+        properties: {
+          rule: ref("AdminValidationRule"),
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
+      AdminSourceReference: {
+        type: "object",
+        required: [
+          "id",
+          "title",
+          "publisher",
+          "jurisdiction",
+          "url",
+          "sourceType",
+          "confidenceStatus",
+          "createdAt",
+          "updatedAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          title: {
+            type: "string"
+          },
+          publisher: {
+            type: "string"
+          },
+          jurisdiction: {
+            type: "string"
+          },
+          url: {
+            type: "string",
+            format: "uri",
+            description:
+              "Only http(s) URLs are accepted. The API does not fetch this URL."
+          },
+          sourceType: {
+            type: "string",
+            enum: [
+              "eu_law",
+              "eu_guidance",
+              "national_tax_authority",
+              "national_einvoicing_authority",
+              "standard",
+              "peppol",
+              "vies",
+              "country_pack",
+              "legal_notice",
+              "internal_policy",
+              "other"
+            ]
+          },
+          reviewedAt: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          effectiveFrom: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          effectiveTo: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          confidenceStatus: {
+            type: "string",
+            enum: [
+              "draft",
+              "reviewed",
+              "professional_review_required",
+              "deprecated",
+              "suspended"
+            ]
+          },
+          notes: {
+            type: ["string", "null"]
+          },
+          language: {
+            type: ["string", "null"]
+          },
+          retrievedAt: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          versionLabel: {
+            type: ["string", "null"]
+          },
+          metadata: {
+            type: "object",
+            additionalProperties: true
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
+          },
+          updatedAt: {
+            type: "string",
+            format: "date-time"
+          }
+        }
+      },
+      AdminSourceReferenceInput: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "publisher", "url", "sourceType"],
+        properties: {
+          title: {
+            type: "string"
+          },
+          publisher: {
+            type: "string"
+          },
+          jurisdiction: {
+            type: "string",
+            default: "EU"
+          },
+          url: {
+            type: "string",
+            format: "uri"
+          },
+          sourceType: {
+            type: "string"
+          },
+          reviewedAt: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          effectiveFrom: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          effectiveTo: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          confidenceStatus: {
+            type: "string",
+            default: "draft"
+          },
+          notes: {
+            type: ["string", "null"]
+          },
+          language: {
+            type: ["string", "null"]
+          },
+          retrievedAt: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          versionLabel: {
+            type: ["string", "null"]
+          }
+        }
+      },
+      AdminSourceReferencePatch: {
+        allOf: [
+          ref("AdminSourceReferenceInput"),
+          {
+            type: "object",
+            description: "All fields are optional for patch requests."
+          }
+        ]
+      },
+      AdminCountryPackReview: {
+        type: ["object", "null"],
+        properties: {
+          countryCode: {
+            type: "string"
+          },
+          reviewStatus: {
+            type: "string"
+          },
+          legalConfidence: ref("AdminLegalConfidence"),
+          reviewNotes: {
+            type: ["string", "null"]
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string",
+              format: "uuid"
+            }
+          },
+          sourceCount: {
+            type: "integer"
+          },
+          reviewedAt: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          reviewerLabel: {
+            type: ["string", "null"]
+          },
+          versionLabel: {
+            type: ["string", "null"]
+          },
+          professionalReviewRequired: {
+            type: "boolean"
+          },
+          warnings: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          }
+        }
+      },
+      AdminCountryPack: {
+        type: "object",
+        required: [
+          "countryCode",
+          "countryName",
+          "packageStatus",
+          "packageVersion",
+          "packageLegalConfidence",
+          "packageSourceCount",
+          "packageRuleCount",
+          "review",
+          "reviewSourceCount",
+          "sourceReferences",
+          "professionalReviewRequired",
+          "disclaimer"
+        ],
+        properties: {
+          countryCode: {
+            type: "string",
+            example: "GR"
+          },
+          countryName: {
+            type: "string",
+            example: "Greece"
+          },
+          packageStatus: {
+            type: "string"
+          },
+          packageVersion: {
+            type: "string"
+          },
+          packageLegalConfidence: ref("AdminLegalConfidence"),
+          euMemberState: {
+            type: "boolean"
+          },
+          sourceCoverageSummary: {
+            type: "object",
+            additionalProperties: true
+          },
+          packageSourceCount: {
+            type: "integer"
+          },
+          packageRuleCount: {
+            type: "integer"
+          },
+          packageWarnings: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: true
+            }
+          },
+          review: ref("AdminCountryPackReview"),
+          reviewSourceCount: {
+            type: "integer"
+          },
+          sourceReferences: {
+            type: "array",
+            items: ref("AdminSourceReference")
+          },
+          professionalReviewRequired: {
+            type: "boolean"
+          },
+          grElCompatibilityNote: {
+            type: ["string", "null"],
+            example:
+              "Greece is exposed as GR. EL remains VAT-prefix compatibility only and is not a duplicate country pack."
+          },
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
+      AdminCountryPackReviewPatch: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          reviewStatus: {
+            type: "string",
+            enum: [
+              "draft",
+              "internal_review",
+              "reviewed",
+              "professional_review_required",
+              "deprecated",
+              "suspended"
+            ]
+          },
+          legalConfidence: ref("AdminLegalConfidence"),
+          reviewNotes: {
+            type: ["string", "null"]
+          },
+          sourceRefIds: {
+            type: "array",
+            items: {
+              type: "string",
+              format: "uuid"
+            }
+          },
+          reviewedAt: {
+            type: ["string", "null"],
+            format: "date"
+          },
+          reviewerLabel: {
+            type: ["string", "null"]
+          },
+          versionLabel: {
+            type: ["string", "null"]
+          },
+          professionalReviewRequired: {
+            type: "boolean"
+          },
+          warnings: {
+            type: "array",
+            items: {
+              type: "string"
+            }
+          }
+        }
+      },
+      AdminCountryPackSourceLinkRequest: {
+        type: "object",
+        additionalProperties: false,
+        required: ["sourceRefId"],
+        properties: {
+          sourceRefId: {
+            type: "string",
+            format: "uuid"
+          },
+          linkType: {
+            type: "string",
+            enum: ["supports", "explains", "derived_from", "reviewed_against"],
+            default: "supports"
+          }
+        }
+      },
+      AdminLifecycleEvent: {
+        type: "object",
+        required: [
+          "id",
+          "entityType",
+          "entityId",
+          "entityLabel",
+          "eventType",
+          "actorUserId",
+          "actorEmailHash",
+          "metadata",
+          "createdAt"
+        ],
+        properties: {
+          id: {
+            type: "string",
+            format: "uuid"
+          },
+          entityType: {
+            type: "string",
+            enum: ["validation_rule", "source_reference", "country_pack"]
+          },
+          entityId: {
+            type: "string"
+          },
+          entityLabel: {
+            type: "string"
+          },
+          eventType: {
+            type: "string",
+            example: "rule.published"
+          },
+          actorUserId: {
+            type: "string",
+            format: "uuid"
+          },
+          actorEmailHash: {
+            type: "string",
+            description:
+              "Hashed actor email for operational traceability without exposing platform-admin allow-list contents."
+          },
+          metadata: {
+            type: "object",
+            additionalProperties: true
+          },
+          createdAt: {
+            type: "string",
+            format: "date-time"
           }
         }
       },

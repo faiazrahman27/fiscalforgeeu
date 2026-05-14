@@ -15,6 +15,7 @@ import {
   LockKeyhole,
   LogIn,
   LogOut,
+  Settings2,
   ShieldCheck,
   UsersRound
 } from "lucide-react";
@@ -85,6 +86,11 @@ const workspaceNav = [
     href: "/workspace/validation-rules",
     label: "Rules",
     icon: <BookOpenCheck size={18} />
+  },
+  {
+    href: "/workspace/admin/rules",
+    label: "Rule Admin",
+    icon: <Settings2 size={18} />
   },
   {
     href: "/workspace/xml-upload",

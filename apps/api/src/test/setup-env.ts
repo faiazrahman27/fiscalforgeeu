@@ -2,6 +2,8 @@ process.env.APP_ENV = "test";
 process.env.API_STORAGE_BACKEND = "json";
 process.env.DEV_API_KEY =
   process.env.DEV_API_KEY || "il_dev_local_key_change_me_32_chars";
+process.env.PLATFORM_ADMIN_EMAILS =
+  process.env.PLATFORM_ADMIN_EMAILS || "platform-admin@example.test";
 
 process.env.SUPABASE_URL = "";
 process.env.SUPABASE_PUBLISHABLE_KEY = "";

@@ -50,6 +50,22 @@ The presence of a country pack only means the country is represented in the
 simulation layer; it does not mean national VAT or e-invoicing rules are fully
 reviewed.
 
+## Platform Review Overlays
+
+The platform admin country-pack console stores review metadata overlays and
+source links separately from the static package data. It can record review
+status, legal-confidence labels, review notes, warnings, reviewer labels,
+version labels, and linked source references.
+
+The console does not mutate country-pack package code at runtime. It does not
+invent VAT rates, domestic e-invoicing obligations, clearance models, effective
+dates, filing duties, or national tax interpretations. Marking a review overlay
+as reviewed, stronger than professional-review-required, or not requiring
+professional review requires at least one linked source reference.
+
+Country-pack review overlays are source-linked simulation metadata, not tax
+authority endorsement or legal/tax/accounting advice.
+
 ## Validation Integration
 
 The validation engine attaches country-pack context when seller or buyer country

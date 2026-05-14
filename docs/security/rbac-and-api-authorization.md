@@ -69,6 +69,23 @@ delivery logs, and retry actions are also signed-user-only owner/admin/developer
 routes. Organization API keys do not receive webhook management scopes in this
 step.
 
+## Platform Admin Boundary
+
+Platform rule intelligence, source-register administration, and country-pack
+review overlays are not workspace-owned operations. They require signed-user
+Supabase authentication plus backend-only platform-admin allow-list membership
+through `PLATFORM_ADMIN_EMAILS`.
+
+Workspace `owner` and `admin` roles do not automatically grant platform rule
+publishing rights. Organization API keys are rejected from `/api/v1/admin/*`
+even when they have `rules:read`. The platform-admin allow-list is never
+returned to clients; the optional admin context endpoint returns only a boolean
+for the signed-in user.
+
+Admin writes are still informational metadata workflows. They do not create
+official legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority
+certification.
+
 ## Route Family Overview
 
 | Route family | Caller model | Authorization shape |
@@ -91,6 +108,7 @@ step.
 | Workspace settings, privacy, retention, deletion, export packages | Signed-in user | `owner` or `admin`. |
 | Workspace member and invitation management | Signed-in user | `owner` or `admin`; organization API keys are rejected; last-owner protection and invite-token hashing are enforced. |
 | Country packs and validation rules | Public or scoped technical catalog reads as implemented | No tenant-owned object data is returned. |
+| Platform rule/source/country-pack admin | Signed-in platform admin only | Backend-only `PLATFORM_ADMIN_EMAILS`; organization API keys and workspace roles alone are rejected; writes create lifecycle events and preserve source traceability. |
 
 ## Database Backstop
 
@@ -133,12 +151,15 @@ new migrations only.
   headers, response headers, and response previews. They do not return raw XML,
   raw SOAP, full API keys, service-role details, encrypted secret material, or
   stack traces.
+- Platform admin rule/source/country-pack responses return metadata and
+  lifecycle events only. They do not expose the platform-admin email allow-list,
+  service-role credentials, source-document bodies, or legal/tax conclusions.
 
 ## Future Work
 
 This document covers the Step 2 authorization hardening, Step 4 workspace
 member/invitation management rules, and Step 5 production invoice lifecycle
 route permissions, plus the Step 10 explicit VIES evidence workflow. Later
-prompts may add the full editor/studio fields, CII, expanded country packs,
-admin/source consoles, monitoring, legal-document workflows, and
+prompts may add the full editor/studio fields, CII, monitoring, legal-document
+workflows, and
 PWA/offline capabilities. Those are not implemented or claimed complete here.

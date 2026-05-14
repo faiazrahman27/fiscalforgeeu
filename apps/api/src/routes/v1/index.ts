@@ -4,6 +4,7 @@ import { healthRoutes } from "../health.js";
 import { apiKeyRoutes } from "./api-keys.js";
 import { apiRequestRoutes } from "./api-requests.js";
 import { apiUsageRoutes } from "./api-usage.js";
+import { adminRuleConsoleRoutes } from "./admin-rule-console.js";
 import { countryPackRoutes } from "./country-packs.js";
 import { importUblRoutes } from "./import-ubl.js";
 import { invoiceDraftRoutes } from "./invoice-drafts.js";
@@ -47,6 +48,10 @@ export async function v1Routes(app: FastifyInstance) {
 
   await app.register(apiUsageRoutes, {
     prefix: "/api-usage"
+  });
+
+  await app.register(adminRuleConsoleRoutes, {
+    prefix: "/admin"
   });
 
   await app.register(countryPackRoutes, {

@@ -58,6 +58,11 @@ Signed-in workspace endpoints use the workspace user bearer session. They are
 documented separately from API-key endpoints because they can create editable
 drafts, list private history, or mutate workspace-owned records.
 
+Platform-admin endpoints under `/api/v1/admin/*` also use signed-user bearer
+authentication, but they are not ordinary workspace endpoints. They require the
+backend-only `PLATFORM_ADMIN_EMAILS` allow-list. Organization API keys and
+workspace owner/admin roles alone are rejected.
+
 ## API-Key Route Surface
 
 | Capability | Endpoint | Scope |
@@ -97,6 +102,21 @@ list contains a reserved future scope.
 | Saved ViDA simulation history | `GET /api/v1/transactions/vida-simulations`, `GET /api/v1/transactions/vida-simulations/{id}` |
 | Webhook simulator endpoint management | `GET /api/v1/webhooks/endpoints`, `POST /api/v1/webhooks/endpoints`, `GET /api/v1/webhooks/endpoints/{id}`, `PATCH /api/v1/webhooks/endpoints/{id}`, `DELETE /api/v1/webhooks/endpoints/{id}`, `POST /api/v1/webhooks/endpoints/{id}/rotate-secret` |
 | Signed webhook test events and logs | `POST /api/v1/webhooks/endpoints/{id}/test`, `GET /api/v1/webhooks/deliveries`, `GET /api/v1/webhooks/deliveries/{id}`, `POST /api/v1/webhooks/deliveries/{id}/retry` |
+
+## Platform-Admin-Only Routes
+
+These routes manage platform rule intelligence, source-reference metadata, and
+country-pack review overlays. They are not developer API-key routes and do not
+grant legal, tax, accounting, filing, Peppol, EN 16931, ViDA, or authority
+certainty.
+
+| Capability | Endpoint |
+| --- | --- |
+| Check admin context | `GET /api/v1/admin/context` |
+| Manage validation rule metadata | `GET /api/v1/admin/rules`, `POST /api/v1/admin/rules`, `GET /api/v1/admin/rules/{id}`, `PATCH /api/v1/admin/rules/{id}` |
+| Rule lifecycle actions | `POST /api/v1/admin/rules/{id}/submit-review`, `POST /api/v1/admin/rules/{id}/publish`, `POST /api/v1/admin/rules/{id}/deprecate`, `POST /api/v1/admin/rules/{id}/archive`, `POST /api/v1/admin/rules/{id}/disable` |
+| Manage source references | `GET /api/v1/admin/sources`, `POST /api/v1/admin/sources`, `GET /api/v1/admin/sources/{id}`, `PATCH /api/v1/admin/sources/{id}`, `POST /api/v1/admin/sources/{id}/deprecate` |
+| Manage country-pack review overlays | `GET /api/v1/admin/country-packs`, `GET /api/v1/admin/country-packs/{countryCode}`, `PATCH /api/v1/admin/country-packs/{countryCode}/review`, `POST /api/v1/admin/country-packs/{countryCode}/sources`, `DELETE /api/v1/admin/country-packs/{countryCode}/sources/{sourceId}` |
 
 `invoices:import_ubl` is reserved in the API-key scope enum for future access
 control alignment. It is not an active organization API-key draft creation path.
