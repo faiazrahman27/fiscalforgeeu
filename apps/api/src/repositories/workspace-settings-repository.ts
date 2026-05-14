@@ -2,15 +2,36 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseUserClient } from "../lib/supabase/server-client.js";
 
 export type WorkspaceRetentionMode = "manual" | "scheduled";
+export type WorkspaceDataMinimizationMode = "standard" | "reduced" | "strict";
 
 export type WorkspaceSettingsRecord = {
   retentionMode: WorkspaceRetentionMode;
   invoiceDraftRetentionDays: number;
   validationRunRetentionDays: number;
   xmlReportRetentionDays: number;
+  xmlValidationJobRetentionDays: number;
+  invoiceExportRetentionDays: number;
+  apiRequestLogRetentionDays: number;
+  webhookDeliveryLogRetentionDays: number;
+  viesEvidenceRetentionDays: number;
+  vidaSimulationRetentionDays: number;
   activityLogRetentionDays: number;
+  privacyRequestRetentionDays: number;
+  retentionRunRetentionDays: number;
+  deletionRunRetentionDays: number;
+  legalAcceptanceRetentionDays: number;
+  storeUploadedXmlAfterValidation: boolean;
+  retainValidationReports: boolean;
+  retainViesEvidence: boolean;
+  retainWebhookPayloadPreviews: boolean;
   allowDataExportRequests: boolean;
   allowDeletionRequests: boolean;
+  includeApiLogsInExports: boolean;
+  includeWebhookLogsInExports: boolean;
+  includeLegalAcceptancesInExports: boolean;
+  dataMinimizationMode: WorkspaceDataMinimizationMode;
+  privacyContactEmail: string;
+  securityContactEmail: string;
   updatedAt: string;
 };
 
@@ -19,9 +40,29 @@ export type WorkspaceSettingsPayload = {
   invoiceDraftRetentionDays: number;
   validationRunRetentionDays: number;
   xmlReportRetentionDays: number;
+  xmlValidationJobRetentionDays: number;
+  invoiceExportRetentionDays: number;
+  apiRequestLogRetentionDays: number;
+  webhookDeliveryLogRetentionDays: number;
+  viesEvidenceRetentionDays: number;
+  vidaSimulationRetentionDays: number;
   activityLogRetentionDays: number;
+  privacyRequestRetentionDays: number;
+  retentionRunRetentionDays: number;
+  deletionRunRetentionDays: number;
+  legalAcceptanceRetentionDays: number;
+  storeUploadedXmlAfterValidation: boolean;
+  retainValidationReports: boolean;
+  retainViesEvidence: boolean;
+  retainWebhookPayloadPreviews: boolean;
   allowDataExportRequests: boolean;
   allowDeletionRequests: boolean;
+  includeApiLogsInExports: boolean;
+  includeWebhookLogsInExports: boolean;
+  includeLegalAcceptancesInExports: boolean;
+  dataMinimizationMode: WorkspaceDataMinimizationMode;
+  privacyContactEmail: string;
+  securityContactEmail: string;
 };
 
 export type AuthenticatedWorkspaceSettingsContext = {
@@ -43,9 +84,29 @@ type SupabaseWorkspaceSettingsRow = {
   invoice_draft_retention_days: number;
   validation_run_retention_days: number;
   xml_report_retention_days: number;
+  xml_validation_job_retention_days: number;
+  invoice_export_retention_days: number;
+  api_request_log_retention_days: number;
+  webhook_delivery_log_retention_days: number;
+  vies_evidence_retention_days: number;
+  vida_simulation_retention_days: number;
   activity_log_retention_days: number;
+  privacy_request_retention_days: number;
+  retention_run_retention_days: number;
+  deletion_run_retention_days: number;
+  legal_acceptance_retention_days: number;
+  store_uploaded_xml_after_validation: boolean;
+  retain_validation_reports: boolean;
+  retain_vies_evidence: boolean;
+  retain_webhook_payload_previews: boolean;
   allow_data_export_requests: boolean;
   allow_deletion_requests: boolean;
+  include_api_logs_in_exports: boolean;
+  include_webhook_logs_in_exports: boolean;
+  include_legal_acceptances_in_exports: boolean;
+  data_minimization_mode: string;
+  privacy_contact_email: string;
+  security_contact_email: string;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
@@ -64,7 +125,7 @@ export class WorkspaceSettingsRepositoryError extends Error {
 }
 
 const WORKSPACE_SETTINGS_SELECT_FIELDS =
-  "organization_id, retention_mode, invoice_draft_retention_days, validation_run_retention_days, xml_report_retention_days, activity_log_retention_days, allow_data_export_requests, allow_deletion_requests, updated_by, created_at, updated_at";
+  "organization_id, retention_mode, invoice_draft_retention_days, validation_run_retention_days, xml_report_retention_days, xml_validation_job_retention_days, invoice_export_retention_days, api_request_log_retention_days, webhook_delivery_log_retention_days, vies_evidence_retention_days, vida_simulation_retention_days, activity_log_retention_days, privacy_request_retention_days, retention_run_retention_days, deletion_run_retention_days, legal_acceptance_retention_days, store_uploaded_xml_after_validation, retain_validation_reports, retain_vies_evidence, retain_webhook_payload_previews, allow_data_export_requests, allow_deletion_requests, include_api_logs_in_exports, include_webhook_logs_in_exports, include_legal_acceptances_in_exports, data_minimization_mode, privacy_contact_email, security_contact_email, updated_by, created_at, updated_at";
 
 const WORKSPACE_SETTINGS_MANAGER_ROLES = new Set(["owner", "admin"]);
 
@@ -73,9 +134,29 @@ const defaultWorkspaceSettingsPayload: WorkspaceSettingsPayload = {
   invoiceDraftRetentionDays: 365,
   validationRunRetentionDays: 365,
   xmlReportRetentionDays: 180,
+  xmlValidationJobRetentionDays: 180,
+  invoiceExportRetentionDays: 365,
+  apiRequestLogRetentionDays: 180,
+  webhookDeliveryLogRetentionDays: 180,
+  viesEvidenceRetentionDays: 365,
+  vidaSimulationRetentionDays: 365,
   activityLogRetentionDays: 365,
+  privacyRequestRetentionDays: 1095,
+  retentionRunRetentionDays: 1095,
+  deletionRunRetentionDays: 1095,
+  legalAcceptanceRetentionDays: 2555,
+  storeUploadedXmlAfterValidation: false,
+  retainValidationReports: true,
+  retainViesEvidence: true,
+  retainWebhookPayloadPreviews: false,
   allowDataExportRequests: true,
-  allowDeletionRequests: true
+  allowDeletionRequests: true,
+  includeApiLogsInExports: true,
+  includeWebhookLogsInExports: true,
+  includeLegalAcceptancesInExports: true,
+  dataMinimizationMode: "standard",
+  privacyContactEmail: "",
+  securityContactEmail: ""
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -96,6 +177,38 @@ function readStringField(
 
 function normalizeRetentionMode(value: string): WorkspaceRetentionMode {
   return value === "scheduled" ? "scheduled" : "manual";
+}
+
+function normalizeDataMinimizationMode(value: string): WorkspaceDataMinimizationMode {
+  if (value === "reduced" || value === "strict") {
+    return value;
+  }
+
+  return "standard";
+}
+
+function readNumberField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: number
+) {
+  const value = record[key];
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.min(3650, Math.round(value)));
+  }
+
+  return fallback;
+}
+
+function readBooleanField(
+  record: Record<string, unknown>,
+  key: string,
+  fallback: boolean
+) {
+  const value = record[key];
+
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function normalizeWorkspaceBootstrapRecord(
@@ -127,14 +240,130 @@ function normalizeWorkspaceBootstrapRecord(
 function normalizeWorkspaceSettingsRow(
   row: SupabaseWorkspaceSettingsRow
 ): WorkspaceSettingsRecord {
+  const record = row as unknown as Record<string, unknown>;
+
   return {
     retentionMode: normalizeRetentionMode(row.retention_mode),
-    invoiceDraftRetentionDays: row.invoice_draft_retention_days,
-    validationRunRetentionDays: row.validation_run_retention_days,
-    xmlReportRetentionDays: row.xml_report_retention_days,
-    activityLogRetentionDays: row.activity_log_retention_days,
-    allowDataExportRequests: row.allow_data_export_requests,
-    allowDeletionRequests: row.allow_deletion_requests,
+    invoiceDraftRetentionDays: readNumberField(
+      record,
+      "invoice_draft_retention_days",
+      defaultWorkspaceSettingsPayload.invoiceDraftRetentionDays
+    ),
+    validationRunRetentionDays: readNumberField(
+      record,
+      "validation_run_retention_days",
+      defaultWorkspaceSettingsPayload.validationRunRetentionDays
+    ),
+    xmlReportRetentionDays: readNumberField(
+      record,
+      "xml_report_retention_days",
+      defaultWorkspaceSettingsPayload.xmlReportRetentionDays
+    ),
+    xmlValidationJobRetentionDays: readNumberField(
+      record,
+      "xml_validation_job_retention_days",
+      defaultWorkspaceSettingsPayload.xmlValidationJobRetentionDays
+    ),
+    invoiceExportRetentionDays: readNumberField(
+      record,
+      "invoice_export_retention_days",
+      defaultWorkspaceSettingsPayload.invoiceExportRetentionDays
+    ),
+    apiRequestLogRetentionDays: readNumberField(
+      record,
+      "api_request_log_retention_days",
+      defaultWorkspaceSettingsPayload.apiRequestLogRetentionDays
+    ),
+    webhookDeliveryLogRetentionDays: readNumberField(
+      record,
+      "webhook_delivery_log_retention_days",
+      defaultWorkspaceSettingsPayload.webhookDeliveryLogRetentionDays
+    ),
+    viesEvidenceRetentionDays: readNumberField(
+      record,
+      "vies_evidence_retention_days",
+      defaultWorkspaceSettingsPayload.viesEvidenceRetentionDays
+    ),
+    vidaSimulationRetentionDays: readNumberField(
+      record,
+      "vida_simulation_retention_days",
+      defaultWorkspaceSettingsPayload.vidaSimulationRetentionDays
+    ),
+    activityLogRetentionDays: readNumberField(
+      record,
+      "activity_log_retention_days",
+      defaultWorkspaceSettingsPayload.activityLogRetentionDays
+    ),
+    privacyRequestRetentionDays: readNumberField(
+      record,
+      "privacy_request_retention_days",
+      defaultWorkspaceSettingsPayload.privacyRequestRetentionDays
+    ),
+    retentionRunRetentionDays: readNumberField(
+      record,
+      "retention_run_retention_days",
+      defaultWorkspaceSettingsPayload.retentionRunRetentionDays
+    ),
+    deletionRunRetentionDays: readNumberField(
+      record,
+      "deletion_run_retention_days",
+      defaultWorkspaceSettingsPayload.deletionRunRetentionDays
+    ),
+    legalAcceptanceRetentionDays: readNumberField(
+      record,
+      "legal_acceptance_retention_days",
+      defaultWorkspaceSettingsPayload.legalAcceptanceRetentionDays
+    ),
+    storeUploadedXmlAfterValidation: readBooleanField(
+      record,
+      "store_uploaded_xml_after_validation",
+      defaultWorkspaceSettingsPayload.storeUploadedXmlAfterValidation
+    ),
+    retainValidationReports: readBooleanField(
+      record,
+      "retain_validation_reports",
+      defaultWorkspaceSettingsPayload.retainValidationReports
+    ),
+    retainViesEvidence: readBooleanField(
+      record,
+      "retain_vies_evidence",
+      defaultWorkspaceSettingsPayload.retainViesEvidence
+    ),
+    retainWebhookPayloadPreviews: readBooleanField(
+      record,
+      "retain_webhook_payload_previews",
+      defaultWorkspaceSettingsPayload.retainWebhookPayloadPreviews
+    ),
+    allowDataExportRequests: readBooleanField(
+      record,
+      "allow_data_export_requests",
+      defaultWorkspaceSettingsPayload.allowDataExportRequests
+    ),
+    allowDeletionRequests: readBooleanField(
+      record,
+      "allow_deletion_requests",
+      defaultWorkspaceSettingsPayload.allowDeletionRequests
+    ),
+    includeApiLogsInExports: readBooleanField(
+      record,
+      "include_api_logs_in_exports",
+      defaultWorkspaceSettingsPayload.includeApiLogsInExports
+    ),
+    includeWebhookLogsInExports: readBooleanField(
+      record,
+      "include_webhook_logs_in_exports",
+      defaultWorkspaceSettingsPayload.includeWebhookLogsInExports
+    ),
+    includeLegalAcceptancesInExports: readBooleanField(
+      record,
+      "include_legal_acceptances_in_exports",
+      defaultWorkspaceSettingsPayload.includeLegalAcceptancesInExports
+    ),
+    dataMinimizationMode: normalizeDataMinimizationMode(
+      row.data_minimization_mode
+    ),
+    privacyContactEmail: row.privacy_contact_email,
+    securityContactEmail: row.security_contact_email,
     updatedAt: row.updated_at
   };
 }
@@ -150,9 +379,29 @@ function buildSupabaseWorkspaceSettingsValues(
     invoice_draft_retention_days: payload.invoiceDraftRetentionDays,
     validation_run_retention_days: payload.validationRunRetentionDays,
     xml_report_retention_days: payload.xmlReportRetentionDays,
+    xml_validation_job_retention_days: payload.xmlValidationJobRetentionDays,
+    invoice_export_retention_days: payload.invoiceExportRetentionDays,
+    api_request_log_retention_days: payload.apiRequestLogRetentionDays,
+    webhook_delivery_log_retention_days: payload.webhookDeliveryLogRetentionDays,
+    vies_evidence_retention_days: payload.viesEvidenceRetentionDays,
+    vida_simulation_retention_days: payload.vidaSimulationRetentionDays,
     activity_log_retention_days: payload.activityLogRetentionDays,
+    privacy_request_retention_days: payload.privacyRequestRetentionDays,
+    retention_run_retention_days: payload.retentionRunRetentionDays,
+    deletion_run_retention_days: payload.deletionRunRetentionDays,
+    legal_acceptance_retention_days: payload.legalAcceptanceRetentionDays,
+    store_uploaded_xml_after_validation: payload.storeUploadedXmlAfterValidation,
+    retain_validation_reports: payload.retainValidationReports,
+    retain_vies_evidence: payload.retainViesEvidence,
+    retain_webhook_payload_previews: payload.retainWebhookPayloadPreviews,
     allow_data_export_requests: payload.allowDataExportRequests,
     allow_deletion_requests: payload.allowDeletionRequests,
+    include_api_logs_in_exports: payload.includeApiLogsInExports,
+    include_webhook_logs_in_exports: payload.includeWebhookLogsInExports,
+    include_legal_acceptances_in_exports: payload.includeLegalAcceptancesInExports,
+    data_minimization_mode: payload.dataMinimizationMode,
+    privacy_contact_email: payload.privacyContactEmail,
+    security_contact_email: payload.securityContactEmail,
     updated_by: userId
   };
 }
@@ -222,9 +471,29 @@ async function insertWorkspaceSettingsActivityEvent(
       invoiceDraftRetentionDays: payload.invoiceDraftRetentionDays,
       validationRunRetentionDays: payload.validationRunRetentionDays,
       xmlReportRetentionDays: payload.xmlReportRetentionDays,
+      xmlValidationJobRetentionDays: payload.xmlValidationJobRetentionDays,
+      invoiceExportRetentionDays: payload.invoiceExportRetentionDays,
+      apiRequestLogRetentionDays: payload.apiRequestLogRetentionDays,
+      webhookDeliveryLogRetentionDays: payload.webhookDeliveryLogRetentionDays,
+      viesEvidenceRetentionDays: payload.viesEvidenceRetentionDays,
+      vidaSimulationRetentionDays: payload.vidaSimulationRetentionDays,
       activityLogRetentionDays: payload.activityLogRetentionDays,
+      privacyRequestRetentionDays: payload.privacyRequestRetentionDays,
+      retentionRunRetentionDays: payload.retentionRunRetentionDays,
+      deletionRunRetentionDays: payload.deletionRunRetentionDays,
+      legalAcceptanceRetentionDays: payload.legalAcceptanceRetentionDays,
+      storeUploadedXmlAfterValidation: payload.storeUploadedXmlAfterValidation,
+      retainValidationReports: payload.retainValidationReports,
+      retainViesEvidence: payload.retainViesEvidence,
+      retainWebhookPayloadPreviews: payload.retainWebhookPayloadPreviews,
       allowDataExportRequests: payload.allowDataExportRequests,
-      allowDeletionRequests: payload.allowDeletionRequests
+      allowDeletionRequests: payload.allowDeletionRequests,
+      includeApiLogsInExports: payload.includeApiLogsInExports,
+      includeWebhookLogsInExports: payload.includeWebhookLogsInExports,
+      includeLegalAcceptancesInExports: payload.includeLegalAcceptancesInExports,
+      dataMinimizationMode: payload.dataMinimizationMode,
+      privacyContactEmailConfigured: payload.privacyContactEmail.length > 0,
+      securityContactEmailConfigured: payload.securityContactEmail.length > 0
     }
   });
 }

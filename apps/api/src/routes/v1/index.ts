@@ -10,6 +10,7 @@ import { importUblRoutes } from "./import-ubl.js";
 import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { invoiceExportRoutes } from "./invoice-exports.js";
 import { invoiceRoutes } from "./invoices.js";
+import { legalDocumentRoutes } from "./legal-documents.js";
 import { parseUblRoutes } from "./parse-ubl.js";
 import { transactionRoutes } from "./transactions.js";
 import { vatRoutes } from "./vat.js";
@@ -52,6 +53,10 @@ export async function v1Routes(app: FastifyInstance) {
 
   await app.register(adminRuleConsoleRoutes, {
     prefix: "/admin"
+  });
+
+  await app.register(legalDocumentRoutes, {
+    prefix: "/legal"
   });
 
   await app.register(countryPackRoutes, {

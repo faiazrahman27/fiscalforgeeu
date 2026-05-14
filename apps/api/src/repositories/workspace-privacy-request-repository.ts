@@ -3,14 +3,25 @@ import { getSupabaseUserClient } from "../lib/supabase/server-client.js";
 
 export type WorkspacePrivacyRequestType =
   | "data_export"
+  | "export"
   | "deletion"
-  | "retention_review";
+  | "access"
+  | "correction"
+  | "objection"
+  | "restriction"
+  | "portability"
+  | "retention_review"
+  | "other";
 
 export type WorkspacePrivacyRequestStatus =
   | "submitted"
   | "in_review"
-  | "completed"
-  | "rejected";
+  | "awaiting_verification"
+  | "approved"
+  | "rejected"
+  | "fulfilled"
+  | "cancelled"
+  | "completed";
 
 export type WorkspacePrivacyRequestRecord = {
   id: string;
@@ -129,17 +140,36 @@ function normalizeWorkspaceBootstrapRecord(
 function normalizePrivacyRequestType(
   value: string
 ): WorkspacePrivacyRequestType {
-  if (value === "deletion" || value === "retention_review") {
+  if (
+    value === "data_export" ||
+    value === "export" ||
+    value === "deletion" ||
+    value === "access" ||
+    value === "correction" ||
+    value === "objection" ||
+    value === "restriction" ||
+    value === "portability" ||
+    value === "retention_review" ||
+    value === "other"
+  ) {
     return value;
   }
 
-  return "data_export";
+  return "other";
 }
 
 function normalizePrivacyRequestStatus(
   value: string
 ): WorkspacePrivacyRequestStatus {
-  if (value === "in_review" || value === "completed" || value === "rejected") {
+  if (
+    value === "in_review" ||
+    value === "awaiting_verification" ||
+    value === "approved" ||
+    value === "rejected" ||
+    value === "fulfilled" ||
+    value === "cancelled" ||
+    value === "completed"
+  ) {
     return value;
   }
 
@@ -196,7 +226,10 @@ function buildSupabaseWorkspacePrivacyRequestReviewValues({
     status: payload.status,
     reviewer_user_id: userId,
     review_note: payload.reviewNote,
-    completed_at: payload.status === "completed" ? new Date().toISOString() : null
+    completed_at:
+      payload.status === "fulfilled" || payload.status === "completed"
+        ? new Date().toISOString()
+        : null
   };
 }
 
@@ -274,11 +307,48 @@ async function insertPrivacyRequestActivityEvent({
       requestType: record.requestType,
       status: record.status,
       subject: record.subject,
-      requesterEmail: record.requesterEmail,
-      reviewNote: record.reviewNote,
       completedAt: record.completedAt
     }
   });
+}
+
+async function insertPrivacyRequestEvent({
+  supabase,
+  organizationId,
+  userId,
+  record,
+  eventType
+}: {
+  supabase: SupabaseClient;
+  organizationId: string;
+  userId: string;
+  record: WorkspacePrivacyRequestRecord;
+  eventType:
+    | "privacy_request.submitted"
+    | "privacy_request.status_updated";
+}) {
+  const { error } = await supabase.from("privacy_request_events").insert({
+    organization_id: organizationId,
+    privacy_request_id: record.id,
+    actor_user_id: userId,
+    event_type: eventType,
+    status: record.status,
+    metadata: {
+      requestType: record.requestType,
+      subject: record.subject,
+      completedAt: record.completedAt,
+      legalAdvice: false,
+      legalDeadlineGuarantee: false
+    }
+  });
+
+  if (error) {
+    /*
+     * Privacy request event logging is important but should not block the
+     * source request row while deployments apply additive migrations.
+     */
+    console.warn(`Privacy request event was not recorded: ${error.message}`);
+  }
 }
 
 export function hasAuthenticatedWorkspacePrivacyRequestContext(
@@ -360,6 +430,13 @@ export async function createAuthenticatedWorkspacePrivacyRequest(
       record,
       eventType: "privacy_request.submitted"
     });
+    await insertPrivacyRequestEvent({
+      supabase,
+      organizationId: workspace.organizationId,
+      userId: context.userId,
+      record,
+      eventType: "privacy_request.submitted"
+    });
   } catch {
     /*
      * Privacy request creation should not fail only because activity logging
@@ -368,6 +445,37 @@ export async function createAuthenticatedWorkspacePrivacyRequest(
   }
 
   return record;
+}
+
+export async function getAuthenticatedWorkspacePrivacyRequestById(
+  context: AuthenticatedWorkspacePrivacyRequestContext,
+  id: string
+) {
+  const supabase = createAuthenticatedSupabaseClient(context);
+  const workspace = await getWorkspaceForAuthenticatedUser(supabase);
+
+  assertCanManagePrivacyRequests(workspace);
+
+  const { data, error } = await supabase
+    .from("workspace_privacy_requests")
+    .select(WORKSPACE_PRIVACY_REQUEST_SELECT_FIELDS)
+    .eq("id", id)
+    .eq("organization_id", workspace.organizationId)
+    .maybeSingle();
+
+  if (error) {
+    throw new WorkspacePrivacyRequestRepositoryError(
+      "PRIVACY_REQUEST_READ_FAILED",
+      `Could not read privacy request: ${error.message}`,
+      500
+    );
+  }
+
+  return data
+    ? normalizeWorkspacePrivacyRequestRow(
+        data as SupabaseWorkspacePrivacyRequestRow
+      )
+    : null;
 }
 
 export async function updateAuthenticatedWorkspacePrivacyRequestById(
@@ -411,6 +519,13 @@ export async function updateAuthenticatedWorkspacePrivacyRequestById(
 
   try {
     await insertPrivacyRequestActivityEvent({
+      supabase,
+      organizationId: workspace.organizationId,
+      userId: context.userId,
+      record,
+      eventType: "privacy_request.status_updated"
+    });
+    await insertPrivacyRequestEvent({
       supabase,
       organizationId: workspace.organizationId,
       userId: context.userId,

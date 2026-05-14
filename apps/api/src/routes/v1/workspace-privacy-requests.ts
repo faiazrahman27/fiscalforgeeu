@@ -8,6 +8,7 @@ import {
 import {
   WorkspacePrivacyRequestRepositoryError,
   createAuthenticatedWorkspacePrivacyRequest,
+  getAuthenticatedWorkspacePrivacyRequestById,
   hasAuthenticatedWorkspacePrivacyRequestContext,
   listAuthenticatedWorkspacePrivacyRequests,
   updateAuthenticatedWorkspacePrivacyRequestById,
@@ -17,7 +18,18 @@ import { formatZodError } from "../../utils/zod-error.js";
 
 const workspacePrivacyRequestSchema = z
   .object({
-    requestType: z.enum(["data_export", "deletion", "retention_review"]),
+    requestType: z.enum([
+      "data_export",
+      "export",
+      "deletion",
+      "access",
+      "correction",
+      "objection",
+      "restriction",
+      "portability",
+      "retention_review",
+      "other"
+    ]),
     subject: z.string().trim().min(3).max(120),
     details: z.string().trim().max(1000).optional().default("")
   })
@@ -31,7 +43,16 @@ const workspacePrivacyRequestParamsSchema = z
 
 const workspacePrivacyRequestReviewSchema = z
   .object({
-    status: z.enum(["submitted", "in_review", "completed", "rejected"]),
+    status: z.enum([
+      "submitted",
+      "in_review",
+      "awaiting_verification",
+      "approved",
+      "rejected",
+      "fulfilled",
+      "cancelled",
+      "completed"
+    ]),
     reviewNote: z.string().trim().max(1000).optional().default("")
   })
   .strict();
@@ -178,6 +199,72 @@ export async function workspacePrivacyRequestRoutes(app: FastifyInstance) {
         return reply.status(201).send({
           record
         });
+      } catch (error) {
+        return sendWorkspacePrivacyRequestError(reply, error);
+      }
+    }
+  );
+
+  app.get(
+    "/privacy-requests/:id",
+    {
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.privacyManagers, {
+          code: "PRIVACY_REQUEST_MANAGER_ROLE_REQUIRED",
+          message:
+            "Workspace privacy request detail requires an organization owner or admin role."
+        })
+      ]
+    },
+    async (request, reply) => {
+      const context = getAuthenticatedWorkspacePrivacyRequestContext(request);
+
+      if (!context || !hasAuthenticatedWorkspacePrivacyRequestContext(context)) {
+        return reply.status(401).send({
+          error: {
+            code: "AUTHENTICATED_USER_REQUIRED",
+            message: "Privacy request detail requires a signed-in Supabase user.",
+            details: null
+          }
+        });
+      }
+
+      const parsedParams = workspacePrivacyRequestParamsSchema.safeParse(
+        request.params
+      );
+
+      if (!parsedParams.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Privacy request ID failed schema validation.",
+            details: formatZodError(parsedParams.error)
+          }
+        });
+      }
+
+      try {
+        const record = await getAuthenticatedWorkspacePrivacyRequestById(
+          context,
+          parsedParams.data.id
+        );
+
+        if (!record) {
+          return reply.status(404).send({
+            error: {
+              code: "PRIVACY_REQUEST_NOT_FOUND",
+              message: "Privacy request was not found.",
+              details: null
+            }
+          });
+        }
+
+        return {
+          record,
+          disclaimer:
+            "Privacy request records support workflow review only. They do not provide legal advice or guarantee statutory privacy deadlines without professional review."
+        };
       } catch (error) {
         return sendWorkspacePrivacyRequestError(reply, error);
       }
