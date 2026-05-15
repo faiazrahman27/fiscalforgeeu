@@ -215,6 +215,33 @@ function getRegistryVersionId(document: LegalDocumentDefinition) {
   return `registry:${document.documentKey}:${document.version}`;
 }
 
+function getFallbackRegistryDocument() {
+  const firstDocument = legalDocumentRegistry[0];
+
+  if (!firstDocument) {
+    throw new LegalDocumentRepositoryError(
+      "LEGAL_DOCUMENT_REGISTRY_EMPTY",
+      "Legal document registry is empty.",
+      500
+    );
+  }
+
+  return firstDocument;
+}
+
+function findRegistryDocumentForAcceptanceRow(row: SupabaseLegalAcceptanceRow) {
+  return (
+    legalDocumentRegistry.find(
+      (document) =>
+        getRegistryDocumentId(document) === row.legal_document_id ||
+        getRegistryVersionId(document) === row.legal_document_version_id ||
+        row.legal_document_version_id.endsWith(
+          `${document.documentKey}:${document.version}`
+        )
+    ) ?? getFallbackRegistryDocument()
+  );
+}
+
 function buildRegistryAcceptanceRecord(input: {
   document: LegalDocumentDefinition;
   userId: string;
@@ -298,6 +325,16 @@ function toLegalDocumentDefinition(
       "Professional review is required before public launch."
     ]
   };
+}
+
+function isDuplicateAcceptanceError(error: {
+  code?: string;
+  message?: string;
+}) {
+  return (
+    error.code === "23505" ||
+    (error.message ?? "").toLowerCase().includes("duplicate")
+  );
 }
 
 async function getWorkspaceForAuthenticatedUser(supabase: SupabaseClient) {
@@ -496,6 +533,116 @@ async function resolveSupabasePublishedDocument(input: {
   };
 }
 
+async function readExistingSupabaseAcceptance(input: {
+  supabase: SupabaseClient;
+  userId: string;
+  legalDocumentVersionId: string;
+  acceptanceContext: LegalAcceptanceContext;
+}) {
+  /*
+   * Match the database unique constraint exactly:
+   * unique (user_id, legal_document_version_id, acceptance_context)
+   *
+   * Do not filter by organization_id here. Older or conflicting records may
+   * already exist with a different organization_id/null value, while the unique
+   * constraint still blocks a second acceptance for the same user/version/context.
+   */
+  const { data, error } = await input.supabase
+    .from("legal_document_acceptances")
+    .select(LEGAL_ACCEPTANCE_SELECT_FIELDS)
+    .eq("user_id", input.userId)
+    .eq("legal_document_version_id", input.legalDocumentVersionId)
+    .eq("acceptance_context", input.acceptanceContext)
+    .order("accepted_at", {
+      ascending: false
+    })
+    .limit(1);
+
+  if (error) {
+    throw new LegalDocumentRepositoryError(
+      "LEGAL_ACCEPTANCE_READ_FAILED",
+      `Could not read legal document acceptance: ${error.message}`,
+      500
+    );
+  }
+
+  return ((data ?? []) as SupabaseLegalAcceptanceRow[])[0] ?? null;
+}
+
+async function normalizeSupabaseAcceptanceRowsWithDocuments(
+  supabase: SupabaseClient,
+  rows: SupabaseLegalAcceptanceRow[]
+) {
+  if (!rows.length) {
+    return [];
+  }
+
+  const legalDocumentIds = Array.from(
+    new Set(rows.map((row) => row.legal_document_id).filter(Boolean))
+  );
+  const legalDocumentVersionIds = Array.from(
+    new Set(rows.map((row) => row.legal_document_version_id).filter(Boolean))
+  );
+
+  const documentRowsById = new Map<string, SupabaseLegalDocumentRow>();
+  const versionRowsById = new Map<string, SupabaseLegalDocumentVersionRow>();
+
+  if (legalDocumentIds.length) {
+    const { data, error } = await supabase
+      .from("legal_documents")
+      .select(LEGAL_DOCUMENT_SELECT_FIELDS)
+      .in("id", legalDocumentIds);
+
+    if (error) {
+      throw new LegalDocumentRepositoryError(
+        "LEGAL_ACCEPTANCE_DOCUMENT_HYDRATION_FAILED",
+        `Could not hydrate legal acceptance documents: ${error.message}`,
+        500
+      );
+    }
+
+    for (const row of (data ?? []) as SupabaseLegalDocumentRow[]) {
+      documentRowsById.set(row.id, row);
+    }
+  }
+
+  if (legalDocumentVersionIds.length) {
+    const { data, error } = await supabase
+      .from("legal_document_versions")
+      .select(LEGAL_DOCUMENT_VERSION_SELECT_FIELDS)
+      .in("id", legalDocumentVersionIds);
+
+    if (error) {
+      throw new LegalDocumentRepositoryError(
+        "LEGAL_ACCEPTANCE_VERSION_HYDRATION_FAILED",
+        `Could not hydrate legal acceptance versions: ${error.message}`,
+        500
+      );
+    }
+
+    for (const row of (data ?? []) as SupabaseLegalDocumentVersionRow[]) {
+      versionRowsById.set(row.id, row);
+    }
+  }
+
+  return rows.map((row) => {
+    const documentRow = documentRowsById.get(row.legal_document_id);
+    const versionRow = versionRowsById.get(row.legal_document_version_id);
+
+    if (documentRow && versionRow) {
+      return normalizeSupabaseAcceptanceRow(
+        row,
+        toLegalDocumentDefinition(documentRow, versionRow)
+      );
+    }
+
+    return normalizeSupabaseAcceptanceRow(
+      row,
+      findRegistryDocumentForAcceptanceRow(row)
+    );
+  });
+}
+
 export async function listLegalDocuments() {
   if (!hasSupabaseServerConfig()) {
     return listPublishedLegalDocuments();
@@ -531,9 +678,9 @@ export async function acceptLegalDocument(
   record: LegalDocumentAcceptanceRecord;
   alreadyAccepted: boolean;
 }> {
-  const document = getPublishedLegalDocument(input.documentKey);
+  const registryDocument = getPublishedLegalDocument(input.documentKey);
 
-  if (!document) {
+  if (!registryDocument && !hasSupabaseServerConfig()) {
     throw new LegalDocumentRepositoryError(
       "LEGAL_DOCUMENT_NOT_FOUND",
       "Legal document was not found or is not published.",
@@ -547,10 +694,21 @@ export async function acceptLegalDocument(
   const metadata = normalizeMetadata(input.metadata);
 
   if (!hasSupabaseServerConfig()) {
+    const document = registryDocument;
+
+    if (!document) {
+      throw new LegalDocumentRepositoryError(
+        "LEGAL_DOCUMENT_NOT_FOUND",
+        "Legal document was not found or is not published.",
+        404
+      );
+    }
+
     const records =
       await storageProvider.readCollection<LegalDocumentAcceptanceRecord>(
         LEGAL_ACCEPTANCES_FILE
       );
+
     const existingRecord = records.find(
       (record) =>
         record.userId === input.userId &&
@@ -587,34 +745,72 @@ export async function acceptLegalDocument(
     };
   }
 
-  const supabase = getSupabaseUserClient(input.accessToken);
-  const workspace = await getWorkspaceForAuthenticatedUser(supabase);
+  /*
+   * Keep the signed-user client for authentication and workspace bootstrap.
+   * Use the service-role client only after the signed user has been verified,
+   * so the backend can perform the controlled insert without being blocked by
+   * browser-facing RLS policies.
+   */
+  const userSupabase = getSupabaseUserClient(input.accessToken);
+  const serviceSupabase = getSupabaseServiceRoleClient();
+  const workspace = await getWorkspaceForAuthenticatedUser(userSupabase);
   const resolved = await resolveSupabasePublishedDocument({
-    supabase,
+    supabase: serviceSupabase,
     documentKey: input.documentKey
   });
+
+  const existingRecord = await readExistingSupabaseAcceptance({
+    supabase: serviceSupabase,
+    userId: input.userId,
+    legalDocumentVersionId: resolved.versionRow.id,
+    acceptanceContext
+  });
+
+  if (existingRecord) {
+    return {
+      record: normalizeSupabaseAcceptanceRow(existingRecord, resolved.document),
+      alreadyAccepted: true
+    };
+  }
 
   const insertValues = {
     organization_id: workspace.organizationId,
     user_id: input.userId,
     legal_document_id: resolved.documentRow.id,
     legal_document_version_id: resolved.versionRow.id,
+    accepted_at: new Date().toISOString(),
     acceptance_context: acceptanceContext,
     ip_hash: ipHash,
     user_agent_hash: userAgentHash,
     metadata
   };
 
-  const { data, error } = await supabase
+  const { data, error } = await serviceSupabase
     .from("legal_document_acceptances")
-    .upsert(insertValues, {
-      onConflict:
-        "user_id,legal_document_version_id,acceptance_context"
-    })
+    .insert(insertValues)
     .select(LEGAL_ACCEPTANCE_SELECT_FIELDS)
     .single();
 
   if (error) {
+    if (isDuplicateAcceptanceError(error)) {
+      const duplicateRecord = await readExistingSupabaseAcceptance({
+        supabase: serviceSupabase,
+        userId: input.userId,
+        legalDocumentVersionId: resolved.versionRow.id,
+        acceptanceContext
+      });
+
+      if (duplicateRecord) {
+        return {
+          record: normalizeSupabaseAcceptanceRow(
+            duplicateRecord,
+            resolved.document
+          ),
+          alreadyAccepted: true
+        };
+      }
+    }
+
     throw new LegalDocumentRepositoryError(
       "LEGAL_ACCEPTANCE_SAVE_FAILED",
       `Could not save legal document acceptance: ${error.message}`,
@@ -623,22 +819,20 @@ export async function acceptLegalDocument(
   }
 
   try {
-    await getSupabaseServiceRoleClient()
-      .from("legal_document_lifecycle_events")
-      .insert({
-        legal_document_id: resolved.documentRow.id,
-        legal_document_version_id: resolved.versionRow.id,
-        actor_user_id: input.userId,
-        event_type: "acceptance.recorded",
-        metadata: {
-          acceptanceContext,
-          organizationId: workspace.organizationId,
-          storesRawIpAddress: false,
-          storesRawUserAgent: false,
-          legalAdviceCreated: false,
-          officialComplianceCreated: false
-        }
-      });
+    await serviceSupabase.from("legal_document_lifecycle_events").insert({
+      legal_document_id: resolved.documentRow.id,
+      legal_document_version_id: resolved.versionRow.id,
+      actor_user_id: input.userId,
+      event_type: "acceptance.recorded",
+      metadata: {
+        acceptanceContext,
+        organizationId: workspace.organizationId,
+        storesRawIpAddress: false,
+        storesRawUserAgent: false,
+        legalAdviceCreated: false,
+        officialComplianceCreated: false
+      }
+    });
   } catch {
     /*
      * Acceptance persistence is the source of truth. Lifecycle logging can be
@@ -670,13 +864,17 @@ export async function listMyLegalAcceptances(
       .sort((first, second) => second.acceptedAt.localeCompare(first.acceptedAt));
   }
 
-  const supabase = getSupabaseUserClient(context.accessToken);
-  const workspace = await getWorkspaceForAuthenticatedUser(supabase);
-  const { data, error } = await supabase
+  const serviceSupabase = getSupabaseServiceRoleClient();
+
+  /*
+   * Legal acceptance is user/version/context-level in migration 040, not
+   * workspace-level. Filtering by organization_id can hide already recorded
+   * acceptances and make the UI ask for documents again.
+   */
+  const { data, error } = await serviceSupabase
     .from("legal_document_acceptances")
     .select(LEGAL_ACCEPTANCE_SELECT_FIELDS)
     .eq("user_id", context.userId)
-    .eq("organization_id", workspace.organizationId)
     .order("accepted_at", {
       ascending: false
     });
@@ -689,24 +887,10 @@ export async function listMyLegalAcceptances(
     );
   }
 
-  const documentsByVersion = new Map(
-    legalDocumentRegistry.map((document) => [
-      `${document.documentKey}:${document.version}`,
-      document
-    ])
+  return normalizeSupabaseAcceptanceRowsWithDocuments(
+    serviceSupabase,
+    (data ?? []) as SupabaseLegalAcceptanceRow[]
   );
-
-  return ((data ?? []) as SupabaseLegalAcceptanceRow[]).map((row) => {
-    const document =
-      legalDocumentRegistry.find(
-        (candidate) =>
-          getRegistryVersionId(candidate) === row.legal_document_version_id
-      ) ??
-      documentsByVersion.values().next().value ??
-      legalDocumentRegistry[0];
-
-    return normalizeSupabaseAcceptanceRow(row, document);
-  });
 }
 
 export async function listWorkspaceLegalAcceptances(
@@ -723,9 +907,11 @@ export async function listWorkspaceLegalAcceptances(
     );
   }
 
-  const supabase = getSupabaseUserClient(context.accessToken);
-  const workspace = await getWorkspaceForAuthenticatedUser(supabase);
-  const { data, error } = await supabase
+  const userSupabase = getSupabaseUserClient(context.accessToken);
+  const serviceSupabase = getSupabaseServiceRoleClient();
+  const workspace = await getWorkspaceForAuthenticatedUser(userSupabase);
+
+  const { data, error } = await serviceSupabase
     .from("legal_document_acceptances")
     .select(LEGAL_ACCEPTANCE_SELECT_FIELDS)
     .eq("organization_id", workspace.organizationId)
@@ -741,14 +927,8 @@ export async function listWorkspaceLegalAcceptances(
     );
   }
 
-  return ((data ?? []) as SupabaseLegalAcceptanceRow[]).map((row) => {
-    const document =
-      legalDocumentRegistry.find((candidate) =>
-        row.legal_document_version_id.endsWith(
-          `${candidate.documentKey}:${candidate.version}`
-        )
-      ) ?? legalDocumentRegistry[0];
-
-    return normalizeSupabaseAcceptanceRow(row, document);
-  });
+  return normalizeSupabaseAcceptanceRowsWithDocuments(
+    serviceSupabase,
+    (data ?? []) as SupabaseLegalAcceptanceRow[]
+  );
 }

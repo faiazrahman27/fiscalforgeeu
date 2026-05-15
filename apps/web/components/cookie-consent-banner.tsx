@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Cookie, SlidersHorizontal, X } from "lucide-react";
 import {
   COOKIE_CONSENT_CATEGORIES,
@@ -10,7 +11,6 @@ import {
   parseCookieConsentRecord
 } from "../lib/cookie-consent";
 import { getLegalDocumentHref } from "../lib/legal-documents";
-import { usePathname } from "next/navigation";
 
 function shouldHideCookieBanner(pathname: string | null) {
   if (!pathname) {
@@ -39,6 +39,7 @@ export function CookieConsentBanner() {
   const [isReady, setIsReady] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [preferenceOnlyMode, setPreferenceOnlyMode] = useState(false);
   const [functionalEnabled, setFunctionalEnabled] = useState(false);
 
   useEffect(() => {
@@ -46,6 +47,7 @@ export function CookieConsentBanner() {
       setIsReady(true);
       setIsVisible(false);
       setShowPreferences(false);
+      setPreferenceOnlyMode(false);
       return;
     }
 
@@ -53,6 +55,8 @@ export function CookieConsentBanner() {
 
     setFunctionalEnabled(storedRecord?.categories.functional === true);
     setIsVisible(!storedRecord);
+    setShowPreferences(false);
+    setPreferenceOnlyMode(false);
     setIsReady(true);
 
     function handleManageCookies() {
@@ -61,9 +65,13 @@ export function CookieConsentBanner() {
       setFunctionalEnabled(latestRecord?.categories.functional === true);
       setIsVisible(true);
       setShowPreferences(true);
+      setPreferenceOnlyMode(true);
     }
 
-    window.addEventListener("invoice-lantern:manage-cookies", handleManageCookies);
+    window.addEventListener(
+      "invoice-lantern:manage-cookies",
+      handleManageCookies
+    );
 
     return () => {
       window.removeEventListener(
@@ -84,10 +92,31 @@ export function CookieConsentBanner() {
         JSON.stringify(record)
       );
     } catch {
-      // Keep the UI usable if browser storage is unavailable.
+      /*
+       * Keep the UI usable if browser storage is unavailable. The user can
+       * still continue; the banner may reappear on the next page load.
+       */
     }
+
     setFunctionalEnabled(record.categories.functional);
     setIsVisible(false);
+    setShowPreferences(false);
+    setPreferenceOnlyMode(false);
+  }
+
+  function openPreferencesFromBanner() {
+    setShowPreferences(true);
+    setPreferenceOnlyMode(false);
+  }
+
+  function closePreferences() {
+    if (preferenceOnlyMode) {
+      setIsVisible(false);
+      setShowPreferences(false);
+      setPreferenceOnlyMode(false);
+      return;
+    }
+
     setShowPreferences(false);
   }
 
@@ -96,70 +125,83 @@ export function CookieConsentBanner() {
   }
 
   return (
-    <section
+    <aside
       className="cookie-consent"
       aria-label="Cookie preferences"
       data-testid="cookie-consent-banner"
+      style={{
+        maxHeight: "calc(100dvh - 2rem)",
+        overflowY: "auto",
+        overscrollBehavior: "contain"
+      }}
     >
-      <div className="cookie-consent-panel">
-        <div className="cookie-consent-icon" aria-hidden="true">
-          <Cookie size={20} />
-        </div>
-
-        <div className="cookie-consent-copy">
-          <p className="cookie-consent-kicker">Cookie preferences</p>
-          <h2>Essential cookies stay on. Optional tracking is not used.</h2>
-          <p>
-            Invoice Lantern may use essential cookies or browser storage for
-            authentication, security, legal preference storage, and PWA safety.
-            Analytics and marketing cookies are not enabled in this release
-            candidate.
-          </p>
-
-          <div className="cookie-consent-links">
-            <Link href={getLegalDocumentHref("cookies")}>Cookie Policy</Link>
-            <Link href={getLegalDocumentHref("privacy")}>Privacy Policy</Link>
-            <Link href={getLegalDocumentHref("terms")}>Terms</Link>
+      {!showPreferences ? (
+        <section className="cookie-consent-panel">
+          <div className="cookie-consent-icon" aria-hidden="true">
+            <Cookie size={20} />
           </div>
-        </div>
 
-        <div className="cookie-consent-actions">
-          <button
-            type="button"
-            className="cookie-secondary-button"
-            onClick={() => setShowPreferences(true)}
-          >
-            <SlidersHorizontal size={16} />
-            Manage options
-          </button>
-          <button
-            type="button"
-            className="cookie-primary-button"
-            onClick={() => savePreferences(false)}
-          >
-            Essential only
-          </button>
-        </div>
-      </div>
+          <div className="cookie-consent-copy">
+            <p className="cookie-consent-kicker">Cookie preferences</p>
+            <h2>Essential storage stays on. Optional tracking is not used.</h2>
+            <p>
+              Invoice Lantern may use essential cookies or browser storage for
+              authentication, security, legal preference storage, and PWA safety.
+              Analytics and marketing cookies are not enabled in this release
+              candidate.
+            </p>
 
-      {showPreferences ? (
-        <div
+            <div className="cookie-consent-links" aria-label="Cookie legal links">
+              <Link href={getLegalDocumentHref("cookies")}>Cookie Policy</Link>
+              <Link href={getLegalDocumentHref("privacy")}>Privacy Policy</Link>
+              <Link href={getLegalDocumentHref("terms")}>Terms</Link>
+            </div>
+          </div>
+
+          <div className="cookie-consent-actions">
+            <button
+              type="button"
+              className="cookie-secondary-button"
+              onClick={openPreferencesFromBanner}
+            >
+              <SlidersHorizontal size={16} />
+              Manage options
+            </button>
+
+            <button
+              type="button"
+              className="cookie-primary-button"
+              onClick={() => savePreferences(false)}
+            >
+              Essential only
+            </button>
+          </div>
+        </section>
+      ) : (
+        <section
           className="cookie-preferences"
           role="dialog"
           aria-modal="false"
           aria-labelledby="cookie-preferences-title"
+          style={{
+            maxHeight: "calc(100dvh - 2rem)",
+            overflowY: "auto",
+            overscrollBehavior: "contain"
+          }}
         >
           <div className="cookie-preferences-head">
             <div>
               <p className="cookie-consent-kicker">Preference center</p>
-              <h2 id="cookie-preferences-title">Manage cookie categories</h2>
+              <h2 id="cookie-preferences-title">
+                Manage cookie categories
+              </h2>
             </div>
 
             <button
               type="button"
               className="cookie-icon-button"
               aria-label="Close cookie preferences"
-              onClick={() => setShowPreferences(false)}
+              onClick={closePreferences}
             >
               <X size={18} />
             </button>
@@ -186,6 +228,7 @@ export function CookieConsentBanner() {
                     type="checkbox"
                     checked={checked}
                     disabled={disabled}
+                    aria-label={`${category.label} cookie category`}
                     onChange={(event) => {
                       if (category.key === "functional") {
                         setFunctionalEnabled(event.target.checked);
@@ -211,6 +254,7 @@ export function CookieConsentBanner() {
             >
               Essential only
             </button>
+
             <button
               type="button"
               className="cookie-primary-button"
@@ -219,8 +263,8 @@ export function CookieConsentBanner() {
               Save preferences
             </button>
           </div>
-        </div>
-      ) : null}
-    </section>
+        </section>
+      )}
+    </aside>
   );
 }

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, FileText, ShieldCheck } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileText, ShieldCheck } from "lucide-react";
 import {
   ACCOUNT_LEGAL_DOCUMENT_KEYS,
   ACCOUNT_LEGAL_DOCUMENT_LABELS,
@@ -181,11 +181,27 @@ export default function WorkspaceLegalAcceptancePage() {
       )
   );
 
-  const canSubmit =
-    !isLoading &&
+  const allMissingChecked =
+    missingDocuments.length > 0 &&
     missingDocuments.every(
       (document) => checkedDocuments[document.documentKey]
     );
+
+  const canSubmit = !isLoading && allMissingChecked;
+
+  function handleSelectAllMissing() {
+    setCheckedDocuments((current) => {
+      const nextState = { ...current };
+
+      for (const document of missingDocuments) {
+        nextState[document.documentKey] = true;
+      }
+
+      return nextState;
+    });
+
+    setMessage("");
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -229,7 +245,7 @@ export default function WorkspaceLegalAcceptancePage() {
       router.refresh();
     } catch {
       setMessage(
-        "Could not record every required acceptance. Nothing was marked complete in the UI; retry after confirming your session and API connection."
+        "Could not record every required acceptance. Retry after confirming your session and API connection."
       );
     } finally {
       setIsSubmitting(false);
@@ -237,9 +253,9 @@ export default function WorkspaceLegalAcceptancePage() {
   }
 
   return (
-    <section className="legal-acceptance-page">
-      <div className="legal-acceptance-panel">
-        <div className="legal-acceptance-heading">
+    <section className="legal-acceptance-page workspace-legal-fit-page">
+      <div className="legal-acceptance-panel workspace-legal-fit-panel">
+        <div className="legal-acceptance-heading workspace-legal-fit-heading">
           <div className="legal-acceptance-icon">
             <ShieldCheck size={24} />
           </div>
@@ -250,16 +266,26 @@ export default function WorkspaceLegalAcceptancePage() {
           </div>
         </div>
 
-        <p className="legal-acceptance-lead">
+        <p className="legal-acceptance-lead workspace-legal-fit-lead">
           Invoice Lantern records version-aware acknowledgement for required
-          platform documents. Acceptance does not create legal, tax,
-          accounting, privacy, security, filing, official, or compliance
-          certainty.
+          platform documents. Acceptance does not create legal, tax, accounting,
+          privacy, security, filing, official, or compliance certainty.
         </p>
+
+        <div className="workspace-legal-required-summary">
+          <p>Required documents</p>
+          <span>
+            {missingDocuments.length
+              ? `${missingDocuments.length} current document${
+                  missingDocuments.length === 1 ? "" : "s"
+                } must be accepted.`
+              : "All current required documents are already accepted."}
+          </span>
+        </div>
 
         <form
           id="workspace-legal-acceptance-form"
-          className="legal-acceptance-form"
+          className="legal-acceptance-form workspace-legal-fit-form"
           onSubmit={handleSubmit}
         >
           {requiredDocuments.map((document) => {
@@ -271,7 +297,11 @@ export default function WorkspaceLegalAcceptancePage() {
 
             return (
               <label
-                className="legal-acceptance-row"
+                className={
+                  isAccepted
+                    ? "legal-acceptance-row legal-acceptance-row-accepted workspace-legal-fit-row"
+                    : "legal-acceptance-row workspace-legal-fit-row"
+                }
                 key={document.documentKey}
               >
                 <input
@@ -300,10 +330,22 @@ export default function WorkspaceLegalAcceptancePage() {
             );
           })}
 
+          <div className="workspace-legal-select-under">
+            <button
+              type="button"
+              className="workspace-legal-select-all"
+              onClick={handleSelectAllMissing}
+              disabled={isLoading || missingDocuments.length === 0 || allMissingChecked}
+            >
+              <CheckCircle2 size={16} />
+              {allMissingChecked ? "All selected" : "Select all required documents"}
+            </button>
+          </div>
+
           {message ? <p className="legal-acceptance-message">{message}</p> : null}
         </form>
 
-        <div className="legal-acceptance-actions">
+        <div className="legal-acceptance-actions workspace-legal-fit-actions">
           <form action="/auth/sign-out" method="post">
             <button type="submit" className="text-link-button">
               Sign out

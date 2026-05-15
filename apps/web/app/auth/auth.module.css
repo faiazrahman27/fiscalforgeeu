@@ -1,21 +1,24 @@
 .authShell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 7rem 1.5rem 4rem;
   position: relative;
   z-index: 2;
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 7rem 1.5rem 4rem;
 }
 
 .authCard {
-  width: min(100%, 620px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  width: min(100%, 640px);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 28px;
   background:
     radial-gradient(circle at top left, rgba(100, 210, 255, 0.16), transparent 34%),
-    rgba(8, 12, 22, 0.78);
-  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.38);
-  backdrop-filter: blur(22px);
-  border-radius: 28px;
+    linear-gradient(145deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)),
+    rgba(8, 12, 22, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.075),
+    0 28px 90px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(24px);
   padding: 2rem;
 }
 
@@ -23,52 +26,73 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  margin-bottom: 1.35rem;
   color: rgba(255, 255, 255, 0.68);
+  font-size: 0.88rem;
+  font-weight: 760;
+  line-height: 1;
   text-decoration: none;
-  font-size: 0.92rem;
-  margin-bottom: 1.5rem;
+}
+
+.authBackLink:hover {
+  color: #ffffff;
 }
 
 .authBrand {
   display: inline-flex;
   align-items: center;
-  gap: 0.85rem;
+  gap: 0.95rem;
+  min-height: 3.65rem;
   margin-bottom: 1.35rem;
+  color: #ffffff;
+}
+
+.authBrand img {
+  display: block;
+  width: 3.45rem;
+  height: 3.45rem;
+  flex: 0 0 3.45rem;
+  object-fit: contain;
+  object-position: center;
+  filter: drop-shadow(0 0 18px rgba(255, 255, 255, 0.16));
+}
+
+.authBrand span {
+  display: block;
   color: #ffffff;
   font-size: 0.82rem;
   font-weight: 900;
   letter-spacing: 0.16em;
+  line-height: 1;
   text-transform: uppercase;
-}
-
-.authBrand img {
-  width: 4rem;
-  height: 4rem;
-  object-fit: contain;
-  filter: drop-shadow(0 0 18px rgba(255,255,255,0.14));
+  transform: translateY(0.02rem);
 }
 
 .authKicker {
   margin: 0 0 0.65rem;
   color: var(--ff-teal, #64d2ff);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 .authTitle {
   margin: 0;
   color: #ffffff;
-  font-size: clamp(2rem, 5vw, 3rem);
-  letter-spacing: -0.05em;
+  font-size: clamp(2.4rem, 5vw, 3.35rem);
+  font-weight: 790;
+  letter-spacing: -0.06em;
   line-height: 0.95;
 }
 
 .authLead {
   margin: 1rem 0 0;
+  max-width: 560px;
   color: rgba(255, 255, 255, 0.66);
-  line-height: 1.7;
+  font-size: 0.98rem;
+  line-height: 1.72;
 }
 
 .authBoundaryList {
@@ -83,9 +107,10 @@
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.055);
   padding: 0.45rem 0.7rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 0.72rem;
-  font-weight: 800;
+  font-weight: 820;
+  line-height: 1;
 }
 
 .authForm {
@@ -101,18 +126,32 @@
 
 .authField span {
   color: rgba(255, 255, 255, 0.72);
-  font-size: 0.88rem;
-  font-weight: 650;
+  font-size: 0.86rem;
+  font-weight: 720;
+  line-height: 1.25;
 }
 
 .authField input {
   width: 100%;
+  min-height: 3.25rem;
   border: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(255, 255, 255, 0.06);
-  color: #ffffff;
   border-radius: 16px;
-  padding: 0.92rem 1rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035)),
+    rgba(5, 8, 14, 0.72);
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.95rem;
   outline: none;
+  padding: 0.92rem 1rem;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.authField input::placeholder {
+  color: rgba(255, 255, 255, 0.36);
 }
 
 .authField input:focus {
@@ -126,20 +165,20 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.045);
-  padding: 1rem;
   margin: 0.25rem 0 0;
+  padding: 1rem;
 }
 
 .authChecklist legend {
   padding: 0 0.35rem;
   color: rgba(255, 255, 255, 0.72);
   font-size: 0.82rem;
-  font-weight: 800;
+  font-weight: 850;
 }
 
 .authCheckbox {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 0.65rem;
   align-items: start;
   color: rgba(255, 255, 255, 0.76);
@@ -170,18 +209,30 @@
 }
 
 .authButton {
-  border: 0;
-  border-radius: 999px;
-  padding: 0.95rem 1.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.55rem;
-  color: #061018;
+  min-height: 3.25rem;
+  border: 0;
+  border-radius: 999px;
   background: #ffffff;
-  font-weight: 800;
+  color: #061018;
   cursor: pointer;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 850;
   margin-top: 0.35rem;
+  padding: 0.95rem 1.2rem;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.authButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px rgba(255, 255, 255, 0.08);
 }
 
 .authButton:disabled {
@@ -197,8 +248,14 @@
 
 .authSwitch a {
   color: #ffffff;
-  font-weight: 750;
+  font-weight: 800;
   text-decoration: none;
+}
+
+.authSwitch a:hover {
+  text-decoration: underline;
+  text-decoration-color: rgba(100, 210, 255, 0.45);
+  text-underline-offset: 0.2rem;
 }
 
 .authLegalLinks {
@@ -211,24 +268,44 @@
 .authLegalLinks a {
   color: rgba(255, 255, 255, 0.72);
   font-size: 0.84rem;
-  font-weight: 750;
+  font-weight: 780;
   text-decoration: underline;
   text-decoration-color: rgba(100, 210, 255, 0.36);
   text-underline-offset: 0.22rem;
 }
 
+.authLegalLinks a:hover {
+  color: #ffffff;
+}
+
 .authMessage {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 0.65rem;
   align-items: start;
-  border-radius: 18px;
-  padding: 0.95rem;
-  margin-top: 1.25rem;
-  color: rgba(255, 255, 255, 0.78);
-  background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.07);
+  margin-top: 1.25rem;
+  padding: 0.95rem;
+  color: rgba(255, 255, 255, 0.78);
   line-height: 1.6;
+}
+
+.authMessage svg {
+  margin-top: 0.15rem;
+  color: var(--ff-teal, #64d2ff);
+}
+
+.authMessage p {
+  margin: 0;
+}
+
+.authNotice {
+  margin: 1.4rem 0 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.88rem;
+  line-height: 1.7;
 }
 
 @media (max-width: 620px) {
@@ -241,8 +318,24 @@
     padding: 1.25rem;
   }
 
+  .authBrand {
+    gap: 0.8rem;
+    min-height: 3.2rem;
+  }
+
+  .authBrand img {
+    width: 3rem;
+    height: 3rem;
+    flex-basis: 3rem;
+  }
+
+  .authBrand span {
+    font-size: 0.76rem;
+    letter-spacing: 0.14em;
+  }
+
   .authTitle {
-    font-size: 2.45rem;
+    font-size: 2.55rem;
     line-height: 1;
   }
 
@@ -251,14 +344,121 @@
   }
 }
 
-.authMessage svg {
-  margin-top: 0.15rem;
-  color: var(--ff-teal, #64d2ff);
+/* Keep auth box centered, but place brand/logo at the top-left inside the card */
+.authShell {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 7rem 1.5rem 4rem;
 }
 
-.authNotice {
-  margin-top: 1.4rem;
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 0.88rem;
-  line-height: 1.7;
+.authCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
+
+.authBrand {
+  order: -2;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.95rem;
+  margin: 0 0 1.25rem;
+}
+
+.authBackLink {
+  order: -1;
+  margin-bottom: 1.35rem;
+}
+
+.authBrand img {
+  width: 3.75rem;
+  height: 3.75rem;
+  flex: 0 0 3.75rem;
+  object-fit: contain;
+  object-position: center;
+}
+
+.authBrand span {
+  line-height: 1;
+  transform: none;
+}
+
+/* Keep auth box centered. Keep logo top-left. Let form use full card width. */
+.authShell {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 7rem 1.5rem 4rem;
+}
+
+.authCard {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: min(100%, 640px);
+}
+
+.authBrand {
+  order: -2;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.95rem;
+  margin: 0 0 1.25rem;
+}
+
+.authBackLink {
+  order: -1;
+  width: fit-content;
+  margin-bottom: 1.35rem;
+}
+
+.authBrand img {
+  width: 3.75rem;
+  height: 3.75rem;
+  flex: 0 0 3.75rem;
+  object-fit: contain;
+  object-position: center;
+}
+
+.authBrand span {
+  line-height: 1;
+  transform: none;
+}
+
+.authKicker,
+.authTitle,
+.authLead,
+.authBoundaryList,
+.authForm,
+.authSwitch,
+.authLegalLinks,
+.authNotice,
+.authMessage {
+  width: 100%;
+}
+
+.authForm {
+  max-width: none;
+}
+
+.authField,
+.authField input,
+.authButton {
+  width: 100%;
+}
+
+.authButton {
+  justify-content: center;
+}
+
+@media (max-width: 620px) {
+  .authShell {
+    padding: 6rem 1rem 3rem;
+  }
+}
+

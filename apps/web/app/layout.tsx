@@ -35,7 +35,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  themeColor: "#0f172a"
+  themeColor: "#050505"
 };
 
 export default function RootLayout({
@@ -44,15 +44,17 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
         <ScrollProgress />
         <AnimatedBackground />
         <ServiceWorkerRegister />
+
+        {children}
+
+        <CookieConsentBanner />
         <NetworkStatus />
         <PwaInstallPrompt />
-        <CookieConsentBanner />
-        {children}
       </body>
     </html>
   );

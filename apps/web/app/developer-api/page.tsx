@@ -135,10 +135,23 @@ export default function DeveloperApiPage() {
             </div>
           </Reveal>
 
-          <div className="subpage-grid">
+          <div
+            className="subpage-grid"
+            style={{
+              alignItems: "stretch"
+            }}
+          >
             {apiModules.map((item) => (
               <Reveal key={item.title}>
-                <div className="subpage-card">
+                <div
+                  className="subpage-card"
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "flex-start"
+                  }}
+                >
                   <div className="subpage-card-icon">{item.icon}</div>
                   <h2>{item.title}</h2>
                   <p>{item.description}</p>
@@ -383,19 +396,19 @@ curl -X POST http://localhost:4000/api/v1/webhooks/endpoints/<endpoint-id>/test 
                 <p>Scopes</p>
               </div>
 
-              <pre>{`invoices:validate        POST /api/v1/invoices/validate
-invoices:export_ubl      POST /api/v1/invoices/export/ubl
-invoices:parse_ubl       POST /api/v1/invoices/parse/ubl
-invoices:import_ubl      reserved; editable UBL draft import is signed-user-only
-xml:validation_jobs      POST /api/v1/xml/validation-jobs
-xml:validation_jobs      GET  /api/v1/xml/validation-jobs
-xml:validation_jobs      GET  /api/v1/xml/validation-jobs/:id
-vat:validate_format      POST /api/v1/vat/validate-format
-vat:check_vies           POST /api/v1/vat/check-vies
+              <pre>{`invoices:validate          POST /api/v1/invoices/validate
+invoices:export_ubl        POST /api/v1/invoices/export/ubl
+invoices:parse_ubl         POST /api/v1/invoices/parse/ubl
+invoices:import_ubl        reserved; editable UBL draft import is signed-user-only
+xml:validation_jobs        POST /api/v1/xml/validation-jobs
+xml:validation_jobs        GET  /api/v1/xml/validation-jobs
+xml:validation_jobs        GET  /api/v1/xml/validation-jobs/:id
+vat:validate_format        POST /api/v1/vat/validate-format
+vat:check_vies             POST /api/v1/vat/check-vies
 transactions:simulate_vida POST /api/v1/transactions/simulate-vida
-rules:read               GET  /api/v1/validation/rules
-validation_runs:read     GET  /api/v1/validation-runs
-validation_runs:read     GET  /api/v1/validation-runs/:id
+rules:read                 GET  /api/v1/validation/rules
+validation_runs:read       GET  /api/v1/validation-runs
+validation_runs:read       GET  /api/v1/validation-runs/:id
 
 Signed-in workspace production invoice lifecycle routes use Supabase session auth:
 GET    /api/v1/invoices
@@ -424,15 +437,15 @@ They do not store request bodies, XML payloads, full API keys, full VAT IDs, or 
               </div>
 
               <pre>{`Sandbox developer API limits:
-rules:read               120 requests per 15 minutes per API key
-vat:validate_format       60 requests per 15 minutes per API key
-vat:check_vies            20 requests per 15 minutes per API key
-transactions:simulate_vida 30 requests per 15 minutes per API key
-invoices:validate         30 requests per 15 minutes per API key
-invoices:export_ubl       30 requests per 15 minutes per API key
-invoices:parse_ubl        30 requests per 15 minutes per API key
-xml:validation_jobs       15 requests per 15 minutes per API key
-organization total       300 requests per 15 minutes
+rules:read                  120 requests per 15 minutes per API key
+vat:validate_format          60 requests per 15 minutes per API key
+vat:check_vies               20 requests per 15 minutes per API key
+transactions:simulate_vida   30 requests per 15 minutes per API key
+invoices:validate            30 requests per 15 minutes per API key
+invoices:export_ubl          30 requests per 15 minutes per API key
+invoices:parse_ubl           30 requests per 15 minutes per API key
+xml:validation_jobs          15 requests per 15 minutes per API key
+organization total           300 requests per 15 minutes
 
 Rate limits protect the sandbox API from abuse and unrestricted resource consumption.
 They are not an SLA and are not a compliance guarantee.
@@ -464,10 +477,7 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
               <ArrowRight size={18} />
             </Link>
 
-            <Link
-              href="/legal/disclaimer"
-              className="text-link-button"
-            >
+            <Link href="/legal/disclaimer" className="text-link-button">
               Disclaimer
               <ArrowRight size={18} />
             </Link>

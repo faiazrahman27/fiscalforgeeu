@@ -32,15 +32,23 @@ export function SiteFooter({ compact = false }: SiteFooterProps) {
   }
 
   return (
-    <footer className={compact ? "site-footer site-footer-compact" : "site-footer"}>
+    <footer
+      className={compact ? "site-footer site-footer-compact" : "site-footer"}
+      aria-label="Invoice Lantern footer"
+    >
       <div className="site-footer-inner">
-        <div className="site-footer-brand">
-          <Link href="/" className="site-footer-logo" aria-label="Invoice Lantern home">
+        <section className="site-footer-brand" aria-label="Invoice Lantern">
+          <Link
+            href="/"
+            className="site-footer-logo"
+            aria-label="Invoice Lantern home"
+          >
             <Image
               src="/brand/invoice-lantern.png"
-              alt="Invoice Lantern"
-              width={48}
-              height={48}
+              alt=""
+              width={56}
+              height={56}
+              aria-hidden="true"
             />
             <strong>Invoice Lantern</strong>
           </Link>
@@ -50,29 +58,34 @@ export function SiteFooter({ compact = false }: SiteFooterProps) {
             simulation-focused, GDPR-aware e-invoice validation and
             ViDA-readiness sandbox.
           </p>
-        </div>
+        </section>
 
         <nav className="site-footer-nav" aria-label="Footer navigation">
-          <div>
+          <section className="site-footer-column" aria-label="Platform links">
             <h2>Platform</h2>
-            {platformLinks.map((link) => (
-              <Link href={link.href} key={link.href}>
-                {link.label}
-              </Link>
-            ))}
-          </div>
+            <div className="site-footer-link-list">
+              {platformLinks.map((link) => (
+                <Link href={link.href} key={link.href}>
+                  {link.label}
+                </Link>
+              ))}
+            </div>
+          </section>
 
-          <div>
+          <section className="site-footer-column" aria-label="Legal links">
             <h2>Legal</h2>
-            {legalLinks.map((link) => (
-              <Link href={link.href} key={link.href}>
-                {link.label}
-              </Link>
-            ))}
-            <button type="button" onClick={manageCookies}>
-              Manage cookies
-            </button>
-          </div>
+            <div className="site-footer-link-list">
+              {legalLinks.map((link) => (
+                <Link href={link.href} key={link.href}>
+                  {link.label}
+                </Link>
+              ))}
+
+              <button type="button" onClick={manageCookies}>
+                Manage cookies
+              </button>
+            </div>
+          </section>
         </nav>
       </div>
 
