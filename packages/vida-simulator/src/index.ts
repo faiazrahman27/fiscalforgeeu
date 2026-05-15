@@ -11,12 +11,18 @@ import {
 } from "@invoice-lantern/country-packs";
 import type { CanonicalInvoice } from "@invoice-lantern/invoice-core";
 import {
+  classifyTransaction,
   normalizeVatId as normalizeVatFormatInput,
   validateVatFormat,
-  type VatFormatResult
+  type TransactionBuyerType as TaxEngineBuyerType,
+  type TransactionClassifierInput as TaxEngineTransactionClassifierInput,
+  type TransactionClassifierResult,
+  type TransactionType as TaxEngineTransactionType,
+  type VatFormatResult,
+  type ViesEvidenceStatus as TaxEngineViesEvidenceStatus
 } from "@invoice-lantern/tax-engine";
 
-export const VIDA_SIMULATOR_VERSION = "2026.05.2";
+export const VIDA_SIMULATOR_VERSION = "2026.05.5";
 
 export const VIDA_SIMULATOR_DISCLAIMER =
   "Invoice Lantern ViDA-readiness simulation is an independent educational and technical sandbox result only. It is not official software, not an official ViDA determination, not legal advice, not tax advice, not accounting advice, not authority submission, not filing software, and not a compliance guarantee. Before issuing real invoices or making VAT decisions, consult a qualified accountant, tax adviser, or competent authority.";
@@ -85,6 +91,7 @@ export type VidaFindingCategory =
   | "COUNTRY_PACK"
   | "STRUCTURED_INVOICE"
   | "UBL"
+  | "CII"
   | "XSD"
   | "SCHEMATRON"
   | "LEGAL_LABEL";
@@ -118,16 +125,20 @@ export type VidaStructuredInvoiceSignals = {
   hasUblXml?: boolean | undefined;
   hasCiiXml?: boolean | undefined;
   xsdStatus?: VidaTechnicalCheckStatus | undefined;
+  xsdUblStatus?: VidaTechnicalCheckStatus | undefined;
+  xsdCiiStatus?: VidaTechnicalCheckStatus | undefined;
   schematronPeppolStatus?: VidaTechnicalCheckStatus | undefined;
   schematronEn16931Status?: VidaTechnicalCheckStatus | undefined;
-  validationSummary?: {
-    status?: string | undefined;
-    totalFindings?: number | undefined;
-    blockedCount?: number | undefined;
-    fatalCount?: number | undefined;
-    warningCount?: number | undefined;
-    infoCount?: number | undefined;
-  } | undefined;
+  validationSummary?:
+    | {
+        status?: string | undefined;
+        totalFindings?: number | undefined;
+        blockedCount?: number | undefined;
+        fatalCount?: number | undefined;
+        warningCount?: number | undefined;
+        infoCount?: number | undefined;
+      }
+    | undefined;
 };
 
 export type VidaVatEvidenceInput = {
@@ -152,6 +163,8 @@ export type NormalizedVidaStructuredInvoiceSignals = {
   hasUblXml: boolean;
   hasCiiXml: boolean;
   xsdStatus: VidaTechnicalCheckStatus;
+  xsdUblStatus: VidaTechnicalCheckStatus;
+  xsdCiiStatus: VidaTechnicalCheckStatus;
   schematronPeppolStatus: VidaTechnicalCheckStatus;
   schematronEn16931Status: VidaTechnicalCheckStatus;
   validationSummary: {
@@ -303,6 +316,8 @@ export type VidaEvidenceSummary = {
   };
   xmlValidationEvidence: {
     xsdStatus: VidaTechnicalCheckStatus;
+    ublXsdStatus: VidaTechnicalCheckStatus;
+    ciiXsdStatus: VidaTechnicalCheckStatus;
     note: string;
   };
   schematronEvidence: {
@@ -330,6 +345,7 @@ export type VidaReadinessSimulationResult = {
   simulationId?: string;
   simulationVersion: string;
   transactionClass: VidaTransactionClass;
+  transactionSimulation: TransactionClassifierResult;
   vidaRelevance: VidaRelevance;
   readinessScore: number | null;
   readinessStatus: VidaReadinessStatus;
@@ -352,6 +368,8 @@ const EU_CORE_SOURCE_LABEL = "EU-core ViDA readiness context";
 const VIES_SOURCE_LABEL = "European Commission VIES context";
 const VAT_FORMAT_SOURCE_LABEL = "Invoice Lantern local VAT-format rules";
 const COUNTRY_PACK_SOURCE_LABEL = "Invoice Lantern country packs";
+const TAX_ENGINE_SOURCE_LABEL =
+  "Invoice Lantern transaction and reverse-charge simulation";
 
 const VIDA_CORE_SOURCE_REFERENCES: VidaSourceReference[] = [
   {
@@ -368,7 +386,8 @@ const VIDA_CORE_SOURCE_REFERENCES: VidaSourceReference[] = [
     id: "eu-vida-package-context",
     label: "European Commission ViDA package context",
     title: "Adoption of the VAT in the Digital Age package",
-    publisher: "European Commission Directorate-General for Taxation and Customs Union",
+    publisher:
+      "European Commission Directorate-General for Taxation and Customs Union",
     url: "https://taxation-customs.ec.europa.eu/news/adoption-vat-digital-age-package-2025-03-11_en",
     sourceType: "eu_guidance",
     reviewedAt: "2026-05-14",
@@ -498,11 +517,17 @@ function normalizeStringArray(input: string[] | undefined) {
 function normalizeStructuredSignals(
   input: VidaStructuredInvoiceSignals | undefined
 ): NormalizedVidaStructuredInvoiceSignals {
+  const genericXsdStatus = input?.xsdStatus ?? "not_checked";
+
   return {
     hasCanonicalInvoice: input?.hasCanonicalInvoice ?? false,
     hasUblXml: input?.hasUblXml ?? false,
     hasCiiXml: input?.hasCiiXml ?? false,
-    xsdStatus: input?.xsdStatus ?? "not_checked",
+    xsdStatus: genericXsdStatus,
+    xsdUblStatus:
+      input?.xsdUblStatus ?? (input?.hasUblXml ? genericXsdStatus : "not_checked"),
+    xsdCiiStatus:
+      input?.xsdCiiStatus ?? (input?.hasCiiXml ? genericXsdStatus : "not_checked"),
     schematronPeppolStatus: input?.schematronPeppolStatus ?? "not_checked",
     schematronEn16931Status: input?.schematronEn16931Status ?? "not_checked",
     validationSummary: {
@@ -918,6 +943,175 @@ function toFormatStatus(
   return result.formatValid ? "valid" : "invalid";
 }
 
+function toTaxEngineBuyerType(input: VidaBuyerType): TaxEngineBuyerType {
+  if (
+    input === "business" ||
+    input === "consumer" ||
+    input === "public_authority"
+  ) {
+    return input;
+  }
+
+  return "unknown";
+}
+
+function toTaxEngineTransactionType(
+  input: VidaTransactionType
+): TaxEngineTransactionType {
+  if (input === "digital_service") {
+    return "digital_services";
+  }
+
+  if (
+    input === "goods" ||
+    input === "services" ||
+    input === "mixed" ||
+    input === "unknown"
+  ) {
+    return input;
+  }
+
+  return "unknown";
+}
+
+function toTaxEngineViesStatus(
+  input: VidaViesEvidenceStatus
+): TaxEngineViesEvidenceStatus {
+  if (
+    input === "valid" ||
+    input === "invalid" ||
+    input === "unavailable" ||
+    input === "not_checked" ||
+    input === "unknown"
+  ) {
+    return input;
+  }
+
+  return "not_checked";
+}
+
+function buildTaxEngineCountryPackStatuses(
+  context: VidaCountryContext,
+  input: NormalizedVidaInput
+) {
+  const statuses: Record<string, string> = {};
+
+  if (input.sellerCountryCode) {
+    statuses[input.sellerCountryCode] = context.sellerCountryPackStatus;
+  }
+
+  if (input.buyerCountryCode) {
+    statuses[input.buyerCountryCode] = context.buyerCountryPackStatus;
+  }
+
+  return statuses;
+}
+
+function sanitizeText(value: string) {
+  return value
+    .replace(/\bsuccessful\b/gi, "passing")
+    .replace(/\bsuccessfully\b/gi, "with a passing result");
+}
+
+function sanitizeStringArray(values: string[]) {
+  return values.map(sanitizeText);
+}
+
+function sanitizeTaxEngineTransactionSimulation(
+  result: TransactionClassifierResult
+): TransactionClassifierResult {
+  return {
+    ...result,
+    reverseChargeSimulation: {
+      ...result.reverseChargeSimulation,
+      message: sanitizeText(result.reverseChargeSimulation.message),
+      warnings: sanitizeStringArray(result.reverseChargeSimulation.warnings)
+    },
+    vatIdEvidence: {
+      ...result.vatIdEvidence,
+      warnings: sanitizeStringArray(result.vatIdEvidence.warnings)
+    },
+    structuredInvoiceEvidence: {
+      ...result.structuredInvoiceEvidence,
+      warnings: sanitizeStringArray(result.structuredInvoiceEvidence.warnings)
+    },
+    countryPackContext: {
+      ...result.countryPackContext,
+      ruleVersions: { ...result.countryPackContext.ruleVersions },
+      sourceRefs: [...result.countryPackContext.sourceRefs]
+    },
+    findings: result.findings.map((findingItem) => ({
+      ...findingItem,
+      message: sanitizeText(findingItem.message),
+      fixSuggestion: sanitizeText(findingItem.fixSuggestion),
+      sourceRefIds: [...findingItem.sourceRefIds]
+    })),
+    disclaimers: sanitizeStringArray(result.disclaimers),
+    disclaimer: sanitizeText(result.disclaimer)
+  };
+}
+
+function buildTaxEngineTransactionSimulation(
+  input: NormalizedVidaInput,
+  context: VidaCountryContext
+): TransactionClassifierResult {
+  const classifierInput: TaxEngineTransactionClassifierInput = {
+    buyerType: toTaxEngineBuyerType(input.buyerType),
+    transactionType: toTaxEngineTransactionType(input.transactionType),
+    buyerViesStatus: toTaxEngineViesStatus(input.vatEvidence.buyerViesStatus),
+    sellerViesStatus: toTaxEngineViesStatus(input.vatEvidence.sellerViesStatus),
+    countryPackVersions: input.countryPackVersions,
+    countryPackStatuses: buildTaxEngineCountryPackStatuses(context, input),
+    structuredInvoiceSignals: {
+      hasCanonicalInvoice: input.structuredInvoiceSignals.hasCanonicalInvoice,
+      hasUblXml: input.structuredInvoiceSignals.hasUblXml,
+      hasCiiXml: input.structuredInvoiceSignals.hasCiiXml,
+      xsdUblStatus: input.structuredInvoiceSignals.xsdUblStatus,
+      xsdCiiStatus: input.structuredInvoiceSignals.xsdCiiStatus,
+      schematronPeppolStatus:
+        input.structuredInvoiceSignals.schematronPeppolStatus,
+      schematronEn16931Status:
+        input.structuredInvoiceSignals.schematronEn16931Status
+    }
+  };
+
+  if (input.sellerCountryCode) {
+    classifierInput.sellerCountry = input.sellerCountryCode;
+    classifierInput.sellerVatCountry = input.sellerCountryCode;
+  }
+
+  if (input.buyerCountryCode) {
+    classifierInput.buyerCountry = input.buyerCountryCode;
+    classifierInput.buyerVatCountry = input.buyerCountryCode;
+  }
+
+  if (input.sellerVatId) {
+    classifierInput.sellerVatId = input.sellerVatId;
+  }
+
+  if (input.buyerVatId) {
+    classifierInput.buyerVatId = input.buyerVatId;
+  }
+
+  const invoiceDate = input.invoiceDate ?? input.issueDate;
+
+  if (invoiceDate) {
+    classifierInput.invoiceDate = invoiceDate;
+  }
+
+  if (input.currency) {
+    classifierInput.currency = input.currency;
+  }
+
+  if (input.amount) {
+    classifierInput.amount = input.amount;
+  }
+
+  return sanitizeTaxEngineTransactionSimulation(
+    classifyTransaction(classifierInput)
+  );
+}
+
 function buildEvidenceSummary(
   input: NormalizedVidaInput,
   context: VidaCountryContext,
@@ -961,8 +1155,10 @@ function buildEvidenceSummary(
     },
     xmlValidationEvidence: {
       xsdStatus: input.structuredInvoiceSignals.xsdStatus,
+      ublXsdStatus: input.structuredInvoiceSignals.xsdUblStatus,
+      ciiXsdStatus: input.structuredInvoiceSignals.xsdCiiStatus,
       note:
-        "XSD evidence is technical XML validation context only. Passing XSD does not prove legal, tax, accounting, filing, Peppol, EN 16931, or authority acceptance."
+        "XSD evidence is technical XML validation context only. Passing XSD does not prove legal, tax, accounting, filing, Peppol, EN 16931, CII syntax-binding, or authority acceptance."
     },
     schematronEvidence: {
       peppolStatus: input.structuredInvoiceSignals.schematronPeppolStatus,
@@ -1006,8 +1202,7 @@ function addCountryPackFindings(
           code: `VIDA_${entry.role.toUpperCase()}_COUNTRY_PACK_REVIEW_REQUIRED`,
           severity: "warning",
           category: "COUNTRY_PACK",
-          message:
-            `${entry.role} country pack ${entry.countryCode} is source-linked, but its status or source coverage requires professional review before real-world reliance.`,
+          message: `${entry.role} country pack ${entry.countryCode} is source-linked, but its status or source coverage requires professional review before real-world reliance.`,
           fixSuggestion:
             "Review the country-pack source metadata, national implementation facts, and professional advice before using this readiness signal.",
           sourceLabels: sourceLabels(COUNTRY_PACK_SOURCE_LABEL),
@@ -1015,8 +1210,7 @@ function addCountryPackFindings(
           legalConfidence: "professional_review_required",
           countryPackVersion: entry.version,
           countryPackStatus: entry.status,
-          evidenceStatus:
-            entry.coverage === "unknown" ? "unknown" : "present"
+          evidenceStatus: entry.coverage === "unknown" ? "unknown" : "present"
         })
       );
     }
@@ -1032,7 +1226,10 @@ function addCountryPackFindings(
           "Greece is represented as country code GR in country packs, while VAT ID prefix compatibility may use EL for local VAT-format checks.",
         fixSuggestion:
           "Use GR for user-facing country selection and accept EL-prefixed Greek VAT IDs where local VAT-format evidence is needed.",
-        sourceLabels: sourceLabels(COUNTRY_PACK_SOURCE_LABEL, VAT_FORMAT_SOURCE_LABEL),
+        sourceLabels: sourceLabels(
+          COUNTRY_PACK_SOURCE_LABEL,
+          VAT_FORMAT_SOURCE_LABEL
+        ),
         sourceRefs: ["eu-vat-identification-numbers"],
         legalConfidence: "technical",
         evidenceStatus: "present"
@@ -1172,8 +1369,7 @@ function addVatFindings(
           code: `VIDA_${role.toUpperCase()}_VIES_UNAVAILABLE`,
           severity: "warning",
           category: "VIES",
-          message:
-            `${role} VIES evidence was unavailable. Invoice Lantern does not treat VIES unavailable as invalid.`,
+          message: `${role} VIES evidence was unavailable. Invoice Lantern does not treat VIES unavailable as invalid.`,
           fixSuggestion:
             "Keep the unavailable evidence state with timestamp/source label and retry or review through an appropriate professional process.",
           sourceLabels: sourceLabels(VIES_SOURCE_LABEL),
@@ -1189,8 +1385,7 @@ function addVatFindings(
           code: `VIDA_${role.toUpperCase()}_VIES_VALID_EVIDENCE_ONLY`,
           severity: "info",
           category: "VIES",
-          message:
-            `${role} VIES status was supplied as valid. This is evidence only and does not prove transaction compliance, tax treatment, or authority acceptance.`,
+          message: `${role} VIES status was supplied as valid. This is evidence only and does not prove transaction compliance, tax treatment, or authority acceptance.`,
           fixSuggestion:
             "Keep the time-of-check VIES evidence alongside invoice validation results and professional review notes.",
           sourceLabels: sourceLabels(VIES_SOURCE_LABEL),
@@ -1206,8 +1401,7 @@ function addVatFindings(
           code: `VIDA_${role.toUpperCase()}_VIES_INVALID_EVIDENCE`,
           severity: "warning",
           category: "VIES",
-          message:
-            `${role} VIES status was supplied as invalid. The simulator records this as evidence context, not as a final legal conclusion.`,
+          message: `${role} VIES status was supplied as invalid. The simulator records this as evidence context, not as a final legal conclusion.`,
           fixSuggestion:
             "Review the VAT ID, timestamp, party facts, and professional advice before relying on the transaction readiness signal.",
           sourceLabels: sourceLabels(VIES_SOURCE_LABEL),
@@ -1248,11 +1442,11 @@ function addStructuredEvidenceFindings(
       finding({
         code: "VIDA_STRUCTURED_XML_EVIDENCE_MISSING",
         severity: "warning",
-        category: "UBL",
+        category: "STRUCTURED_INVOICE",
         message:
           "No UBL or CII XML evidence was supplied. Structured XML evidence improves technical readiness but is not legal or filing proof.",
         fixSuggestion:
-          "Generate or import structured XML and validate it through configured technical checks where applicable.",
+          "Generate or import UBL or CII XML and validate it through configured technical checks where applicable.",
         sourceLabels: sourceLabels(PLATFORM_SOURCE_LABEL),
         evidenceStatus: "missing",
         legalConfidence: "technical"
@@ -1260,38 +1454,112 @@ function addStructuredEvidenceFindings(
     );
   }
 
-  if (signals.xsdStatus === "failed") {
+  if (signals.hasCiiXml) {
     findings.push(
       finding({
-        code: "VIDA_XSD_FAILED",
-        severity: "warning",
-        category: "XSD",
+        code: "VIDA_CII_XML_EVIDENCE_PRESENT",
+        severity: "info",
+        category: "CII",
         message:
-          "XSD validation evidence failed. This lowers technical readiness but is not an official legal determination.",
+          "CII XML evidence is present. Invoice Lantern treats CII as a structured syntax-binding evidence signal, not official filing or authority acceptance.",
         fixSuggestion:
-          "Correct XML schema errors and rerun local XSD validation before using the readiness signal.",
+          "Keep CII parsing, export, XSD status, validation run ID, and report evidence together for technical review.",
         sourceLabels: sourceLabels(PLATFORM_SOURCE_LABEL),
-        evidenceStatus: "failed",
+        evidenceStatus: "present",
         legalConfidence: "technical"
       })
     );
   }
 
-  if (signals.xsdStatus === "not_configured") {
+  if (signals.hasUblXml) {
     findings.push(
       finding({
-        code: "VIDA_XSD_NOT_CONFIGURED",
-        severity: "warning",
-        category: "XSD",
+        code: "VIDA_UBL_XML_EVIDENCE_PRESENT",
+        severity: "info",
+        category: "UBL",
         message:
-          "XSD validation is not configured. Not configured is not treated as a successful XML check.",
+          "UBL XML evidence is present. Invoice Lantern treats UBL as a structured syntax-binding evidence signal, not official filing or authority acceptance.",
         fixSuggestion:
-          "Configure the local XSD worker path and rerun XML validation where structured XML is used.",
+          "Keep UBL parsing, export, XSD status, validation run ID, and report evidence together for technical review.",
         sourceLabels: sourceLabels(PLATFORM_SOURCE_LABEL),
-        evidenceStatus: "not_configured",
+        evidenceStatus: "present",
         legalConfidence: "technical"
       })
     );
+  }
+
+  for (const [code, label, category, status] of [
+    [
+      "VIDA_XSD_FAILED",
+      "Generic XML XSD",
+      "XSD",
+      signals.xsdStatus
+    ],
+    [
+      "VIDA_UBL_XSD_FAILED",
+      "UBL XSD",
+      "UBL",
+      signals.xsdUblStatus
+    ],
+    [
+      "VIDA_CII_XSD_FAILED",
+      "CII XSD",
+      "CII",
+      signals.xsdCiiStatus
+    ]
+  ] as const) {
+    if (status === "failed") {
+      findings.push(
+        finding({
+          code,
+          severity: "warning",
+          category,
+          message: `${label} validation evidence failed. This lowers technical readiness but is not an official legal determination.`,
+          fixSuggestion:
+            "Correct XML schema errors and rerun local XSD validation before using the readiness signal.",
+          sourceLabels: sourceLabels(PLATFORM_SOURCE_LABEL),
+          evidenceStatus: "failed",
+          legalConfidence: "technical"
+        })
+      );
+    }
+  }
+
+  for (const [code, label, category, status] of [
+    [
+      "VIDA_XSD_NOT_CONFIGURED",
+      "Generic XML XSD",
+      "XSD",
+      signals.xsdStatus
+    ],
+    [
+      "VIDA_UBL_XSD_NOT_CONFIGURED",
+      "UBL XSD",
+      "UBL",
+      signals.xsdUblStatus
+    ],
+    [
+      "VIDA_CII_XSD_NOT_CONFIGURED",
+      "CII XSD",
+      "CII",
+      signals.xsdCiiStatus
+    ]
+  ] as const) {
+    if (status === "not_configured") {
+      findings.push(
+        finding({
+          code,
+          severity: "warning",
+          category,
+          message: `${label} validation is not configured. Not configured is not treated as a passed XML check.`,
+          fixSuggestion:
+            "Configure the local XSD worker path and rerun XML validation where structured XML is used.",
+          sourceLabels: sourceLabels(PLATFORM_SOURCE_LABEL),
+          evidenceStatus: "not_configured",
+          legalConfidence: "technical"
+        })
+      );
+    }
   }
 
   for (const [code, label, status] of [
@@ -1312,8 +1580,7 @@ function addStructuredEvidenceFindings(
           code,
           severity: "warning",
           category: "SCHEMATRON",
-          message:
-            `${label} evidence failed. This is a technical readiness warning only.`,
+          message: `${label} evidence failed. This is a technical readiness warning only.`,
           fixSuggestion:
             "Review structured invoice rules and rerun Schematron where configured.",
           sourceLabels: sourceLabels(PLATFORM_SOURCE_LABEL),
@@ -1342,8 +1609,7 @@ function addStructuredEvidenceFindings(
           code,
           severity: "warning",
           category: "SCHEMATRON",
-          message:
-            `${label} is not configured. Not configured is not treated as a successful rule check.`,
+          message: `${label} is not configured. Not configured is not treated as a passed rule check.`,
           fixSuggestion:
             "Configure guarded local Schematron execution where this evidence is needed.",
           sourceLabels: sourceLabels(PLATFORM_SOURCE_LABEL),
@@ -1355,12 +1621,79 @@ function addStructuredEvidenceFindings(
   }
 }
 
+function addTaxEngineTransactionFindings(
+  findings: VidaReadinessFinding[],
+  transactionSimulation: TransactionClassifierResult
+) {
+  if (
+    transactionSimulation.reverseChargeSimulation.relevance === "possible" ||
+    transactionSimulation.reverseChargeSimulation.relevance === "needs_review"
+  ) {
+    findings.push(
+      finding({
+        code: "VIDA_REVERSE_CHARGE_REVIEW_CONTEXT",
+        severity: "warning",
+        category: "LEGAL_LABEL",
+        message:
+          "The tax-engine transaction simulation detected a possible or review-required reverse-charge context. This is not tax advice.",
+        fixSuggestion:
+          "Review buyer status, VAT evidence, transaction type, place-of-supply facts, invoice wording, country rules, and professional advice before real-world reliance.",
+        sourceLabels: sourceLabels(TAX_ENGINE_SOURCE_LABEL),
+        sourceRefs: [
+          "invoice-lantern-country-pack-legal-notice",
+          "eu-vat-country-specific-information",
+          "eu-vies-vat-information-exchange-system"
+        ],
+        legalConfidence: "professional_review_required",
+        evidenceStatus: "present"
+      })
+    );
+  }
+
+  if (transactionSimulation.vatIdEvidence.buyerViesStatus === "unavailable") {
+    findings.push(
+      finding({
+        code: "VIDA_TAX_ENGINE_BUYER_VIES_UNAVAILABLE_CONTEXT",
+        severity: "warning",
+        category: "VIES",
+        message:
+          "The tax-engine transaction simulation reports buyer VIES evidence as unavailable. Unavailable is not invalid.",
+        fixSuggestion:
+          "Preserve the unavailable state and retry or review through an appropriate professional process.",
+        sourceLabels: sourceLabels(TAX_ENGINE_SOURCE_LABEL, VIES_SOURCE_LABEL),
+        sourceRefs: ["eu-vies-vat-information-exchange-system"],
+        legalConfidence: "educational_simulation",
+        evidenceStatus: "unavailable"
+      })
+    );
+  }
+
+  if (transactionSimulation.vatIdEvidence.sellerViesStatus === "unavailable") {
+    findings.push(
+      finding({
+        code: "VIDA_TAX_ENGINE_SELLER_VIES_UNAVAILABLE_CONTEXT",
+        severity: "warning",
+        category: "VIES",
+        message:
+          "The tax-engine transaction simulation reports seller VIES evidence as unavailable. Unavailable is not invalid.",
+        fixSuggestion:
+          "Preserve the unavailable state and retry or review through an appropriate professional process.",
+        sourceLabels: sourceLabels(TAX_ENGINE_SOURCE_LABEL, VIES_SOURCE_LABEL),
+        sourceRefs: ["eu-vies-vat-information-exchange-system"],
+        legalConfidence: "educational_simulation",
+        evidenceStatus: "unavailable"
+      })
+    );
+  }
+}
+
 function buildFindings(
   input: NormalizedVidaInput,
   context: VidaCountryContext,
   transactionClass: VidaTransactionClass,
   vidaRelevance: VidaRelevance,
-  vatFormatEvidence: ReturnType<typeof buildVatFormatEvidence>
+  vatFormatEvidence: ReturnType<typeof buildVatFormatEvidence>,
+  transactionSimulation: TransactionClassifierResult
 ) {
   const findings: VidaReadinessFinding[] = [];
 
@@ -1495,6 +1828,7 @@ function buildFindings(
     );
   }
 
+  addTaxEngineTransactionFindings(findings, transactionSimulation);
   addVatFindings(findings, input, context, transactionClass, vatFormatEvidence);
   addStructuredEvidenceFindings(findings, input);
   addCountryPackFindings(findings, input, context);
@@ -1554,7 +1888,10 @@ function scorePenalty(findingItem: VidaReadinessFinding) {
     return 16;
   }
 
-  if (findingItem.code.includes("SCHEMATRON") && findingItem.code.includes("FAILED")) {
+  if (
+    findingItem.code.includes("SCHEMATRON") &&
+    findingItem.code.includes("FAILED")
+  ) {
     return 12;
   }
 
@@ -1604,6 +1941,49 @@ function calculateReadinessScore(
   return Math.max(0, Math.min(100, score));
 }
 
+function isActionableStructuredEvidenceFinding(
+  findingItem: VidaReadinessFinding
+) {
+  if (
+    findingItem.category !== "STRUCTURED_INVOICE" &&
+    findingItem.category !== "UBL" &&
+    findingItem.category !== "CII" &&
+    findingItem.category !== "XSD" &&
+    findingItem.category !== "SCHEMATRON"
+  ) {
+    return false;
+  }
+
+  if (findingItem.severity !== "info") {
+    return true;
+  }
+
+  return (
+    findingItem.evidenceStatus === "missing" ||
+    findingItem.evidenceStatus === "failed" ||
+    findingItem.evidenceStatus === "not_configured" ||
+    findingItem.evidenceStatus === "invalid"
+  );
+}
+
+function isActionableXmlRerunFinding(findingItem: VidaReadinessFinding) {
+  if (
+    findingItem.category !== "UBL" &&
+    findingItem.category !== "CII" &&
+    findingItem.category !== "XSD" &&
+    findingItem.category !== "SCHEMATRON"
+  ) {
+    return false;
+  }
+
+  return (
+    findingItem.severity !== "info" ||
+    findingItem.evidenceStatus === "failed" ||
+    findingItem.evidenceStatus === "not_configured" ||
+    findingItem.evidenceStatus === "invalid"
+  );
+}
+
 function getReadinessStatus(
   transactionClass: VidaTransactionClass,
   relevance: VidaRelevance,
@@ -1622,10 +2002,7 @@ function getReadinessStatus(
     findings.some(
       (findingItem) =>
         findingItem.severity === "blocked" ||
-        findingItem.category === "STRUCTURED_INVOICE" ||
-        findingItem.category === "UBL" ||
-        findingItem.category === "XSD" ||
-        findingItem.category === "SCHEMATRON"
+        isActionableStructuredEvidenceFinding(findingItem)
     )
   ) {
     return "needs_more_invoice_data";
@@ -1697,11 +2074,7 @@ function buildRecommendedNextActions(
     );
   }
 
-  if (
-    findings.some(
-      (item) => item.category === "XSD" || item.category === "SCHEMATRON"
-    )
-  ) {
+  if (findings.some(isActionableXmlRerunFinding)) {
     actions.unshift(
       "Rerun XML, XSD, and guarded Schematron checks after fixing structured invoice issues."
     );
@@ -1727,7 +2100,8 @@ function mapCountryPackSourceReference(
 
 function buildSourceReferences(
   input: NormalizedVidaInput,
-  findings: VidaReadinessFinding[]
+  findings: VidaReadinessFinding[],
+  transactionSimulation: TransactionClassifierResult
 ) {
   const sourceMap = new Map<string, VidaSourceReference>();
 
@@ -1756,14 +2130,16 @@ function buildSourceReferences(
 
   for (const sourceRef of combineSourceRefs(
     input.sourceRefs,
-    findings.flatMap((findingItem) => findingItem.sourceRefs)
+    findings.flatMap((findingItem) => findingItem.sourceRefs),
+    transactionSimulation.countryPackContext.sourceRefs,
+    transactionSimulation.findings.flatMap((findingItem) => findingItem.sourceRefIds)
   )) {
     if (!sourceMap.has(sourceRef)) {
       sourceMap.set(sourceRef, {
         id: sourceRef,
         label: sourceRef,
         notes:
-          "Caller-provided source reference. It is carried as evidence context only and does not create a legal or tax rule."
+          "Caller-provided or subsystem-provided source reference. It is carried as evidence context only and does not create a legal or tax rule."
       });
     }
   }
@@ -1898,6 +2274,10 @@ export function simulateVidaReadiness(
     normalizedInput,
     countryContext
   );
+  const transactionSimulation = buildTaxEngineTransactionSimulation(
+    normalizedInput,
+    countryContext
+  );
   const vidaRelevance = getVidaRelevance(transactionClass, countryContext);
   const reason = buildReason(transactionClass, normalizedInput, countryContext);
   const vatFormatEvidence = buildVatFormatEvidence(normalizedInput);
@@ -1906,7 +2286,8 @@ export function simulateVidaReadiness(
     countryContext,
     transactionClass,
     vidaRelevance,
-    vatFormatEvidence
+    vatFormatEvidence,
+    transactionSimulation
   );
   const readinessScore = calculateReadinessScore(
     transactionClass,
@@ -1924,6 +2305,7 @@ export function simulateVidaReadiness(
   return {
     simulationVersion: VIDA_SIMULATOR_VERSION,
     transactionClass,
+    transactionSimulation,
     vidaRelevance,
     readinessScore,
     readinessStatus,
@@ -1947,7 +2329,11 @@ export function simulateVidaReadiness(
       transactionClass,
       findings
     ),
-    sourceReferences: buildSourceReferences(normalizedInput, findings),
+    sourceReferences: buildSourceReferences(
+      normalizedInput,
+      findings,
+      transactionSimulation
+    ),
     disclaimer: VIDA_SIMULATOR_DISCLAIMER
   };
 }

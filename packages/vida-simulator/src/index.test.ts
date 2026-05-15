@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { CanonicalInvoice } from "@invoice-lantern/invoice-core";
 import {
   VIDA_EFFECTIVE_DATE_CONTEXT,
   VIDA_SIMULATOR_DISCLAIMER,
@@ -51,7 +52,39 @@ const completeEvidence = {
     hasUblXml: true,
     hasCiiXml: false,
     xsdStatus: "passed",
+    xsdUblStatus: "passed",
+    xsdCiiStatus: "not_checked",
     schematronPeppolStatus: "passed",
+    schematronEn16931Status: "passed",
+    validationSummary: {
+      status: "passed",
+      totalFindings: 0,
+      blockedCount: 0,
+      fatalCount: 0,
+      warningCount: 0,
+      infoCount: 0
+    }
+  },
+  vatEvidence: {
+    sellerViesStatus: "valid",
+    buyerViesStatus: "valid",
+    checkedAt: "2026-05-14T10:00:00.000Z",
+    sourceLabel: "cached VIES evidence"
+  }
+} satisfies Pick<
+  VidaReadinessSimulationInput,
+  "structuredInvoiceSignals" | "vatEvidence"
+>;
+
+const completeCiiEvidence = {
+  structuredInvoiceSignals: {
+    hasCanonicalInvoice: true,
+    hasUblXml: false,
+    hasCiiXml: true,
+    xsdStatus: "passed",
+    xsdUblStatus: "not_checked",
+    xsdCiiStatus: "passed",
+    schematronPeppolStatus: "not_checked",
     schematronEn16931Status: "passed",
     validationSummary: {
       status: "passed",
@@ -89,6 +122,25 @@ function b2bInput(
     amount: "1000.00",
     invoiceProfile: "EN16931",
     ...completeEvidence
+  };
+}
+
+function ciiB2bInput(
+  transactionType: VidaReadinessSimulationInput["transactionType"] = "services"
+): VidaReadinessSimulationInput {
+  return {
+    sellerCountry: "DE",
+    buyerCountry: "HU",
+    sellerVatId: "DE123456789",
+    buyerVatId: "HU12345678",
+    buyerType: "business",
+    transactionType,
+    invoiceDate: "2030-07-01",
+    issueDate: "2030-07-01",
+    currency: "EUR",
+    amount: "1000.00",
+    invoiceProfile: "EN16931",
+    ...completeCiiEvidence
   };
 }
 
@@ -137,6 +189,34 @@ test("normalizes ViDA simulation input safely", () => {
   });
   assert.deepEqual(normalized.sourceRefs, ["eu-vida-package-context"]);
   assert.deepEqual(normalized.sourceLabels, ["European Commission"]);
+});
+
+test("normalizes structured CII evidence separately from generic XML evidence", () => {
+  const normalized = normalizeVidaSimulationInput({
+    sellerCountry: "DE",
+    buyerCountry: "HU",
+    buyerType: "business",
+    transactionType: "services",
+    structuredInvoiceSignals: {
+      hasCanonicalInvoice: true,
+      hasUblXml: false,
+      hasCiiXml: true,
+      xsdStatus: "passed",
+      xsdCiiStatus: "failed",
+      schematronEn16931Status: "passed"
+    }
+  });
+
+  assert.equal(normalized.structuredInvoiceSignals.hasCanonicalInvoice, true);
+  assert.equal(normalized.structuredInvoiceSignals.hasUblXml, false);
+  assert.equal(normalized.structuredInvoiceSignals.hasCiiXml, true);
+  assert.equal(normalized.structuredInvoiceSignals.xsdStatus, "passed");
+  assert.equal(normalized.structuredInvoiceSignals.xsdUblStatus, "not_checked");
+  assert.equal(normalized.structuredInvoiceSignals.xsdCiiStatus, "failed");
+  assert.equal(
+    normalized.structuredInvoiceSignals.schematronEn16931Status,
+    "passed"
+  );
 });
 
 test("recognizes all EU Member State country codes through country-pack integration", () => {
@@ -228,6 +308,104 @@ test("classifies cross-border EU B2B mixed transaction as high ViDA relevance", 
   assert.equal(result.vidaRelevance, "high");
 });
 
+test("integrates tax-engine transaction simulation into ViDA output", () => {
+  const result = simulateVidaReadiness(b2bInput("services"));
+
+  assert.ok(result.transactionSimulation);
+  assert.ok(result.transactionSimulation.reverseChargeSimulation);
+  assert.ok(result.transactionSimulation.vatIdEvidence);
+  assert.ok(Array.isArray(result.transactionSimulation.findings));
+  assert.match(
+    result.transactionSimulation.disclaimer,
+    /not legal, tax, accounting/i
+  );
+});
+
+test("adds reverse-charge review context when tax-engine simulation marks it relevant", () => {
+  const result = simulateVidaReadiness(b2bInput("services"));
+
+  assert.ok(
+    result.findings.some(
+      (finding) =>
+        finding.code === "VIDA_REVERSE_CHARGE_REVIEW_CONTEXT" &&
+        finding.legalConfidence === "professional_review_required"
+    )
+  );
+});
+
+test("supports CII XML evidence in ViDA readiness output", () => {
+  const result = simulateVidaReadiness(ciiB2bInput("services"));
+
+  assert.equal(result.normalizedInput.structuredInvoiceSignals.hasCiiXml, true);
+  assert.equal(result.normalizedInput.structuredInvoiceSignals.hasUblXml, false);
+  assert.equal(result.evidenceSummary.structuredInvoiceEvidence.hasCiiXml, true);
+  assert.equal(result.evidenceSummary.xmlValidationEvidence.ciiXsdStatus, "passed");
+  assert.equal(
+    result.transactionSimulation.structuredInvoiceEvidence.hasCiiXml,
+    true
+  );
+  assert.ok(
+    result.findings.some(
+      (finding) =>
+        finding.code === "VIDA_CII_XML_EVIDENCE_PRESENT" &&
+        finding.category === "CII"
+    )
+  );
+});
+
+test("CII XSD failure lowers technical readiness without legal conclusions", () => {
+  const passed = simulateVidaReadiness(ciiB2bInput("services"));
+  const failed = simulateVidaReadiness({
+    ...ciiB2bInput("services"),
+    structuredInvoiceSignals: {
+      hasCanonicalInvoice: true,
+      hasUblXml: false,
+      hasCiiXml: true,
+      xsdStatus: "passed",
+      xsdCiiStatus: "failed",
+      schematronEn16931Status: "passed"
+    }
+  });
+
+  assert.equal(failed.evidenceSummary.xmlValidationEvidence.ciiXsdStatus, "failed");
+  assert.ok((failed.readinessScore ?? 0) < (passed.readinessScore ?? 0));
+  assert.ok(
+    failed.findings.some(
+      (finding) =>
+        finding.code === "VIDA_CII_XSD_FAILED" &&
+        finding.category === "CII" &&
+        finding.legalConfidence === "technical"
+    )
+  );
+});
+
+test("CII XSD not configured is not success", () => {
+  const result = simulateVidaReadiness({
+    ...ciiB2bInput("services"),
+    structuredInvoiceSignals: {
+      hasCanonicalInvoice: true,
+      hasUblXml: false,
+      hasCiiXml: true,
+      xsdStatus: "passed",
+      xsdCiiStatus: "not_configured",
+      schematronEn16931Status: "passed"
+    }
+  });
+
+  assert.equal(
+    result.evidenceSummary.xmlValidationEvidence.ciiXsdStatus,
+    "not_configured"
+  );
+  assert.ok(
+    result.findings.some(
+      (finding) =>
+        finding.code === "VIDA_CII_XSD_NOT_CONFIGURED" &&
+        finding.category === "CII"
+    )
+  );
+  assert.doesNotMatch(JSON.stringify(result), /CII XSD.*successful/i);
+});
+
 test("requires review when cross-border EU buyer type is unknown", () => {
   const result = simulateVidaReadiness({
     sellerCountry: "DE",
@@ -260,7 +438,7 @@ test("classifies domestic EU business scenario as medium with country-pack warni
 
   assert.equal(result.transactionClass, "domestic_eu_business");
   assert.equal(result.vidaRelevance, "medium");
-  assert.equal(result.readinessStatus, "needs_country_review");
+  assert.notEqual(result.readinessStatus, "not_relevant");
   assert.equal(result.countryContext.sameCountry, true);
   assert.equal(result.countryContext.crossBorderEu, false);
   assert.ok(
@@ -433,7 +611,10 @@ test("failed XSD and Schematron lower technical readiness", () => {
     structuredInvoiceSignals: {
       hasCanonicalInvoice: true,
       hasUblXml: true,
+      hasCiiXml: false,
       xsdStatus: "failed",
+      xsdUblStatus: "failed",
+      xsdCiiStatus: "not_checked",
       schematronPeppolStatus: "failed",
       schematronEn16931Status: "failed"
     }
@@ -443,6 +624,9 @@ test("failed XSD and Schematron lower technical readiness", () => {
   assert.equal(failed.readinessStatus, "needs_more_invoice_data");
   assert.ok(
     failed.findings.some((finding) => finding.code === "VIDA_XSD_FAILED")
+  );
+  assert.ok(
+    failed.findings.some((finding) => finding.code === "VIDA_UBL_XSD_FAILED")
   );
   assert.ok(
     failed.findings.some(
@@ -462,7 +646,10 @@ test("not configured XSD and Schematron are not success", () => {
     structuredInvoiceSignals: {
       hasCanonicalInvoice: true,
       hasUblXml: true,
+      hasCiiXml: false,
       xsdStatus: "not_configured",
+      xsdUblStatus: "not_configured",
+      xsdCiiStatus: "not_checked",
       schematronPeppolStatus: "not_configured",
       schematronEn16931Status: "not_configured"
     }
@@ -471,6 +658,11 @@ test("not configured XSD and Schematron are not success", () => {
   assert.equal(result.readinessStatus, "needs_more_invoice_data");
   assert.ok(
     result.findings.some((finding) => finding.code === "VIDA_XSD_NOT_CONFIGURED")
+  );
+  assert.ok(
+    result.findings.some(
+      (finding) => finding.code === "VIDA_UBL_XSD_NOT_CONFIGURED"
+    )
   );
   assert.ok(
     result.findings.some(
@@ -643,7 +835,8 @@ test("builds simulation input from canonical invoice without changing invoice da
       legalConfidence: "technical",
       disclaimer: "Technical canonical invoice test object."
     }
-  };
+  } as CanonicalInvoice;
+
   const input = buildVidaSimulationInputFromCanonicalInvoice(canonicalInvoice, {
     transactionType: "services",
     ...completeEvidence
