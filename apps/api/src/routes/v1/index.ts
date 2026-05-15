@@ -20,6 +20,8 @@ import { validationRuleRoutes } from "./validation-rules.js";
 import { validationRunRoutes } from "./validation-runs.js";
 import { webhookRoutes } from "./webhooks.js";
 import { workspaceActivityRoutes } from "./workspace-activity.js";
+import { workspaceBusinessProfileRoutes } from "./workspace-business-profiles.js";
+import { workspaceContactRoutes } from "./workspace-contacts.js";
 import { workspaceDeletionRunRoutes } from "./workspace-deletion-runs.js";
 import { workspaceExportPackageRoutes } from "./workspace-export-packages.js";
 import { workspaceMemberRoutes } from "./workspace-members.js";
@@ -113,6 +115,14 @@ export async function v1Routes(app: FastifyInstance) {
   });
 
   await app.register(workspaceActivityRoutes, {
+    prefix: "/workspace"
+  });
+
+  await app.register(workspaceBusinessProfileRoutes, {
+    prefix: "/workspace"
+  });
+
+  await app.register(workspaceContactRoutes, {
     prefix: "/workspace"
   });
 

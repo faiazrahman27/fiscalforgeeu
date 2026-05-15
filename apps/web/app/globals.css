@@ -3827,3 +3827,31 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Cookie preference overflow safety                                           */
+/* Keeps Manage cookies scrollable on short/small screens without redesigning. */
+/* -------------------------------------------------------------------------- */
+
+.cookie-consent {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cookie-consent-panel,
+.cookie-preferences {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+
+@media (max-width: 620px) {
+  .cookie-consent {
+    max-height: calc(100dvh - 1.5rem);
+  }
+
+  .cookie-consent-panel,
+  .cookie-preferences {
+    max-height: calc(100dvh - 1.5rem);
+  }
+}

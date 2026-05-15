@@ -12,6 +12,7 @@ import {
 } from "react";
 import {
   CalendarDays,
+  FileText,
   FileInput,
   ReceiptText,
   Rows3,
@@ -255,6 +256,7 @@ export default function WorkspaceInvoicesPage() {
   const [invoiceLoadMessage, setInvoiceLoadMessage] = useState("");
   const [productionInvoiceMessage, setProductionInvoiceMessage] = useState("");
   const [deletingDraftId, setDeletingDraftId] = useState("");
+  const [promotingDraftId, setPromotingDraftId] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -424,6 +426,67 @@ export default function WorkspaceInvoicesPage() {
     }
   }
 
+  async function createProductionInvoiceFromDraft(
+    event: MouseEvent<HTMLButtonElement>,
+    invoice: InvoiceListItem
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    setPromotingDraftId(invoice.id);
+    setInvoiceLoadMessage("");
+
+    try {
+      const response = await fetch("/api/local/invoices/from-draft", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          draftId: invoice.id,
+          source: "manual"
+        }),
+        cache: "no-store"
+      });
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok || !responseData || typeof responseData !== "object") {
+        setInvoiceLoadMessage(
+          getApiErrorMessage(
+            responseData,
+            response.status,
+            "create production invoice from draft"
+          )
+        );
+        return;
+      }
+
+      const body = responseData as Record<string, unknown>;
+      const record =
+        typeof body.record === "object" &&
+        body.record !== null &&
+        !Array.isArray(body.record)
+          ? (body.record as Record<string, unknown>)
+          : {};
+      const productionInvoiceId = readStringField(record, "id");
+
+      if (!productionInvoiceId) {
+        setInvoiceLoadMessage(
+          "Production invoice was created but the response did not include a readable ID."
+        );
+        return;
+      }
+
+      router.push(`/workspace/invoices/${encodeURIComponent(productionInvoiceId)}`);
+    } catch {
+      setInvoiceLoadMessage(
+        "Could not create a production invoice from this draft through the local API proxy."
+      );
+    } finally {
+      setPromotingDraftId("");
+    }
+  }
+
   function openInvoice(invoice: InvoiceListItem) {
     router.push(getInvoiceHref(invoice));
   }
@@ -552,6 +615,40 @@ export default function WorkspaceInvoicesPage() {
                     <Trash2 size={16} />
                     {deletingDraftId === invoice.id ? "Deleting..." : "Delete draft"}
                   </button>
+
+                  <div className="workspace-row-actions" style={{ marginTop: "10px" }}>
+                    <Link
+                      href={`/workspace/invoices/${encodeURIComponent(invoice.id)}`}
+                      className="text-link-button"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <FileInput size={16} />
+                      Edit draft
+                    </Link>
+
+                    <button
+                      type="button"
+                      className="text-link-button"
+                      onClick={(event) =>
+                        createProductionInvoiceFromDraft(event, invoice)
+                      }
+                      disabled={promotingDraftId === invoice.id}
+                    >
+                      <FileText size={16} />
+                      {promotingDraftId === invoice.id
+                        ? "Creating record"
+                        : "Create production record"}
+                    </button>
+
+                    <Link
+                      href="/workspace/validation-runs"
+                      className="text-link-button"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <ReceiptText size={16} />
+                      View validation reports
+                    </Link>
+                  </div>
                 </div>
 
                 <div>
@@ -577,7 +674,13 @@ export default function WorkspaceInvoicesPage() {
             <h3>Lifecycle records</h3>
           </div>
 
-          <div className="confidence-label">internal lifecycle only</div>
+          <div className="workspace-row-actions">
+            <Link href="/workspace/validation-runs" className="text-link-button">
+              <ReceiptText size={16} />
+              View validation reports
+            </Link>
+            <div className="confidence-label">internal lifecycle only</div>
+          </div>
         </div>
 
         {productionInvoiceMessage ? (
@@ -643,6 +746,7 @@ export default function WorkspaceInvoicesPage() {
                     State {invoice.status}. Issued is an internal lifecycle
                     state only, not authority acceptance or filing.
                   </span>
+                  <span>Open production invoice for UBL export and ViDA simulation actions.</span>
                 </div>
 
                 <div>

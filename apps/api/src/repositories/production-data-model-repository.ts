@@ -387,6 +387,10 @@ export async function updateBusinessProfileById(
 ) {
   const organizationId = assertOrganizationId(organizationIdInput);
   const parsed = businessProfileUpdateSchema.parse(input);
+  const parsedUpdates = withoutUndefinedProvidedFields(
+    input as Record<string, unknown>,
+    parsed as Record<string, unknown>
+  ) as BusinessProfileUpdateInput;
   const records = await readCollection<BusinessProfileRecord>(
     BUSINESS_PROFILES_FILE
   );
@@ -400,7 +404,7 @@ export async function updateBusinessProfileById(
 
   const updatedRecord = {
     ...existingRecord,
-    ...withoutUndefined(parsed),
+    ...withoutUndefined(parsedUpdates),
     id: existingRecord.id,
     organizationId,
     createdAt: existingRecord.createdAt,
@@ -511,9 +515,13 @@ export async function updateContactById(
 ) {
   const organizationId = assertOrganizationId(organizationIdInput);
   const parsed = contactUpdateSchema.parse(input);
+  const parsedUpdates = withoutUndefinedProvidedFields(
+    input as Record<string, unknown>,
+    parsed as Record<string, unknown>
+  ) as ContactUpdateInput;
   await assertBusinessProfileBelongsToOrganization(
     organizationId,
-    parsed.businessProfileId
+    parsedUpdates.businessProfileId
   );
 
   const records = await readCollection<ContactRecord>(CONTACTS_FILE);
@@ -527,7 +535,7 @@ export async function updateContactById(
 
   const updatedRecord = {
     ...existingRecord,
-    ...withoutUndefined(parsed),
+    ...withoutUndefined(parsedUpdates),
     id: existingRecord.id,
     organizationId,
     createdAt: existingRecord.createdAt,

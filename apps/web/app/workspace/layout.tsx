@@ -7,6 +7,8 @@ import {
   BadgeCheck,
   BookOpenCheck,
   Braces,
+  Building2,
+  ContactRound,
   FileCheck2,
   FileCode2,
   FileInput,
@@ -58,6 +60,16 @@ const workspaceNav = [
     href: "/workspace/members",
     label: "Members",
     icon: <UsersRound size={18} />
+  },
+  {
+    href: "/workspace/business-profiles",
+    label: "Profiles",
+    icon: <Building2 size={18} />
+  },
+  {
+    href: "/workspace/contacts",
+    label: "Contacts",
+    icon: <ContactRound size={18} />
   },
   {
     href: "/workspace/invoices",

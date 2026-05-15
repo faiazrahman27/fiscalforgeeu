@@ -715,6 +715,228 @@ const openApiDocument = {
         }
       })
     },
+    "/workspace/business-profiles": {
+      get: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "List workspace business profiles",
+        description:
+          "Lists active seller/buyer business profile records for the signed-in workspace. Organization API keys are rejected. Profiles are drafting records only and are not official registration verification, legal advice, tax advice, accounting advice, filing, authority acceptance, or a compliance guarantee.",
+        parameters: [
+          {
+            name: "profileType",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["seller", "buyer", "both"]
+            }
+          },
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["active", "archived"],
+              default: "active"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Workspace business profiles.", ref("WorkspaceBusinessProfileListResponse"))
+        }
+      }),
+      post: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "Create a workspace business profile",
+        description:
+          "Creates a reusable seller/buyer profile with strict fields and safe bank label/last-four storage only. Owner, admin, accountant, or reviewer role is required.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspaceBusinessProfileWrite"))
+        },
+        responses: {
+          "201": response("Created workspace business profile.", ref("WorkspaceBusinessProfileResponse"))
+        }
+      })
+    },
+    "/workspace/business-profiles/{id}": {
+      get: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "Get a workspace business profile",
+        description:
+          "Reads one tenant-scoped workspace business profile. The record supports draft copying only and does not verify official registration.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Workspace business profile.", ref("WorkspaceBusinessProfileResponse"))
+        }
+      }),
+      patch: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "Update a workspace business profile",
+        description:
+          "Updates one tenant-scoped workspace business profile. Unknown fields are rejected and full bank account numbers are not accepted.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspaceBusinessProfilePatch"))
+        },
+        responses: {
+          "200": response("Updated workspace business profile.", ref("WorkspaceBusinessProfileResponse"))
+        }
+      }),
+      delete: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "Archive a workspace business profile",
+        description:
+          "Archives a workspace business profile instead of hard-deleting it, preserving invoice history references.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Archived workspace business profile.", ref("WorkspaceBusinessProfileArchiveResponse"))
+        }
+      })
+    },
+    "/workspace/contacts": {
+      get: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "List workspace contacts",
+        description:
+          "Lists active workspace contacts for the signed-in workspace. Organization API keys are rejected. Contacts are drafting records only, not official registration or VIES evidence.",
+        parameters: [
+          {
+            name: "businessProfileId",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          },
+          {
+            name: "status",
+            in: "query",
+            required: false,
+            schema: {
+              type: "string",
+              enum: ["active", "archived"],
+              default: "active"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Workspace contacts.", ref("WorkspaceContactListResponse"))
+        }
+      }),
+      post: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "Create a workspace contact",
+        description:
+          "Creates a reusable workspace contact. Optional businessProfileId must belong to the same organization. Owner, admin, accountant, or reviewer role is required.",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspaceContactWrite"))
+        },
+        responses: {
+          "201": response("Created workspace contact.", ref("WorkspaceContactResponse"))
+        }
+      })
+    },
+    "/workspace/contacts/{id}": {
+      get: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "Get a workspace contact",
+        description:
+          "Reads one tenant-scoped workspace contact for draft copying and review workflows.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Workspace contact.", ref("WorkspaceContactResponse"))
+        }
+      }),
+      patch: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "Update a workspace contact",
+        description:
+          "Updates one tenant-scoped workspace contact. Unknown fields are rejected and optional linked profiles must stay in the same organization.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("WorkspaceContactPatch"))
+        },
+        responses: {
+          "200": response("Updated workspace contact.", ref("WorkspaceContactResponse"))
+        }
+      }),
+      delete: bearerOperation({
+        tags: ["Workspace Records"],
+        summary: "Archive a workspace contact",
+        description:
+          "Archives a workspace contact instead of hard-deleting it, preserving invoice history references.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        responses: {
+          "200": response("Archived workspace contact.", ref("WorkspaceContactArchiveResponse"))
+        }
+      })
+    },
     "/workspace/settings": {
       get: bearerOperation({
         tags: ["Workspace Privacy"],
@@ -3599,6 +3821,340 @@ const openApiDocument = {
           },
           disclaimer: {
             type: "string"
+          }
+        }
+      },
+      WorkspaceBusinessProfileWrite: {
+        type: "object",
+        additionalProperties: false,
+        required: ["profileType", "displayName", "countryCode"],
+        properties: {
+          profileType: {
+            type: "string",
+            enum: ["seller", "buyer", "both"]
+          },
+          displayName: {
+            type: "string",
+            maxLength: 200
+          },
+          legalName: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          tradingName: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          countryCode: {
+            type: "string",
+            pattern: "^[A-Z]{2}$"
+          },
+          vatId: {
+            type: "string",
+            nullable: true,
+            maxLength: 80
+          },
+          taxRegistrationNumber: {
+            type: "string",
+            nullable: true,
+            maxLength: 120
+          },
+          electronicAddress: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          electronicAddressScheme: {
+            type: "string",
+            nullable: true,
+            maxLength: 40
+          },
+          email: {
+            type: "string",
+            nullable: true,
+            maxLength: 320
+          },
+          phone: {
+            type: "string",
+            nullable: true,
+            maxLength: 80
+          },
+          website: {
+            type: "string",
+            nullable: true,
+            maxLength: 500
+          },
+          addressLine1: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          addressLine2: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          city: {
+            type: "string",
+            nullable: true,
+            maxLength: 160
+          },
+          region: {
+            type: "string",
+            nullable: true,
+            maxLength: 160
+          },
+          postalCode: {
+            type: "string",
+            nullable: true,
+            maxLength: 40
+          },
+          defaultCurrency: {
+            type: "string",
+            nullable: true,
+            pattern: "^[A-Z]{3}$"
+          },
+          paymentTerms: {
+            type: "string",
+            nullable: true,
+            maxLength: 2000
+          },
+          bankAccountLabel: {
+            type: "string",
+            nullable: true,
+            maxLength: 120
+          },
+          bankAccountLast4: {
+            type: "string",
+            nullable: true,
+            pattern: "^[A-Za-z0-9]{2,4}$",
+            description:
+              "Safe last-four style label only. Full bank account numbers and IBANs are not accepted."
+          },
+          status: {
+            type: "string",
+            enum: ["active", "archived"],
+            default: "active"
+          }
+        }
+      },
+      WorkspaceBusinessProfilePatch: {
+        allOf: [ref("WorkspaceBusinessProfileWrite")],
+        required: []
+      },
+      WorkspaceBusinessProfile: {
+        allOf: [
+          ref("WorkspaceBusinessProfileWrite"),
+          {
+            type: "object",
+            required: ["id", "organizationId", "createdAt", "updatedAt"],
+            properties: {
+              id: {
+                type: "string",
+                format: "uuid"
+              },
+              organizationId: {
+                type: "string",
+                format: "uuid"
+              },
+              createdAt: {
+                type: "string",
+                format: "date-time"
+              },
+              updatedAt: {
+                type: "string",
+                format: "date-time"
+              }
+            }
+          }
+        ]
+      },
+      WorkspaceBusinessProfileResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("WorkspaceBusinessProfile")
+        }
+      },
+      WorkspaceBusinessProfileListResponse: {
+        type: "object",
+        required: ["records", "disclaimer"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("WorkspaceBusinessProfile")
+          },
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
+      WorkspaceBusinessProfileArchiveResponse: {
+        type: "object",
+        required: ["record", "archived"],
+        properties: {
+          record: ref("WorkspaceBusinessProfile"),
+          archived: {
+            type: "boolean"
+          }
+        }
+      },
+      WorkspaceContactWrite: {
+        type: "object",
+        additionalProperties: false,
+        required: ["displayName"],
+        properties: {
+          businessProfileId: {
+            type: "string",
+            nullable: true,
+            format: "uuid"
+          },
+          contactType: {
+            type: "string",
+            enum: ["business", "person", "department", "other"],
+            default: "business"
+          },
+          displayName: {
+            type: "string",
+            maxLength: 200
+          },
+          legalName: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          email: {
+            type: "string",
+            nullable: true,
+            maxLength: 320
+          },
+          phone: {
+            type: "string",
+            nullable: true,
+            maxLength: 80
+          },
+          countryCode: {
+            type: "string",
+            nullable: true,
+            pattern: "^[A-Z]{2}$"
+          },
+          vatId: {
+            type: "string",
+            nullable: true,
+            maxLength: 80
+          },
+          taxRegistrationNumber: {
+            type: "string",
+            nullable: true,
+            maxLength: 120
+          },
+          electronicAddress: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          electronicAddressScheme: {
+            type: "string",
+            nullable: true,
+            maxLength: 40
+          },
+          addressLine1: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          addressLine2: {
+            type: "string",
+            nullable: true,
+            maxLength: 240
+          },
+          city: {
+            type: "string",
+            nullable: true,
+            maxLength: 160
+          },
+          region: {
+            type: "string",
+            nullable: true,
+            maxLength: 160
+          },
+          postalCode: {
+            type: "string",
+            nullable: true,
+            maxLength: 40
+          },
+          notes: {
+            type: "string",
+            nullable: true,
+            maxLength: 4000
+          },
+          status: {
+            type: "string",
+            enum: ["active", "archived"],
+            default: "active"
+          }
+        }
+      },
+      WorkspaceContactPatch: {
+        allOf: [ref("WorkspaceContactWrite")],
+        required: []
+      },
+      WorkspaceContact: {
+        allOf: [
+          ref("WorkspaceContactWrite"),
+          {
+            type: "object",
+            required: ["id", "organizationId", "createdAt", "updatedAt"],
+            properties: {
+              id: {
+                type: "string",
+                format: "uuid"
+              },
+              organizationId: {
+                type: "string",
+                format: "uuid"
+              },
+              createdAt: {
+                type: "string",
+                format: "date-time"
+              },
+              updatedAt: {
+                type: "string",
+                format: "date-time"
+              }
+            }
+          }
+        ]
+      },
+      WorkspaceContactResponse: {
+        type: "object",
+        required: ["record"],
+        properties: {
+          record: ref("WorkspaceContact")
+        }
+      },
+      WorkspaceContactListResponse: {
+        type: "object",
+        required: ["records", "disclaimer"],
+        properties: {
+          records: {
+            type: "array",
+            items: ref("WorkspaceContact")
+          },
+          disclaimer: {
+            type: "string"
+          }
+        }
+      },
+      WorkspaceContactArchiveResponse: {
+        type: "object",
+        required: ["record", "archived"],
+        properties: {
+          record: ref("WorkspaceContact"),
+          archived: {
+            type: "boolean"
           }
         }
       },

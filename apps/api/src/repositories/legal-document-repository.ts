@@ -388,29 +388,84 @@ async function readPublishedDocumentFromSupabase(documentKey: string) {
   }
 
   const documentRow = documentData as SupabaseLegalDocumentRow;
-  const { data: versionData, error: versionError } = await supabase
+  const versionRow = await resolvePublishedVersionForDocument({
+    supabase,
+    documentRow,
+    versionReadFailureCode: "LEGAL_DOCUMENT_VERSION_READ_FAILED"
+  });
+
+  if (!versionRow) {
+    return null;
+  }
+
+  return toLegalDocumentDefinition(documentRow, versionRow);
+}
+
+async function readCurrentPublishedVersionForDocument(input: {
+  supabase: SupabaseClient;
+  documentRow: SupabaseLegalDocumentRow;
+  versionReadFailureCode: string;
+}) {
+  if (!input.documentRow.current_version_id) {
+    return null;
+  }
+
+  const { data, error } = await input.supabase
     .from("legal_document_versions")
     .select(LEGAL_DOCUMENT_VERSION_SELECT_FIELDS)
-    .eq("legal_document_id", documentRow.id)
+    .eq("legal_document_id", input.documentRow.id)
     .eq("status", "published")
-    .eq("id", documentRow.current_version_id)
+    .eq("id", input.documentRow.current_version_id)
     .maybeSingle();
 
-  if (versionError) {
+  if (error) {
     throw new LegalDocumentRepositoryError(
-      "LEGAL_DOCUMENT_VERSION_READ_FAILED",
-      `Could not read legal document version: ${versionError.message}`,
+      input.versionReadFailureCode,
+      "Could not read the published legal document version.",
       500
     );
   }
 
-  if (!versionData) {
-    return null;
+  return data ? (data as SupabaseLegalDocumentVersionRow) : null;
+}
+
+async function readLatestPublishedVersionForDocument(input: {
+  supabase: SupabaseClient;
+  documentRow: SupabaseLegalDocumentRow;
+  versionReadFailureCode: string;
+}) {
+  const { data, error } = await input.supabase
+    .from("legal_document_versions")
+    .select(LEGAL_DOCUMENT_VERSION_SELECT_FIELDS)
+    .eq("legal_document_id", input.documentRow.id)
+    .eq("status", "published")
+    .order("published_at", {
+      ascending: false
+    })
+    .order("created_at", {
+      ascending: false
+    })
+    .limit(1);
+
+  if (error) {
+    throw new LegalDocumentRepositoryError(
+      input.versionReadFailureCode,
+      "Could not read the latest published legal document version.",
+      500
+    );
   }
 
-  return toLegalDocumentDefinition(
-    documentRow,
-    versionData as SupabaseLegalDocumentVersionRow
+  return ((data ?? []) as SupabaseLegalDocumentVersionRow[])[0] ?? null;
+}
+
+export async function resolvePublishedVersionForDocument(input: {
+  supabase: SupabaseClient;
+  documentRow: SupabaseLegalDocumentRow;
+  versionReadFailureCode: string;
+}) {
+  return (
+    (await readCurrentPublishedVersionForDocument(input)) ??
+    (await readLatestPublishedVersionForDocument(input))
   );
 }
 
@@ -436,33 +491,14 @@ async function listPublishedDocumentsFromSupabase() {
   const documents: LegalDocumentDefinition[] = [];
 
   for (const documentRow of documentRows) {
-    if (!documentRow.current_version_id) {
-      continue;
-    }
+    const versionRow = await resolvePublishedVersionForDocument({
+      supabase,
+      documentRow,
+      versionReadFailureCode: "LEGAL_DOCUMENT_VERSION_LIST_FAILED"
+    });
 
-    const { data: versionData, error: versionError } = await supabase
-      .from("legal_document_versions")
-      .select(LEGAL_DOCUMENT_VERSION_SELECT_FIELDS)
-      .eq("legal_document_id", documentRow.id)
-      .eq("status", "published")
-      .eq("id", documentRow.current_version_id)
-      .maybeSingle();
-
-    if (versionError) {
-      throw new LegalDocumentRepositoryError(
-        "LEGAL_DOCUMENT_VERSION_LIST_FAILED",
-        `Could not list legal document versions: ${versionError.message}`,
-        500
-      );
-    }
-
-    if (versionData) {
-      documents.push(
-        toLegalDocumentDefinition(
-          documentRow,
-          versionData as SupabaseLegalDocumentVersionRow
-        )
-      );
+    if (versionRow) {
+      documents.push(toLegalDocumentDefinition(documentRow, versionRow));
     }
   }
 
@@ -499,36 +535,26 @@ async function resolveSupabasePublishedDocument(input: {
   }
 
   const documentRow = documentData as SupabaseLegalDocumentRow;
-  const { data: versionData, error: versionError } = await input.supabase
-    .from("legal_document_versions")
-    .select(LEGAL_DOCUMENT_VERSION_SELECT_FIELDS)
-    .eq("legal_document_id", documentRow.id)
-    .eq("status", "published")
-    .eq("id", documentRow.current_version_id)
-    .maybeSingle();
+  const versionRow = await resolvePublishedVersionForDocument({
+    supabase: input.supabase,
+    documentRow,
+    versionReadFailureCode: "LEGAL_DOCUMENT_VERSION_READ_FAILED"
+  });
 
-  if (versionError) {
-    throw new LegalDocumentRepositoryError(
-      "LEGAL_DOCUMENT_VERSION_READ_FAILED",
-      `Could not read legal document version: ${versionError.message}`,
-      500
-    );
-  }
-
-  if (!versionData) {
+  if (!versionRow) {
     throw new LegalDocumentRepositoryError(
       "VERSION_NOT_PUBLISHED",
-      "The latest legal document version is not published.",
+      "No published legal document version is available for this document.",
       409
     );
   }
 
   return {
     documentRow,
-    versionRow: versionData as SupabaseLegalDocumentVersionRow,
+    versionRow,
     document: toLegalDocumentDefinition(
       documentRow,
-      versionData as SupabaseLegalDocumentVersionRow
+      versionRow
     )
   };
 }

@@ -42,6 +42,15 @@ type ProductionInvoiceVidaSimulation = {
   disclaimer: string;
 };
 
+type ProductionInvoiceLifecycleEvent = {
+  id: string;
+  eventType: string;
+  createdAt: string;
+  actorLabel: string;
+  reason: string | null;
+  metadataSummary: string | null;
+};
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -75,6 +84,14 @@ function readNullableNumberField(record: Record<string, unknown>, key: string) {
   const value = record[key];
 
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readNullableStringField(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }
 
 function normalizeProductionInvoice(value: unknown): ProductionInvoiceDetail | null {
@@ -161,6 +178,84 @@ function normalizeVidaSimulation(
   };
 }
 
+function normalizeLifecycleEvent(
+  value: unknown
+): ProductionInvoiceLifecycleEvent | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = readStringField(value, "id");
+  const createdAt = readStringField(value, "createdAt");
+  const toStatus = readStringField(value, "toStatus");
+  const fromStatus = readStringField(value, "fromStatus");
+
+  if (!id || !createdAt || !toStatus) {
+    return null;
+  }
+
+  return {
+    id,
+    eventType: fromStatus ? `${fromStatus} to ${toStatus}` : `created as ${toStatus}`,
+    createdAt,
+    actorLabel: buildLifecycleActorLabel(value),
+    reason: readNullableStringField(value, "reason"),
+    metadataSummary: summarizeLifecycleMetadata(value.metadata)
+  };
+}
+
+function buildLifecycleActorLabel(record: Record<string, unknown>) {
+  const actorUserId = readNullableStringField(record, "actorUserId");
+  const actorApiKeyId = readNullableStringField(record, "actorApiKeyId");
+
+  if (actorUserId) {
+    return `Signed user ${actorUserId.slice(0, 8)}`;
+  }
+
+  if (actorApiKeyId) {
+    return "API key event";
+  }
+
+  return "System event";
+}
+
+function summarizeLifecycleMetadata(value: unknown) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const safeParts = [
+    readNullableStringField(value, "source")
+      ? `Source: ${readNullableStringField(value, "source")}`
+      : "",
+    readNullableStringField(value, "note"),
+    readNullableStringField(value, "legalBoundary")
+  ].filter((part): part is string => Boolean(part));
+
+  return safeParts.length > 0 ? safeParts.join(". ").slice(0, 360) : null;
+}
+
+function getRecordsFromResponse(value: unknown) {
+  if (!isPlainObject(value) || !Array.isArray(value.records)) {
+    return [];
+  }
+
+  return value.records;
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
+}
+
 async function readResponseBody(response: Response) {
   const responseText = await response.text();
 
@@ -216,6 +311,15 @@ export default function ExistingInvoiceDraftPage({
   const [vidaSimulation, setVidaSimulation] =
     useState<ProductionInvoiceVidaSimulation | null>(null);
   const [vidaSimulationMessage, setVidaSimulationMessage] = useState("");
+  const [lifecycleEvents, setLifecycleEvents] = useState<
+    ProductionInvoiceLifecycleEvent[]
+  >([]);
+  const [lifecycleEventsMessage, setLifecycleEventsMessage] = useState("");
+  const [isLoadingLifecycleEvents, setIsLoadingLifecycleEvents] = useState(false);
+  const [transitionTarget, setTransitionTarget] = useState("ready_for_review");
+  const [transitionReason, setTransitionReason] = useState("");
+  const [isTransitioningStatus, setIsTransitioningStatus] = useState(false);
+  const [transitionMessage, setTransitionMessage] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -317,6 +421,55 @@ export default function ExistingInvoiceDraftPage({
       isMounted = false;
     };
   }, [params]);
+
+  useEffect(() => {
+    if (!productionInvoice) {
+      setLifecycleEvents([]);
+      setLifecycleEventsMessage("");
+      return;
+    }
+
+    setTransitionTarget(productionInvoice.status);
+    void loadLifecycleEvents(productionInvoice.id);
+  }, [productionInvoice?.id, productionInvoice?.status]);
+
+  async function loadLifecycleEvents(invoiceId: string) {
+    setIsLoadingLifecycleEvents(true);
+    setLifecycleEventsMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/invoices/${encodeURIComponent(invoiceId)}/lifecycle-events`,
+        {
+          method: "GET",
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setLifecycleEvents([]);
+        setLifecycleEventsMessage(getApiErrorMessage(responseData));
+        return;
+      }
+
+      setLifecycleEvents(
+        getRecordsFromResponse(responseData)
+          .map((record) => normalizeLifecycleEvent(record))
+          .filter(
+            (record): record is ProductionInvoiceLifecycleEvent =>
+              record !== null
+          )
+      );
+    } catch {
+      setLifecycleEvents([]);
+      setLifecycleEventsMessage(
+        "Could not load lifecycle events through the local API proxy."
+      );
+    } finally {
+      setIsLoadingLifecycleEvents(false);
+    }
+  }
 
   async function exportProductionUbl() {
     if (!productionInvoice) {
@@ -423,6 +576,62 @@ export default function ExistingInvoiceDraftPage({
       );
     } finally {
       setIsRunningVidaSimulation(false);
+    }
+  }
+
+  async function transitionProductionInvoiceStatus() {
+    if (!productionInvoice || transitionTarget === productionInvoice.status) {
+      return;
+    }
+
+    setIsTransitioningStatus(true);
+    setTransitionMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/local/invoices/${encodeURIComponent(productionInvoice.id)}/transition`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            toStatus: transitionTarget,
+            reason:
+              transitionReason.trim() ||
+              "Manual internal lifecycle transition from workspace detail page."
+          }),
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setTransitionMessage(getApiErrorMessage(responseData));
+        return;
+      }
+
+      const record = isPlainObject(responseData)
+        ? normalizeProductionInvoice(responseData.record)
+        : null;
+
+      if (!record) {
+        setTransitionMessage("The transition response could not be read safely.");
+        return;
+      }
+
+      setProductionInvoice(record);
+      setTransitionReason("");
+      setTransitionMessage(
+        "Internal invoice lifecycle status updated. This is not official filing or authority acceptance."
+      );
+      await loadLifecycleEvents(record.id);
+    } catch {
+      setTransitionMessage(
+        "Could not transition invoice status through the local API proxy."
+      );
+    } finally {
+      setIsTransitioningStatus(false);
     }
   }
 
@@ -579,6 +788,142 @@ export default function ExistingInvoiceDraftPage({
 
               <FileText size={17} />
             </div>
+          </div>
+
+          <form
+            className="workspace-form-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void transitionProductionInvoiceStatus();
+            }}
+            style={{ marginTop: "1rem" }}
+          >
+            <label>
+              <span>Internal lifecycle status</span>
+              <select
+                value={transitionTarget}
+                onChange={(event) => setTransitionTarget(event.target.value)}
+              >
+                <option value="draft">Draft</option>
+                <option value="ready_for_review">Ready for review</option>
+                <option value="validated">Validated</option>
+                <option value="issued">Issued internal state</option>
+                <option value="archived">Archived</option>
+                <option value="voided">Voided</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Reason</span>
+              <input
+                value={transitionReason}
+                onChange={(event) => setTransitionReason(event.target.value)}
+                placeholder="Internal workflow reason"
+              />
+            </label>
+
+            <button
+              type="submit"
+              className="workspace-auth-action"
+              disabled={
+                isTransitioningStatus ||
+                transitionTarget === productionInvoice.status
+              }
+            >
+              {isTransitioningStatus ? "Updating" : "Update internal status"}
+            </button>
+          </form>
+
+          {transitionMessage ? (
+            <div className="alert-item">
+              <span />
+              <p>{transitionMessage}</p>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="workspace-table-shell">
+          <div className="workspace-table-head">
+            <div>
+              <p>Lifecycle events</p>
+              <h3>Internal workflow history</h3>
+            </div>
+
+            <span className="status-pill">not official filing</span>
+          </div>
+
+          <div className="alert-item">
+            <span />
+            <p>
+              Lifecycle events are internal Invoice Lantern workflow states only.
+              They do not mean official submission, authority acceptance, Peppol
+              delivery, legal validity, tax compliance, or accounting compliance.
+            </p>
+          </div>
+
+          {lifecycleEventsMessage ? (
+            <div className="alert-item">
+              <span />
+              <p>{lifecycleEventsMessage}</p>
+            </div>
+          ) : null}
+
+          <div className="workspace-table">
+            {isLoadingLifecycleEvents ? (
+              <div className="workspace-table-row">
+                <div>
+                  <strong>Loading lifecycle events</strong>
+                  <span>Reading event records through the local proxy.</span>
+                </div>
+                <div>
+                  <span className="status-pill">loading</span>
+                </div>
+                <div>
+                  <span>events</span>
+                </div>
+                <strong>pending</strong>
+                <FileText size={17} />
+              </div>
+            ) : lifecycleEvents.length === 0 ? (
+              <div className="workspace-table-row">
+                <div>
+                  <strong>No lifecycle events returned</strong>
+                  <span>
+                    Event history may be unavailable until production invoice
+                    lifecycle logging is configured.
+                  </span>
+                </div>
+                <div>
+                  <span className="status-pill">empty</span>
+                </div>
+                <div>
+                  <span>events</span>
+                </div>
+                <strong>0</strong>
+                <FileText size={17} />
+              </div>
+            ) : (
+              lifecycleEvents.map((event) => (
+                <div className="workspace-table-row" key={event.id}>
+                  <div>
+                    <strong>{event.eventType}</strong>
+                    <span>{event.actorLabel}</span>
+                    {event.reason ? <span>Reason: {event.reason}</span> : null}
+                    {event.metadataSummary ? (
+                      <span>{event.metadataSummary}</span>
+                    ) : null}
+                  </div>
+                  <div>
+                    <span className="status-pill">internal</span>
+                  </div>
+                  <div>
+                    <span>{formatDateTime(event.createdAt)}</span>
+                  </div>
+                  <strong>event</strong>
+                  <FileText size={17} />
+                </div>
+              ))
+            )}
           </div>
         </section>
 

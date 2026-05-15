@@ -222,6 +222,33 @@ type UblExportHistoryItem = {
 
 type PartyType = "seller" | "buyer";
 
+type SavedBusinessProfile = {
+  id: string;
+  profileType: "seller" | "buyer" | "both";
+  displayName: string;
+  legalName: string;
+  countryCode: string;
+  vatId: string;
+  electronicAddress: string;
+  addressLine1: string;
+  city: string;
+  postalCode: string;
+};
+
+type SavedContact = {
+  id: string;
+  businessProfileId: string;
+  contactType: "business" | "person" | "department" | "other";
+  displayName: string;
+  legalName: string;
+  countryCode: string;
+  vatId: string;
+  electronicAddress: string;
+  addressLine1: string;
+  city: string;
+  postalCode: string;
+};
+
 type VatFormatResult = {
   input: string;
   normalized: string;
@@ -343,6 +370,14 @@ export function InvoiceEditorClient({
   const [isDeletingOfflineDraft, setIsDeletingOfflineDraft] = useState(false);
   const [encryptedOfflineDraftAvailable, setEncryptedOfflineDraftAvailable] =
     useState(false);
+  const [savedBusinessProfiles, setSavedBusinessProfiles] = useState<
+    SavedBusinessProfile[]
+  >([]);
+  const [savedContacts, setSavedContacts] = useState<SavedContact[]>([]);
+  const [savedRecordMessage, setSavedRecordMessage] = useState("");
+  const [selectedSellerProfileId, setSelectedSellerProfileId] = useState("");
+  const [selectedBuyerProfileId, setSelectedBuyerProfileId] = useState("");
+  const [selectedBuyerContactId, setSelectedBuyerContactId] = useState("");
 
   useEffect(() => {
     setDraft(initialDraft ?? createEmptyInvoiceDraft());
@@ -362,6 +397,77 @@ export function InvoiceEditorClient({
   useEffect(() => {
     setUblExportResult(null);
   }, [draft]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSavedBusinessRecords() {
+      setSavedRecordMessage("");
+
+      try {
+        const [profileResponse, contactResponse] = await Promise.all([
+          fetch("/api/local/workspace/business-profiles", {
+            method: "GET",
+            cache: "no-store"
+          }),
+          fetch("/api/local/workspace/contacts", {
+            method: "GET",
+            cache: "no-store"
+          })
+        ]);
+        const [profileData, contactData] = await Promise.all([
+          profileResponse.json().catch(() => null),
+          contactResponse.json().catch(() => null)
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (profileResponse.ok) {
+          setSavedBusinessProfiles(
+            getRecordsFromResponse(profileData)
+              .map((record) => normalizeSavedBusinessProfile(record))
+              .filter(
+                (record): record is SavedBusinessProfile => record !== null
+              )
+          );
+        } else {
+          setSavedBusinessProfiles([]);
+        }
+
+        if (contactResponse.ok) {
+          setSavedContacts(
+            getRecordsFromResponse(contactData)
+              .map((record) => normalizeSavedContact(record))
+              .filter((record): record is SavedContact => record !== null)
+          );
+        } else {
+          setSavedContacts([]);
+        }
+
+        if (!profileResponse.ok || !contactResponse.ok) {
+          setSavedRecordMessage(
+            "Saved profiles and contacts could not be fully loaded. Manual draft fields remain editable."
+          );
+        }
+      } catch {
+        if (isMounted) {
+          setSavedBusinessProfiles([]);
+          setSavedContacts([]);
+          setSavedRecordMessage(
+            "Saved profiles and contacts are unavailable through the local API proxy. Manual draft fields remain editable."
+          );
+        }
+      }
+    }
+
+    loadSavedBusinessRecords();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -435,6 +541,47 @@ export function InvoiceEditorClient({
     [draftId, persistedDraftId]
   );
 
+  const sellerProfileOptions = useMemo(
+    () =>
+      savedBusinessProfiles.filter(
+        (profile) =>
+          profile.profileType === "seller" || profile.profileType === "both"
+      ),
+    [savedBusinessProfiles]
+  );
+
+  const buyerProfileOptions = useMemo(
+    () =>
+      savedBusinessProfiles.filter(
+        (profile) =>
+          profile.profileType === "buyer" || profile.profileType === "both"
+      ),
+    [savedBusinessProfiles]
+  );
+
+  const selectedSellerProfile = useMemo(
+    () =>
+      sellerProfileOptions.find(
+        (profile) => profile.id === selectedSellerProfileId
+      ) ?? null,
+    [selectedSellerProfileId, sellerProfileOptions]
+  );
+
+  const selectedBuyerProfile = useMemo(
+    () =>
+      buyerProfileOptions.find(
+        (profile) => profile.id === selectedBuyerProfileId
+      ) ?? null,
+    [selectedBuyerProfileId, buyerProfileOptions]
+  );
+
+  const selectedBuyerContact = useMemo(
+    () =>
+      savedContacts.find((contact) => contact.id === selectedBuyerContactId) ??
+      null,
+    [selectedBuyerContactId, savedContacts]
+  );
+
   function updateDocument<K extends keyof InvoiceDocumentDraft>(
     key: K,
     value: InvoiceDocumentDraft[K]
@@ -467,6 +614,69 @@ export function InvoiceEditorClient({
         [partyType]: null
       }));
     }
+  }
+
+  function copySavedBusinessProfileToDraft(
+    partyType: PartyType,
+    profile: SavedBusinessProfile | null
+  ) {
+    if (!profile) {
+      return;
+    }
+
+    copySavedPartyFieldsToDraft(partyType, {
+      name: profile.displayName || profile.legalName,
+      country: profile.countryCode,
+      vatId: profile.vatId,
+      city: profile.city,
+      postalCode: profile.postalCode,
+      street: profile.addressLine1,
+      electronicAddress: profile.electronicAddress
+    });
+    setSavedRecordMessage(
+      `${partyType === "seller" ? "Seller" : "Buyer"} profile copied into draft. Manual draft fields remain editable.`
+    );
+  }
+
+  function copySavedContactToDraft(contact: SavedContact | null) {
+    if (!contact) {
+      return;
+    }
+
+    copySavedPartyFieldsToDraft("buyer", {
+      name: contact.displayName || contact.legalName,
+      country: contact.countryCode,
+      vatId: contact.vatId,
+      city: contact.city,
+      postalCode: contact.postalCode,
+      street: contact.addressLine1,
+      electronicAddress: contact.electronicAddress
+    });
+    setSavedRecordMessage(
+      "Buyer contact copied into draft. Manual draft fields remain editable."
+    );
+  }
+
+  function copySavedPartyFieldsToDraft(
+    partyType: PartyType,
+    fields: Partial<InvoicePartyDraft>
+  ) {
+    setDraft((current) => ({
+      ...current,
+      [partyType]: {
+        ...current[partyType],
+        ...Object.fromEntries(
+          Object.entries(fields).filter(([, value]) => {
+            return typeof value === "string" && value.trim().length > 0;
+          })
+        )
+      }
+    }));
+
+    setVatFormatChecks((current) => ({
+      ...current,
+      [partyType]: null
+    }));
   }
 
   function updateLine<K extends keyof InvoiceLineEditorDraft>(
@@ -1116,6 +1326,111 @@ export function InvoiceEditorClient({
                 value={draft.document.contractReference}
                 onChange={(value) => updateDocument("contractReference", value)}
               />
+            </div>
+          </div>
+
+          <div className={styles.panel}>
+            <div className={styles.panelHead}>
+              <div>
+                <p>Saved records</p>
+                <h3>Use saved profile</h3>
+              </div>
+
+              <FileCode2 size={22} />
+            </div>
+
+            <p className={styles.savedRecordNote}>
+              Copy into draft from workspace profiles or contacts. Manual draft
+              fields remain editable.
+            </p>
+
+            {savedRecordMessage ? (
+              <p className={styles.savedRecordMessage}>{savedRecordMessage}</p>
+            ) : null}
+
+            <div className={styles.savedRecordGrid}>
+              <label className={styles.field}>
+                <span>Seller saved profile</span>
+                <select
+                  value={selectedSellerProfileId}
+                  onChange={(event) =>
+                    setSelectedSellerProfileId(event.target.value)
+                  }
+                >
+                  <option value="">Choose a saved seller profile</option>
+                  {sellerProfileOptions.map((profile) => (
+                    <option value={profile.id} key={profile.id}>
+                      {profile.displayName} ({profile.countryCode})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() =>
+                  copySavedBusinessProfileToDraft("seller", selectedSellerProfile)
+                }
+                disabled={!selectedSellerProfile}
+              >
+                Copy into draft
+              </button>
+
+              <label className={styles.field}>
+                <span>Buyer saved profile</span>
+                <select
+                  value={selectedBuyerProfileId}
+                  onChange={(event) =>
+                    setSelectedBuyerProfileId(event.target.value)
+                  }
+                >
+                  <option value="">Choose a saved buyer profile</option>
+                  {buyerProfileOptions.map((profile) => (
+                    <option value={profile.id} key={profile.id}>
+                      {profile.displayName} ({profile.countryCode})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() =>
+                  copySavedBusinessProfileToDraft("buyer", selectedBuyerProfile)
+                }
+                disabled={!selectedBuyerProfile}
+              >
+                Copy into draft
+              </button>
+
+              <label className={styles.field}>
+                <span>Buyer saved contact</span>
+                <select
+                  value={selectedBuyerContactId}
+                  onChange={(event) =>
+                    setSelectedBuyerContactId(event.target.value)
+                  }
+                >
+                  <option value="">Choose a saved buyer contact</option>
+                  {savedContacts.map((contact) => (
+                    <option value={contact.id} key={contact.id}>
+                      {contact.displayName}
+                      {contact.countryCode ? ` (${contact.countryCode})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={() => copySavedContactToDraft(selectedBuyerContact)}
+                disabled={!selectedBuyerContact}
+              >
+                Copy into draft
+              </button>
             </div>
           </div>
 
@@ -2436,6 +2751,87 @@ function getStringField(source: Record<string, unknown>, key: string) {
   const value = source[key];
 
   return typeof value === "string" ? value : "";
+}
+
+function getRecordsFromResponse(data: unknown) {
+  if (!isPlainObject(data) || !Array.isArray(data.records)) {
+    return [];
+  }
+
+  return data.records;
+}
+
+function normalizeSavedProfileType(
+  value: unknown
+): SavedBusinessProfile["profileType"] {
+  if (value === "buyer" || value === "both") {
+    return value;
+  }
+
+  return "seller";
+}
+
+function normalizeSavedContactType(value: unknown): SavedContact["contactType"] {
+  if (value === "person" || value === "department" || value === "other") {
+    return value;
+  }
+
+  return "business";
+}
+
+function normalizeSavedBusinessProfile(
+  value: unknown
+): SavedBusinessProfile | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = getStringField(value, "id").trim();
+  const displayName = getStringField(value, "displayName").trim();
+
+  if (!id || !displayName) {
+    return null;
+  }
+
+  return {
+    id,
+    profileType: normalizeSavedProfileType(value.profileType),
+    displayName,
+    legalName: getStringField(value, "legalName").trim(),
+    countryCode: getStringField(value, "countryCode").trim(),
+    vatId: getStringField(value, "vatId").trim(),
+    electronicAddress: getStringField(value, "electronicAddress").trim(),
+    addressLine1: getStringField(value, "addressLine1").trim(),
+    city: getStringField(value, "city").trim(),
+    postalCode: getStringField(value, "postalCode").trim()
+  };
+}
+
+function normalizeSavedContact(value: unknown): SavedContact | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const id = getStringField(value, "id").trim();
+  const displayName = getStringField(value, "displayName").trim();
+
+  if (!id || !displayName) {
+    return null;
+  }
+
+  return {
+    id,
+    businessProfileId: getStringField(value, "businessProfileId").trim(),
+    contactType: normalizeSavedContactType(value.contactType),
+    displayName,
+    legalName: getStringField(value, "legalName").trim(),
+    countryCode: getStringField(value, "countryCode").trim(),
+    vatId: getStringField(value, "vatId").trim(),
+    electronicAddress: getStringField(value, "electronicAddress").trim(),
+    addressLine1: getStringField(value, "addressLine1").trim(),
+    city: getStringField(value, "city").trim(),
+    postalCode: getStringField(value, "postalCode").trim()
+  };
 }
 
 function normalizeVatFormatResult(data: unknown): VatFormatResult | null {
