@@ -41,6 +41,7 @@ type XmlValidationJobStatus =
 type XmlValidationJobCheck =
   | "worker_readiness"
   | "xsd_ubl"
+  | "xsd_cii"
   | "schematron_peppol"
   | "schematron_en16931"
   | "schematron_peppol_placeholder";
@@ -511,6 +512,13 @@ const validationJobCheckOptions: {
     active: true
   },
   {
+    value: "xsd_cii",
+    label: "CII XSD check",
+    description:
+      "Guarded technical check. Returns not configured until reviewed local CII XSD artefacts and a real local adapter are configured.",
+    active: true
+  },
+  {
     value: "schematron_peppol_placeholder",
     label: "Deprecated Peppol preflight alias",
     description:
@@ -658,6 +666,16 @@ function isDetected(value: string) {
   return Boolean(value) && value !== "not_detected";
 }
 
+function detectXmlSyntaxMode(xml: string): "ubl" | "cii" {
+  const rootMatch = xml.match(/<\s*([A-Za-z_][\w:.-]*)(?:\s|>|\/>)/);
+  const rawRootName = rootMatch?.[1]?.trim() ?? "";
+  const rootName = rawRootName.includes(":")
+    ? rawRootName.split(":").pop() ?? rawRootName
+    : rawRootName;
+
+  return rootName === "CrossIndustryInvoice" ? "cii" : "ubl";
+}
+
 function isUploadStatus(value: unknown): value is UploadStatus {
   return value === "accepted" || value === "rejected";
 }
@@ -680,6 +698,7 @@ function isXmlValidationJobCheck(value: unknown): value is XmlValidationJobCheck
   return (
     value === "worker_readiness" ||
     value === "xsd_ubl" ||
+    value === "xsd_cii" ||
     value === "schematron_peppol" ||
     value === "schematron_en16931" ||
     value === "schematron_peppol_placeholder"
@@ -1921,6 +1940,7 @@ export default function WorkspaceXmlUploadPage() {
     useState<XmlValidationJob | null>(null);
   const [analysis, setAnalysis] = useState<XmlAnalysis | null>(null);
   const [xmlInput, setXmlInput] = useState("");
+  const [xmlSyntaxMode, setXmlSyntaxMode] = useState<"ubl" | "cii">("ubl");
   const [ublParsePreview, setUblParsePreview] =
     useState<UblParsePreview | null>(null);
   const [ublImportResult, setUblImportResult] =
@@ -2110,6 +2130,7 @@ export default function WorkspaceXmlUploadPage() {
 
   async function inspectXmlWithApi(file: File, xmlText: string) {
     setXmlInput(xmlText);
+    setXmlSyntaxMode(detectXmlSyntaxMode(xmlText));
     setUblParsePreview(null);
     setUblImportResult(null);
     setUblParseMessage("");
@@ -2208,6 +2229,8 @@ export default function WorkspaceXmlUploadPage() {
 
   async function parseUblWithApi() {
     const xml = xmlInput.trim();
+    const syntaxMode = xmlSyntaxMode;
+    const syntaxLabel = syntaxMode === "cii" ? "CII" : "UBL";
 
     setErrorMessage("");
     setUblParseMessage("");
@@ -2215,20 +2238,20 @@ export default function WorkspaceXmlUploadPage() {
 
     if (!xml) {
       setUblParseMessage(
-        "Paste UBL XML or upload an XML file before running canonical preview parsing."
+        `Paste ${syntaxLabel} XML or upload an XML file before running canonical preview parsing.`
       );
       return;
     }
 
     if (new TextEncoder().encode(xml).byteLength > MAX_XML_FILE_SIZE_BYTES) {
-      setUblParseMessage("UBL XML must be 2 MB or smaller for this preview.");
+      setUblParseMessage(`${syntaxLabel} XML must be 2 MB or smaller for this preview.`);
       return;
     }
 
     setIsParsingUbl(true);
 
     try {
-      const response = await fetch("/api/local/invoices/parse/ubl", {
+      const response = await fetch(`/api/local/invoices/parse/${syntaxMode}`, {
         method: "POST",
         headers: {
           "content-type": "application/json"
@@ -2243,19 +2266,19 @@ export default function WorkspaceXmlUploadPage() {
 
       if (!response.ok && preview.findings.length === 0) {
         setUblParseMessage(
-          getApiErrorMessage(responseData, "The UBL parse request failed.")
+          getApiErrorMessage(responseData, `The ${syntaxLabel} parse request failed.`)
         );
         return;
       }
 
       setUblParseMessage(
         preview.parsed
-          ? "Parsed UBL XML into a canonical invoice preview."
-          : "The UBL parser returned review findings and did not build a canonical invoice preview."
+          ? `Parsed ${syntaxLabel} XML into a canonical invoice preview.`
+          : `The ${syntaxLabel} parser returned review findings and did not build a canonical invoice preview.`
       );
     } catch {
       setUblParseMessage(
-        "Could not parse UBL XML. Make sure apps/api and apps/web are both running."
+        `Could not parse ${syntaxLabel} XML. Make sure apps/api and apps/web are both running.`
       );
     } finally {
       setIsParsingUbl(false);
@@ -2264,26 +2287,28 @@ export default function WorkspaceXmlUploadPage() {
 
   async function importUblDraftWithApi() {
     const xml = xmlInput.trim();
+    const syntaxMode = xmlSyntaxMode;
+    const syntaxLabel = syntaxMode === "cii" ? "CII" : "UBL";
 
     setErrorMessage("");
     setUblImportResult(null);
 
     if (!xml) {
       setUblParseMessage(
-        "Paste UBL XML or upload an XML file before creating an editable draft."
+        `Paste ${syntaxLabel} XML or upload an XML file before creating an editable draft.`
       );
       return;
     }
 
     if (new TextEncoder().encode(xml).byteLength > MAX_XML_FILE_SIZE_BYTES) {
-      setUblParseMessage("UBL XML must be 2 MB or smaller for draft import.");
+      setUblParseMessage(`${syntaxLabel} XML must be 2 MB or smaller for draft import.`);
       return;
     }
 
     setIsImportingUblDraft(true);
 
     try {
-      const response = await fetch("/api/local/invoices/import/ubl", {
+      const response = await fetch(`/api/local/invoices/import/${syntaxMode}`, {
         method: "POST",
         headers: {
           "content-type": "application/json"
@@ -2299,13 +2324,16 @@ export default function WorkspaceXmlUploadPage() {
       if (!response.ok || !result.created || !result.redirectPath) {
         setUblParseMessage(
           result.reason ||
-            getApiErrorMessage(responseData, "The UBL import request failed.")
+            getApiErrorMessage(
+              responseData,
+              `The ${syntaxLabel} import request failed.`
+            )
         );
         return;
       }
 
       setUblParseMessage(
-        "Imported draft created from parsed UBL XML. Redirecting to the editable draft."
+        `Imported draft created from parsed ${syntaxLabel} XML. Redirecting to the editable draft.`
       );
 
       window.setTimeout(() => {
@@ -2391,7 +2419,7 @@ export default function WorkspaceXmlUploadPage() {
         return nextJobs.slice(0, 10);
       });
       setValidationJobMessage(
-        "XML validation job completed. UBL XSD and guarded Schematron checks report separate technical statuses; not_configured, unsupported, disabled, and preflight_only are not success."
+        "XML validation job completed. UBL/CII XSD and guarded Schematron checks report separate technical statuses; not_configured, unsupported, disabled, and preflight_only are not success."
       );
     } catch {
       setValidationJobMessage(
@@ -2753,7 +2781,9 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               disabled={isParsingUbl || !xmlInput.trim()}
             >
               <FileSearch size={16} />
-              {isParsingUbl ? "Parsing..." : "Parse UBL"}
+              {isParsingUbl
+                ? "Parsing..."
+                : `Parse ${xmlSyntaxMode === "cii" ? "CII" : "UBL"}`}
             </button>
 
             <button
@@ -2764,7 +2794,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               <FileInput size={16} />
               {isImportingUblDraft
                 ? "Creating..."
-                : "Create editable draft"}
+                : `Create ${xmlSyntaxMode === "cii" ? "CII" : "UBL"} draft`}
             </button>
 
             <button
@@ -2778,17 +2808,42 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           </div>
         </div>
 
-        <label className="workspace-xml-input-shell">
-          <span>Paste UBL XML or upload a file above to reuse its XML content.</span>
-          <textarea
-            value={xmlInput}
+        <label className="workspace-filter-field">
+          <span>XML syntax binding</span>
+          <select
+            value={xmlSyntaxMode}
             onChange={(event) => {
-              setXmlInput(event.target.value);
+              setXmlSyntaxMode(event.target.value === "cii" ? "cii" : "ubl");
               setUblParsePreview(null);
               setUblImportResult(null);
               setUblParseMessage("");
             }}
-            placeholder="Paste UBL Invoice XML for technical sandbox parsing..."
+          >
+            <option value="ubl">UBL XML</option>
+            <option value="cii">CII XML</option>
+          </select>
+        </label>
+
+        <label className="workspace-xml-input-shell">
+          <span>
+            Paste {xmlSyntaxMode === "cii" ? "CII" : "UBL"} XML or upload a file
+            above to reuse its XML content. CII roots are auto-detected when
+            possible.
+          </span>
+          <textarea
+            value={xmlInput}
+            onChange={(event) => {
+              const nextXml = event.target.value;
+
+              setXmlInput(nextXml);
+              setXmlSyntaxMode(detectXmlSyntaxMode(nextXml));
+              setUblParsePreview(null);
+              setUblImportResult(null);
+              setUblParseMessage("");
+            }}
+            placeholder={`Paste ${
+              xmlSyntaxMode === "cii" ? "CII CrossIndustryInvoice" : "UBL Invoice"
+            } XML for technical sandbox parsing...`}
             rows={10}
             spellCheck={false}
           />
@@ -2797,9 +2852,10 @@ DELETE /api/local/xml/uploads/:id`}</pre>
         <div className="alert-item">
           <span />
           <p>
-            This preview parses UBL XML into the shared canonical invoice model
-            and runs technical invoice-core validation. It is not official XML
-            validation, Peppol certification, or tax/legal/accounting advice.
+            This preview parses UBL or technical CII XML into the shared
+            canonical invoice model and runs technical invoice-core validation.
+            It is not official XML validation, Peppol certification, CII
+            certification, or tax/legal/accounting advice.
           </p>
         </div>
 
@@ -2816,7 +2872,8 @@ DELETE /api/local/xml/uploads/:id`}</pre>
             <p>
               {ublImportResult.created ? (
                 <>
-                  Imported draft created from parsed UBL XML for technical
+                  Imported draft created from parsed{" "}
+                  {xmlSyntaxMode === "cii" ? "CII" : "UBL"} XML for technical
                   sandbox import.{" "}
                   {ublImportResult.redirectPath ? (
                     <a href={ublImportResult.redirectPath}>
@@ -2888,13 +2945,15 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
           <div className="workspace-data-card is-full">
             <p>Boundary notice</p>
-            <strong>UBL XSD and Schematron are guarded technical checks.</strong>
+            <strong>UBL/CII XSD and Schematron are guarded technical checks.</strong>
             <span>
-              The UBL XSD check must not be treated as valid until local UBL XSD
+              XSD checks must not be treated as valid until reviewed local
               artefacts are configured and the worker reports a passed check.
-              This is not official validation, Peppol certification, EN 16931
-              certification, authority acceptance, tax/legal/accounting advice,
-              or a compliance guarantee.
+              The CII check reports not_configured or not_implemented until a
+              real local adapter exists. This is not official validation,
+              Peppol certification, CII certification, EN 16931 certification,
+              authority acceptance, tax/legal/accounting advice, or a compliance
+              guarantee.
             </span>
           </div>
         </div>
@@ -3356,7 +3415,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
           <div className="workspace-table-head">
             <div>
               <p>Technical sandbox parsing</p>
-              <h3>Detected UBL metadata</h3>
+              <h3>Detected {xmlSyntaxMode === "cii" ? "CII" : "UBL"} metadata</h3>
             </div>
 
             <div className="confidence-label">
@@ -3395,7 +3454,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
               <strong>
                 {formatDetectedValue(ublParsePreview.detected.invoiceNumber)}
               </strong>
-              <span>UBL document ID.</span>
+              <span>{xmlSyntaxMode === "cii" ? "CII document ID." : "UBL document ID."}</span>
             </div>
 
             <div className="workspace-data-card">
@@ -3407,7 +3466,11 @@ DELETE /api/local/xml/uploads/:id`}</pre>
             <div className="workspace-data-card">
               <p>Currency</p>
               <strong>{formatDetectedValue(ublParsePreview.detected.currency)}</strong>
-              <span>DocumentCurrencyCode.</span>
+              <span>
+                {xmlSyntaxMode === "cii"
+                  ? "InvoiceCurrencyCode."
+                  : "DocumentCurrencyCode."}
+              </span>
             </div>
 
             <div className="workspace-data-card is-wide">
@@ -3567,7 +3630,7 @@ DELETE /api/local/xml/uploads/:id`}</pre>
         <section className="findings-console">
           <div className="findings-console-head">
             <div>
-              <p>Parsed UBL XML findings</p>
+              <p>Parsed {xmlSyntaxMode === "cii" ? "CII" : "UBL"} XML findings</p>
               <h3>Canonical preview validation signals</h3>
             </div>
 
@@ -3584,7 +3647,10 @@ DELETE /api/local/xml/uploads/:id`}</pre>
 
                 <div>
                   <strong>NO_PARSE_FINDINGS_RETURNED</strong>
-                  <p>The UBL parser did not return findings for this preview.</p>
+                  <p>
+                    The {xmlSyntaxMode === "cii" ? "CII" : "UBL"} parser did
+                    not return findings for this preview.
+                  </p>
                 </div>
 
                 <span>info</span>

@@ -78,6 +78,24 @@ export const API_RATE_LIMIT_POLICIES = {
     appliesTo: "api_key",
     requestPathPrefix: "/api/v1/invoices/parse/ubl"
   },
+  invoices_export_cii: {
+    policyKey: "invoices_export_cii",
+    windowSeconds: 15 * 60,
+    maxRequests: 30,
+    scope: "invoices:export_cii",
+    description: "Sandbox CII export API limit.",
+    appliesTo: "api_key",
+    requestPathPrefix: "/api/v1/invoices/export/cii"
+  },
+  invoices_parse_cii: {
+    policyKey: "invoices_parse_cii",
+    windowSeconds: 15 * 60,
+    maxRequests: 30,
+    scope: "invoices:parse_cii",
+    description: "Sandbox CII parse API limit.",
+    appliesTo: "api_key",
+    requestPathPrefix: "/api/v1/invoices/parse/cii"
+  },
   xml_validation_jobs: {
     policyKey: "xml_validation_jobs",
     windowSeconds: 15 * 60,
@@ -158,6 +176,14 @@ export function getSandboxRateLimitMessage(policy: ApiRateLimitPolicy) {
 
   if (policy.policyKey === "invoices_parse_ubl") {
     return "This API key exceeded the sandbox rate limit for UBL parsing.";
+  }
+
+  if (policy.policyKey === "invoices_export_cii") {
+    return "This API key exceeded the sandbox rate limit for CII export.";
+  }
+
+  if (policy.policyKey === "invoices_parse_cii") {
+    return "This API key exceeded the sandbox rate limit for CII parsing.";
   }
 
   if (policy.policyKey === "xml_validation_jobs") {

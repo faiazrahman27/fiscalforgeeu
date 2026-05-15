@@ -24,6 +24,9 @@ type ApiKeyScope =
   | "invoices:export_ubl"
   | "invoices:parse_ubl"
   | "invoices:import_ubl"
+  | "invoices:export_cii"
+  | "invoices:parse_cii"
+  | "invoices:import_cii"
   | "xml:validation_jobs"
   | "vat:validate_format"
   | "vat:check_vies"
@@ -119,6 +122,8 @@ type ApiTestEndpointId =
   | "invoice-validation"
   | "ubl-export"
   | "ubl-parse"
+  | "cii-export"
+  | "cii-parse"
   | "validation-runs"
   | "xml-validation-jobs";
 
@@ -167,6 +172,21 @@ const scopeOptions: {
   {
     value: "invoices:import_ubl",
     label: "Import UBL",
+    description: "Reserved; editable draft import is signed-user-only"
+  },
+  {
+    value: "invoices:export_cii",
+    label: "Export CII",
+    description: "POST /api/v1/invoices/export/cii"
+  },
+  {
+    value: "invoices:parse_cii",
+    label: "Parse CII",
+    description: "POST /api/v1/invoices/parse/cii"
+  },
+  {
+    value: "invoices:import_cii",
+    label: "Import CII",
     description: "Reserved; editable draft import is signed-user-only"
   },
   {
@@ -349,6 +369,23 @@ const tinyUblXmlSample = `<?xml version="1.0" encoding="UTF-8"?>
   </cac:InvoiceLine>
 </Invoice>`;
 
+const tinyCiiXmlSample = `<?xml version="1.0" encoding="UTF-8"?>
+<rsm:CrossIndustryInvoice
+  xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+  xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+  xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+  <rsm:ExchangedDocument>
+    <ram:ID>INV-CII-TEST-001</ram:ID>
+    <ram:TypeCode>380</ram:TypeCode>
+    <ram:IssueDateTime><udt:DateTimeString format="102">20260430</udt:DateTimeString></ram:IssueDateTime>
+  </rsm:ExchangedDocument>
+  <rsm:SupplyChainTradeTransaction>
+    <ram:ApplicableHeaderTradeSettlement>
+      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+    </ram:ApplicableHeaderTradeSettlement>
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>`;
+
 const apiTestEndpoints: ApiTestEndpoint[] = [
   {
     id: "validation-rules",
@@ -415,6 +452,26 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
     scope: "invoices:parse_ubl",
     body: {
       xml: tinyUblXmlSample
+    }
+  },
+  {
+    id: "cii-export",
+    label: "CII export",
+    method: "POST",
+    path: "/api/v1/invoices/export/cii",
+    scope: "invoices:export_cii",
+    body: {
+      invoice: invoiceValidationSample
+    }
+  },
+  {
+    id: "cii-parse",
+    label: "CII parse",
+    method: "POST",
+    path: "/api/v1/invoices/parse/cii",
+    scope: "invoices:parse_cii",
+    body: {
+      xml: tinyCiiXmlSample
     }
   },
   {
@@ -510,6 +567,9 @@ function isApiKeyScope(value: unknown): value is ApiKeyScope {
     value === "invoices:export_ubl" ||
     value === "invoices:parse_ubl" ||
     value === "invoices:import_ubl" ||
+    value === "invoices:export_cii" ||
+    value === "invoices:parse_cii" ||
+    value === "invoices:import_cii" ||
     value === "xml:validation_jobs" ||
     value === "vat:validate_format" ||
     value === "vat:check_vies" ||
@@ -2128,6 +2188,18 @@ curl -X POST http://localhost:4000/api/v1/invoices/parse/ubl \\
 
 # UBL export uses canonical invoice JSON. Editable UBL draft import is signed-user-only.
 curl -X POST http://localhost:4000/api/v1/invoices/export/ubl \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d @canonical-invoice.json
+
+# CII parse accepts raw XML or JSON with an xml string.
+curl -X POST http://localhost:4000/api/v1/invoices/parse/cii \\
+  -H "content-type: application/json" \\
+  -H "X-API-Key: il_test_your_key_here" \\
+  -d '{"xml":"<rsm:CrossIndustryInvoice xmlns:rsm=\\"urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100\\"></rsm:CrossIndustryInvoice>"}'
+
+# CII export uses canonical invoice JSON. Editable CII draft import is signed-user-only.
+curl -X POST http://localhost:4000/api/v1/invoices/export/cii \\
   -H "content-type: application/json" \\
   -H "X-API-Key: il_test_your_key_here" \\
   -d @canonical-invoice.json

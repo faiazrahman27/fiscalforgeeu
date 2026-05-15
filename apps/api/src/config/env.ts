@@ -151,6 +151,15 @@ const envSchema = z
     UBL_XSD_ARTIFACT_VERSION: optionalLocalPathSchema,
 
     /*
+     * Optional local CII XSD artefact placeholders. The API/worker never
+     * downloads CII schemas and must report not_configured unless reviewed
+     * local artefacts and a real local validation path are configured.
+     */
+    CII_XSD_ROOT_DIR: optionalLocalPathSchema,
+    CII_CROSS_INDUSTRY_INVOICE_XSD_PATH: optionalLocalPathSchema,
+    CII_XSD_ARTIFACT_VERSION: optionalLocalPathSchema,
+
+    /*
      * Optional local Schematron artefacts for metadata-only XML validation jobs.
      * These paths stay server-side. They report safe configuration diagnostics
      * unless a reviewed execution path is explicitly implemented elsewhere.

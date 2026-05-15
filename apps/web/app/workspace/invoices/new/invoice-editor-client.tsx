@@ -341,9 +341,12 @@ export function InvoiceEditorClient({
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isRunningValidation, setIsRunningValidation] = useState(false);
   const [isExportingUbl, setIsExportingUbl] = useState(false);
+  const [isExportingCii, setIsExportingCii] = useState(false);
   const [validationReport, setValidationReport] =
     useState<LocalValidationReport | null>(null);
   const [ublExportResult, setUblExportResult] =
+    useState<UblExportResult | null>(null);
+  const [ciiExportResult, setCiiExportResult] =
     useState<UblExportResult | null>(null);
   const [ublExportHistory, setUblExportHistory] = useState<
     UblExportHistoryItem[]
@@ -396,6 +399,7 @@ export function InvoiceEditorClient({
 
   useEffect(() => {
     setUblExportResult(null);
+    setCiiExportResult(null);
   }, [draft]);
 
   useEffect(() => {
@@ -1017,6 +1021,64 @@ export function InvoiceEditorClient({
     }
   }
 
+  async function runCiiExport() {
+    setIsExportingCii(true);
+
+    try {
+      const exportPayload = buildUblExportRequestPayload({
+        draft,
+        totals: recalculatedTotals,
+        draftId,
+        validationReport
+      });
+
+      const response = await fetch("/api/local/invoices/export/cii", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(exportPayload)
+      });
+
+      const responseData: unknown = await response.json();
+      const exportData = responseData as ApiUblExportResponse;
+
+      if (!response.ok && !Array.isArray(exportData.findings)) {
+        const apiError = extractApiError(responseData);
+
+        setCiiExportResult(
+          buildCiiErrorResult({
+            code: apiError.code,
+            message: apiError.message
+          })
+        );
+
+        return;
+      }
+
+      setCiiExportResult(mapCiiExportResponse(exportData));
+
+      const exportHistoryRecord = mapCiiExportResponseToHistoryItem(exportData);
+
+      if (exportHistoryRecord) {
+        setUblExportHistory((currentRecords) => [
+          exportHistoryRecord,
+          ...currentRecords.filter((record) => record.id !== exportHistoryRecord.id)
+        ].slice(0, 5));
+      }
+    } catch {
+      setCiiExportResult(
+        buildCiiErrorResult({
+          code: "API_UNAVAILABLE",
+          message:
+            "The local API could not be reached for CII export readiness. Make sure apps/api and apps/web are both running."
+        })
+      );
+    } finally {
+      setIsExportingCii(false);
+    }
+  }
+
   function downloadGeneratedUblXml() {
     if (!ublExportResult?.xml) {
       return;
@@ -1030,6 +1092,26 @@ export function InvoiceEditorClient({
 
     anchor.href = objectUrl;
     anchor.download = ublExportResult.metadata.suggestedFilename;
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+  }
+
+  function downloadGeneratedCiiXml() {
+    if (!ciiExportResult?.xml) {
+      return;
+    }
+
+    const blob = new Blob([ciiExportResult.xml], {
+      type: ciiExportResult.metadata.contentType
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+
+    anchor.href = objectUrl;
+    anchor.download = ciiExportResult.metadata.suggestedFilename;
     anchor.rel = "noopener";
     document.body.appendChild(anchor);
     anchor.click();
@@ -1738,8 +1820,8 @@ export function InvoiceEditorClient({
               <FileCode2 size={20} />
 
               <div>
-                <p>UBL export readiness</p>
-                <h3>Generated UBL XML</h3>
+                <p>XML export readiness</p>
+                <h3>Generated UBL and CII XML</h3>
               </div>
             </div>
 
@@ -1757,6 +1839,16 @@ export function InvoiceEditorClient({
               {isExportingUbl ? "Generating..." : "Generate UBL XML"}
             </button>
 
+            <button
+              type="button"
+              className={styles.fullWidthButton}
+              onClick={runCiiExport}
+              disabled={isExportingCii}
+            >
+              <Code2 size={16} />
+              {isExportingCii ? "Generating..." : "Export CII XML"}
+            </button>
+
             {ublExportResult?.xml ? (
               <button
                 type="button"
@@ -1766,6 +1858,23 @@ export function InvoiceEditorClient({
                 <Download size={16} />
                 Download XML
               </button>
+            ) : null}
+
+            {ciiExportResult?.xml ? (
+              <>
+                <pre className={styles.xmlPreview}>
+                  {ciiExportResult.xml}
+                </pre>
+
+                <button
+                  type="button"
+                  className={styles.fullWidthButton}
+                  onClick={downloadGeneratedCiiXml}
+                >
+                  <Download size={16} />
+                  Download CII XML
+                </button>
+              </>
             ) : null}
 
             {ublExportResult ? (
@@ -1796,6 +1905,35 @@ export function InvoiceEditorClient({
                 ) : null}
               </div>
             ) : null}
+
+            {ciiExportResult ? (
+              <div className={styles.ublExportMeta}>
+                <span>{ciiExportResult.readinessStatus.replaceAll("_", " ")}</span>
+                {ciiExportResult.exportId ? (
+                  <div className={styles.ublExportRecordMeta}>
+                    <p>CII export record</p>
+                    <strong>{ciiExportResult.filename}</strong>
+                    <span>{formatBytes(ciiExportResult.xmlSizeBytes)}</span>
+                    <code>{shortHash(ciiExportResult.xmlSha256)}</code>
+                  </div>
+                ) : null}
+                <p>{ciiExportResult.disclaimer}</p>
+                {ciiExportResult.findings.length > 0 ? (
+                  <div className={styles.findingList}>
+                    {ciiExportResult.findings.map((finding, index) => (
+                      <div
+                        className={styles.findingItem}
+                        key={`${finding.code}-${index}`}
+                      >
+                        <span>{finding.severity}</span>
+                        <strong>{finding.code}</strong>
+                        <p>{finding.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className={styles.sidePanel}>
@@ -1804,20 +1942,20 @@ export function InvoiceEditorClient({
 
               <div>
                 <p>Export records</p>
-                <h3>UBL export history</h3>
+                <h3>XML export history</h3>
               </div>
             </div>
 
             <p className={styles.exportHistoryNote}>
-              Generated UBL XML metadata only. Not official validation or
-              certification.
+              Generated UBL and CII XML metadata only. Not official validation,
+              filing, authority acceptance, or certification.
             </p>
 
             <div className={styles.exportHistoryList}>
               {isLoadingUblExportHistory ? (
                 <div className={styles.exportHistoryItem}>
                   <strong>Loading export records</strong>
-                  <span>Reading recent generated UBL XML metadata.</span>
+                  <span>Reading recent generated XML metadata.</span>
                 </div>
               ) : ublExportHistoryMessage ? (
                 <div className={styles.exportHistoryItem}>
@@ -1827,7 +1965,7 @@ export function InvoiceEditorClient({
               ) : ublExportHistory.length === 0 ? (
                 <div className={styles.exportHistoryItem}>
                   <strong>No export records yet</strong>
-                  <span>Generate UBL XML to create the first metadata record.</span>
+                  <span>Generate UBL or CII XML to create the first metadata record.</span>
                 </div>
               ) : (
                 ublExportHistory.map((record) => (
@@ -1838,6 +1976,14 @@ export function InvoiceEditorClient({
                     </div>
 
                     <dl className={styles.exportHistoryMeta}>
+                      <div>
+                        <dt>Type</dt>
+                        <dd>
+                          {record.exportType === "cii_invoice"
+                            ? "CII XML"
+                            : "UBL XML"}
+                        </dd>
+                      </div>
                       <div>
                         <dt>Size</dt>
                         <dd>{formatBytes(record.xmlSizeBytes)}</dd>
@@ -2604,6 +2750,39 @@ function mapUblExportResponseToHistoryItem(
   });
 }
 
+function mapCiiExportResponseToHistoryItem(
+  response: ApiUblExportResponse
+): UblExportHistoryItem | null {
+  const metadata = response.metadata ?? {};
+  const exportId = response.exportId ?? metadata.exportId ?? "";
+
+  if (!exportId) {
+    return null;
+  }
+
+  return normalizeUblExportHistoryItem({
+    id: exportId,
+    invoiceDraftId: null,
+    validationRunId: null,
+    exportType: "cii_invoice",
+    format: "xml",
+    profile: response.profile ?? metadata.profile ?? "CII export readiness",
+    filename:
+      response.filename ??
+      metadata.filename ??
+      metadata.suggestedFilename ??
+      "invoice-lantern-cii.xml",
+    contentType:
+      response.contentType ??
+      metadata.contentType ??
+      "application/xml; charset=utf-8",
+    xmlSha256: response.xmlSha256 ?? metadata.xmlSha256 ?? "",
+    xmlSizeBytes: response.xmlSizeBytes ?? metadata.xmlSizeBytes ?? 0,
+    status: response.status ?? metadata.status ?? "generated",
+    createdAt: response.createdAt ?? metadata.createdAt ?? new Date().toISOString()
+  });
+}
+
 function mapUblExportResponse(response: ApiUblExportResponse): UblExportResult {
   const metadata = response.metadata ?? {};
   const filename =
@@ -2639,6 +2818,41 @@ function mapUblExportResponse(response: ApiUblExportResponse): UblExportResult {
   };
 }
 
+function mapCiiExportResponse(response: ApiUblExportResponse): UblExportResult {
+  const metadata = response.metadata ?? {};
+  const filename =
+    response.filename ??
+    metadata.filename ??
+    metadata.suggestedFilename ??
+    "invoice-lantern-cii.xml";
+
+  return {
+    xml: response.xml ?? "",
+    readinessStatus: response.readinessStatus ?? "error",
+    metadata: {
+      contentType:
+        response.contentType ??
+        metadata.contentType ??
+        "application/xml; charset=utf-8",
+      suggestedFilename: metadata.suggestedFilename ?? filename,
+      readinessLabel: metadata.readinessLabel ?? "CII export readiness"
+    },
+    exportId: response.exportId ?? metadata.exportId ?? "",
+    filename,
+    xmlSha256: response.xmlSha256 ?? metadata.xmlSha256 ?? "",
+    xmlSizeBytes: response.xmlSizeBytes ?? metadata.xmlSizeBytes ?? 0,
+    status: response.status ?? metadata.status ?? "",
+    profile: response.profile ?? metadata.profile ?? "",
+    findings: Array.isArray(response.findings)
+      ? response.findings.map(mapApiFinding)
+      : [],
+    disclaimer:
+      response.disclaimer ??
+      "This generated CII XML is technical sandbox output only and is not official validation, legal, tax, accounting, filing, authority acceptance, or certification.",
+    generatedAt: response.createdAt ?? metadata.createdAt ?? new Date().toISOString()
+  };
+}
+
 function buildUblErrorResult({
   code,
   message
@@ -2669,6 +2883,40 @@ function buildUblErrorResult({
     ],
     disclaimer:
       "UBL export readiness did not complete. This is not official validation, legal, tax, or accounting advice.",
+    generatedAt: new Date().toISOString()
+  };
+}
+
+function buildCiiErrorResult({
+  code,
+  message
+}: {
+  code: string;
+  message: string;
+}): UblExportResult {
+  return {
+    xml: "",
+    readinessStatus: "error",
+    metadata: {
+      contentType: "application/xml; charset=utf-8",
+      suggestedFilename: "invoice-lantern-cii.xml",
+      readinessLabel: "CII export readiness"
+    },
+    exportId: "",
+    filename: "invoice-lantern-cii.xml",
+    xmlSha256: "",
+    xmlSizeBytes: 0,
+    status: "failed",
+    profile: "CII export readiness",
+    findings: [
+      {
+        code,
+        severity: "fatal",
+        message
+      }
+    ],
+    disclaimer:
+      "CII export readiness did not complete. This is not official validation, legal, tax, accounting, filing, authority acceptance, or certification.",
     generatedAt: new Date().toISOString()
   };
 }

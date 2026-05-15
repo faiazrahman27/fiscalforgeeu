@@ -19,7 +19,10 @@ export const productionInvoiceListQuerySchema = z
 export const productionInvoiceCreateRequestSchema = z
   .object({
     canonicalInvoice: z.unknown(),
-    source: z.enum(["manual", "api", "ubl_import"]).optional().default("manual"),
+    source: z
+      .enum(["manual", "api", "ubl_import", "cii_import"])
+      .optional()
+      .default("manual"),
     draftId: z.string().trim().uuid().nullable().optional()
   })
   .strict();
@@ -33,7 +36,10 @@ export const productionInvoiceUpdateRequestSchema = z
 export const productionInvoiceFromDraftRequestSchema = z
   .object({
     draftId: z.string().trim().min(1).max(120),
-    source: z.enum(["manual", "api", "ubl_import"]).optional().default("manual")
+    source: z
+      .enum(["manual", "api", "ubl_import", "cii_import"])
+      .optional()
+      .default("manual")
   })
   .strict();
 

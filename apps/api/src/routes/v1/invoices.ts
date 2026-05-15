@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  CII_TECHNICAL_DISCLAIMER,
+  buildCiiExportFindings,
+  canonicalToCiiInvoiceXml
+} from "@invoice-lantern/cii";
 import { canonicalToUblInvoiceXml } from "@invoice-lantern/ubl";
 import {
   buildVidaSimulationInputFromCanonicalInvoice,
@@ -37,6 +42,7 @@ import { formatZodError } from "../../utils/zod-error.js";
 
 const PRODUCTION_UBL_EXPORT_DISCLAIMER =
   "Invoice Lantern generated this technical UBL 2.1 export from a production invoice canonical record. It is not official validation, not Peppol-certified, not legal/tax/accounting advice, not official filing, and not authority acceptance.";
+const PRODUCTION_CII_EXPORT_DISCLAIMER = CII_TECHNICAL_DISCLAIMER;
 
 const vidaInvoiceSimulationRequestSchema = z
   .object({
@@ -635,6 +641,114 @@ export async function invoiceRoutes(app: FastifyInstance) {
           totals: record.calculationSummary,
           findings: record.validationSummary.findings,
           disclaimer: PRODUCTION_UBL_EXPORT_DISCLAIMER
+        });
+      } catch (error) {
+        return sendInvoiceLifecycleError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/:id/export/cii",
+    {
+      preHandler: [
+        requireSupabaseUser,
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceExporters, {
+          code: "PRODUCTION_INVOICE_EXPORT_ROLE_REQUIRED",
+          message:
+            "Production invoice CII export requires an organization owner, admin, accountant, or developer role."
+        })
+      ]
+    },
+    async (request, reply) => {
+      const context = getWorkspaceAuthorizationContext(request, reply);
+
+      if (!context) {
+        return reply;
+      }
+
+      const parsedParams = productionInvoiceParamsSchema.safeParse(
+        request.params
+      );
+
+      if (!parsedParams.success) {
+        return sendValidationError(
+          reply,
+          "Production invoice ID failed schema validation.",
+          formatZodError(parsedParams.error)
+        );
+      }
+
+      try {
+        const record = await getProductionInvoice({
+          context,
+          id: parsedParams.data.id
+        });
+
+        if (!record) {
+          return sendNotFound(reply);
+        }
+
+        const xml = canonicalToCiiInvoiceXml(record.canonicalInvoice);
+        const xmlSha256 = calculateXmlSha256(xml);
+        const xmlSizeBytes = Buffer.byteLength(xml, "utf8");
+        const filename = `invoice-lantern-cii-${sanitizeFilenamePart(
+          record.invoiceNumber
+        )}.xml`;
+        const contentType = "application/xml; charset=utf-8";
+        const exportRecord = await saveOrganizationInvoiceExportRecord(
+          {
+            organizationId: context.organizationId,
+            userId: context.userId
+          },
+          {
+            invoiceDraftId: record.draftId,
+            validationRunId: null,
+            exportType: "cii_invoice",
+            format: "xml",
+            profile: record.profile,
+            filename,
+            contentType,
+            xmlSha256,
+            xmlSizeBytes,
+            status: "generated",
+            disclaimer: PRODUCTION_CII_EXPORT_DISCLAIMER
+          }
+        );
+        const ciiFindings = buildCiiExportFindings(record.canonicalInvoice);
+
+        return reply.status(200).send({
+          xml,
+          metadata: {
+            exportId: exportRecord.id,
+            productionInvoiceId: record.id,
+            invoiceNumber: record.invoiceNumber,
+            invoiceType: record.invoiceType,
+            filename: exportRecord.filename,
+            contentType: exportRecord.contentType,
+            xmlSha256: exportRecord.xmlSha256,
+            xmlSizeBytes: exportRecord.xmlSizeBytes,
+            createdAt: exportRecord.createdAt,
+            status: exportRecord.status,
+            profile: exportRecord.profile,
+            readinessLabel: "technical CII XML export"
+          },
+          exportId: exportRecord.id,
+          productionInvoiceId: record.id,
+          filename: exportRecord.filename,
+          contentType: exportRecord.contentType,
+          xmlSha256: exportRecord.xmlSha256,
+          xmlSizeBytes: exportRecord.xmlSizeBytes,
+          createdAt: exportRecord.createdAt,
+          status: exportRecord.status,
+          profile: exportRecord.profile,
+          readinessStatus:
+            record.validationSummary.warningCount > 0 || ciiFindings.length > 0
+              ? "generated_with_warnings"
+              : "generated",
+          totals: record.calculationSummary,
+          findings: [...record.validationSummary.findings, ...ciiFindings],
+          disclaimer: PRODUCTION_CII_EXPORT_DISCLAIMER
         });
       } catch (error) {
         return sendInvoiceLifecycleError(reply, error);

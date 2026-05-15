@@ -89,12 +89,14 @@ const xmlValidationJobSourceTypeSchema = z.enum([
   "uploaded_xml",
   "pasted_xml",
   "generated_ubl",
+  "generated_cii",
   "api_payload"
 ]);
 
 const xmlValidationJobCheckSchema = z.enum([
   "worker_readiness",
   "xsd_ubl",
+  "xsd_cii",
   "schematron_peppol",
   "schematron_en16931",
   "schematron_peppol_placeholder"
@@ -111,7 +113,7 @@ const xmlValidationJobBodySchema = z
     filename: z.string().trim().max(180).optional(),
     sourceType: xmlValidationJobSourceTypeSchema.optional(),
     processingMode: xmlValidationJobProcessingModeSchema.optional(),
-    requestedChecks: z.array(xmlValidationJobCheckSchema).max(5).optional(),
+    requestedChecks: z.array(xmlValidationJobCheckSchema).max(6).optional(),
     xmlReadinessReportId: z.string().uuid().nullable().optional(),
     invoiceDraftId: z.string().uuid().nullable().optional(),
     validationRunId: z.string().uuid().nullable().optional()
@@ -288,6 +290,12 @@ function buildAsyncXmlValidationJobResultSummary(input: {
     },
     xsdUbl: {
       requested: input.requestedChecks.includes("xsd_ubl"),
+      configured: false,
+      validationExecuted: false,
+      markedValid: false
+    },
+    xsdCii: {
+      requested: input.requestedChecks.includes("xsd_cii"),
       configured: false,
       validationExecuted: false,
       markedValid: false

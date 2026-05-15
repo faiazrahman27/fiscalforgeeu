@@ -13,12 +13,14 @@ export type InvoiceExportStatus =
   | "failed"
   | "deleted";
 
+export type InvoiceExportType = "ubl_invoice" | "cii_invoice";
+
 export type InvoiceExportRecord = {
   id: string;
   organizationId?: string;
   invoiceDraftId: string | null;
   validationRunId: string | null;
-  exportType: "ubl_invoice";
+  exportType: InvoiceExportType;
   format: "xml";
   profile: string;
   filename: string;
@@ -34,7 +36,7 @@ export type CreateInvoiceExportRecordInput = {
   organizationId?: string;
   invoiceDraftId?: string | null;
   validationRunId?: string | null;
-  exportType: "ubl_invoice";
+  exportType: InvoiceExportType;
   format: "xml";
   profile: string;
   filename: string;
@@ -164,6 +166,10 @@ function normalizeInvoiceExportStatus(value: string): InvoiceExportStatus {
   return "generated";
 }
 
+function normalizeInvoiceExportType(value: string): InvoiceExportType {
+  return value === "cii_invoice" ? "cii_invoice" : "ubl_invoice";
+}
+
 function normalizeSupabaseInvoiceExportRow(
   row: SupabaseInvoiceExportRow
 ): InvoiceExportRecord {
@@ -171,7 +177,7 @@ function normalizeSupabaseInvoiceExportRow(
     id: row.id,
     invoiceDraftId: row.invoice_draft_id,
     validationRunId: row.validation_run_id,
-    exportType: "ubl_invoice",
+    exportType: normalizeInvoiceExportType(row.export_type),
     format: "xml",
     profile: row.profile,
     filename: row.filename,

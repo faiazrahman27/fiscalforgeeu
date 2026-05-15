@@ -3,6 +3,7 @@ import type { SchematronLayer, UblXsdArtifactInfo } from "@invoice-lantern/ubl";
 export type XmlWorkerCheck =
   | "worker_readiness"
   | "xsd_ubl"
+  | "xsd_cii"
   | "schematron_peppol"
   | "schematron_en16931"
   | "schematron_peppol_placeholder";

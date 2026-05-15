@@ -25,6 +25,7 @@ type ProductionInvoiceDetail = {
 };
 
 type ProductionInvoiceExportMetadata = {
+  label: string;
   filename: string;
   contentType: string;
   xmlSha256: string;
@@ -128,7 +129,8 @@ function normalizeProductionInvoice(value: unknown): ProductionInvoiceDetail | n
 }
 
 function normalizeExportMetadata(
-  value: unknown
+  value: unknown,
+  label = "Technical UBL output"
 ): ProductionInvoiceExportMetadata | null {
   if (!isPlainObject(value)) {
     return null;
@@ -144,6 +146,7 @@ function normalizeExportMetadata(
   }
 
   return {
+    label,
     filename,
     contentType,
     xmlSha256,
@@ -304,6 +307,7 @@ export default function ExistingInvoiceDraftPage({
   const [isLoadingDraft, setIsLoadingDraft] = useState(true);
   const [loadMessage, setLoadMessage] = useState("");
   const [isExportingUbl, setIsExportingUbl] = useState(false);
+  const [isExportingCii, setIsExportingCii] = useState(false);
   const [exportMetadata, setExportMetadata] =
     useState<ProductionInvoiceExportMetadata | null>(null);
   const [exportMessage, setExportMessage] = useState("");
@@ -514,6 +518,55 @@ export default function ExistingInvoiceDraftPage({
       );
     } finally {
       setIsExportingUbl(false);
+    }
+  }
+
+  async function exportProductionCii() {
+    if (!productionInvoice) {
+      return;
+    }
+
+    setIsExportingCii(true);
+    setExportMessage("");
+    setExportMetadata(null);
+
+    try {
+      const response = await fetch(
+        `/api/local/invoices/${encodeURIComponent(productionInvoice.id)}/export/cii`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({}),
+          cache: "no-store"
+        }
+      );
+      const responseData = await readResponseBody(response);
+
+      if (!response.ok) {
+        setExportMessage(getApiErrorMessage(responseData));
+        return;
+      }
+
+      const metadata = normalizeExportMetadata(
+        responseData,
+        "Technical CII XML export"
+      );
+
+      if (!metadata) {
+        setExportMessage("The CII export metadata could not be read safely.");
+        return;
+      }
+
+      setExportMetadata(metadata);
+      setExportMessage("Technical CII XML export generated.");
+    } catch {
+      setExportMessage(
+        "Could not export production invoice CII XML through the local API proxy."
+      );
+    } finally {
+      setIsExportingCii(false);
     }
   }
 
@@ -744,6 +797,16 @@ export default function ExistingInvoiceDraftPage({
               >
                 <FileText size={16} />
                 {isExportingUbl ? "Exporting" : "Export UBL"}
+              </button>
+
+              <button
+                className="text-link-button"
+                disabled={isExportingCii}
+                onClick={exportProductionCii}
+                type="button"
+              >
+                <FileText size={16} />
+                {isExportingCii ? "Exporting" : "Export CII XML"}
               </button>
             </div>
           </div>
@@ -983,7 +1046,7 @@ export default function ExistingInvoiceDraftPage({
             <div className="workspace-table-head">
               <div>
                 <p>Export metadata</p>
-                <h3>Technical UBL output</h3>
+                <h3>{exportMetadata.label}</h3>
               </div>
             </div>
 
@@ -1009,9 +1072,9 @@ export default function ExistingInvoiceDraftPage({
                 <span>Readiness</span>
                 <strong>{exportMetadata.readinessStatus}</strong>
                 <p>
-                  XSD, Schematron, UBL export, and lifecycle status remain
-                  technical only and are not certification or authority
-                  acceptance.
+                  XSD, Schematron, XML export, and lifecycle status remain
+                  technical only and are not certification, official filing, or
+                  authority acceptance.
                 </p>
               </article>
             </div>

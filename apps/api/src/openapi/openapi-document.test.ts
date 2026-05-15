@@ -111,11 +111,15 @@ test("OpenAPI documents the implemented developer-facing API route surface", () 
     ["/invoices/{id}/transition", "post"],
     ["/invoices/{id}/lifecycle-events", "get"],
     ["/invoices/{id}/export/ubl", "post"],
+    ["/invoices/{id}/export/cii", "post"],
     ["/invoices/{id}/simulate-vida", "post"],
     ["/invoices/validate", "post"],
     ["/invoices/export/ubl", "post"],
     ["/invoices/parse/ubl", "post"],
     ["/invoices/import/ubl", "post"],
+    ["/invoices/export/cii", "post"],
+    ["/invoices/parse/cii", "post"],
+    ["/invoices/import/cii", "post"],
     ["/invoices/exports", "get"],
     ["/xml/validation-jobs", "get"],
     ["/xml/validation-jobs", "post"],
@@ -337,6 +341,8 @@ test("OpenAPI documents scopes and signed-user-only API boundaries", () => {
     ["/invoices/validate", "post", "invoices:validate"],
     ["/invoices/export/ubl", "post", "invoices:export_ubl"],
     ["/invoices/parse/ubl", "post", "invoices:parse_ubl"],
+    ["/invoices/export/cii", "post", "invoices:export_cii"],
+    ["/invoices/parse/cii", "post", "invoices:parse_cii"],
     ["/xml/validation-jobs", "post", "xml:validation_jobs"],
     ["/xml/validation-jobs", "get", "xml:validation_jobs"],
     ["/vat/validate-format", "post", "vat:validate_format"],
@@ -366,6 +372,19 @@ test("OpenAPI documents scopes and signed-user-only API boundaries", () => {
   );
   assert.match(String(importUbl.description), /reserved invoices:import_ubl/);
   assert.match(String(importUbl.description), /use POST \/invoices\/parse\/ubl/);
+
+  const importCii = readOperation(paths, "/invoices/import/cii", "post");
+  const importCiiSecurity = JSON.stringify(importCii.security);
+
+  assert.equal(importCii["x-required-scope"], undefined);
+  assert.match(importCiiSecurity, /SupabaseBearerAuth/);
+  assert.doesNotMatch(importCiiSecurity, /ApiKeyAuth/);
+  assert.match(
+    String(importCii.description),
+    /Organization API keys are intentionally rejected/
+  );
+  assert.match(String(importCii.description), /reserved invoices:import_cii/);
+  assert.match(String(importCii.description), /use POST \/invoices\/parse\/cii/);
 
   for (const [path, method] of [
     ["/api-keys", "get"],
@@ -740,6 +759,7 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/invoices/from-draft",
     "/invoices/{id}",
     "/invoices/{id}/export/ubl",
+    "/invoices/{id}/export/cii",
     "/invoices/{id}/simulate-vida",
     "/invoices/{id}/transition",
     "/invoices/{id}/lifecycle-events",
@@ -747,6 +767,9 @@ test("OpenAPI documents active endpoints and leaves planned endpoints inactive",
     "/invoices/export/ubl",
     "/invoices/parse/ubl",
     "/invoices/import/ubl",
+    "/invoices/export/cii",
+    "/invoices/parse/cii",
+    "/invoices/import/cii",
     "/invoices/exports",
     "/xml/validation-jobs",
     "/xml/validation-jobs/{id}",

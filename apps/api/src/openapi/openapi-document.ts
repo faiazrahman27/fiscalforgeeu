@@ -19,6 +19,23 @@ const tinyUblXml = `<?xml version="1.0" encoding="UTF-8"?>
   </cac:InvoiceLine>
 </Invoice>`;
 
+const tinyCiiXml = `<?xml version="1.0" encoding="UTF-8"?>
+<rsm:CrossIndustryInvoice
+  xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+  xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"
+  xmlns:udt="urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100">
+  <rsm:ExchangedDocument>
+    <ram:ID>INV-API-CII-001</ram:ID>
+    <ram:TypeCode>380</ram:TypeCode>
+    <ram:IssueDateTime><udt:DateTimeString format="102">20260430</udt:DateTimeString></ram:IssueDateTime>
+  </rsm:ExchangedDocument>
+  <rsm:SupplyChainTradeTransaction>
+    <ram:ApplicableHeaderTradeSettlement>
+      <ram:InvoiceCurrencyCode>EUR</ram:InvoiceCurrencyCode>
+    </ram:ApplicableHeaderTradeSettlement>
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>`;
+
 const exampleCanonicalInvoice = {
   profile: "EN16931",
   document: {
@@ -511,9 +528,14 @@ const openApiDocument = {
         "Technical UBL XML export and parse endpoints. These are not official XML validation or authority submission."
     },
     {
+      name: "CII",
+      description:
+        "Technical UN/CEFACT CII-style XML export and parse endpoints mapped through the canonical invoice model. These are not official CII certification, EN 16931 certification, Peppol certification, legal/tax/accounting compliance, filing, or authority acceptance."
+    },
+    {
       name: "XML Validation Jobs",
       description:
-        "XML validation job endpoints for worker readiness, configuration-gated local UBL XSD validation, and guarded local Schematron execution. schematron_peppol and schematron_en16931 execute only when explicit policy, xpath_engine, reviewed local artefacts, safe XML, and supported Schematron/XPath gates pass. schematron_peppol_placeholder remains a deprecated preflight metadata alias. These endpoints return sanitized technical summaries and findings only; they do not provide official validation, certification, filing, authority acceptance, legal/tax/accounting advice, or compliance guarantees."
+        "XML validation job endpoints for worker readiness, configuration-gated local UBL/CII XSD checks, and guarded local Schematron execution. schematron_peppol and schematron_en16931 execute only when explicit policy, xpath_engine, reviewed local artefacts, safe XML, and supported Schematron/XPath gates pass. xsd_cii returns not_configured or not_implemented until reviewed local CII artefacts and a real local adapter exist. schematron_peppol_placeholder remains a deprecated preflight metadata alias. These endpoints return sanitized technical summaries and findings only; they do not provide official validation, certification, filing, authority acceptance, legal/tax/accounting advice, or compliance guarantees."
     },
     {
       name: "VAT",
@@ -2218,6 +2240,35 @@ const openApiDocument = {
         }
       })
     },
+    "/invoices/{id}/export/cii": {
+      post: bearerOperation({
+        tags: ["CII"],
+        summary: "Export a production invoice as technical CII XML",
+        description:
+          "Generates a technical UN/CEFACT CII-style XML export from the tenant-scoped production invoice canonical record and stores safe invoice_exports metadata. This is structured invoice interoperability output only; it is not official CII certification, EN 16931 certification, Peppol certification, legal/tax/accounting advice, official filing, or authority acceptance.",
+        parameters: [
+          {
+            name: "id",
+            in: "path",
+            required: true,
+            schema: {
+              type: "string",
+              format: "uuid"
+            }
+          }
+        ],
+        responses: {
+          "200": response(
+            "Generated technical CII XML and safe export metadata.",
+            ref("UblExportResponse")
+          ),
+          "404": errorResponse(
+            "Production invoice was not found in this workspace.",
+            "PRODUCTION_INVOICE_NOT_FOUND"
+          )
+        }
+      })
+    },
     "/invoices/{id}/simulate-vida": {
       post: bearerOperation({
         tags: ["Invoices", "Transactions"],
@@ -2540,6 +2591,151 @@ const openApiDocument = {
           ),
           "422": response(
             "UBL XML could not be safely represented as an editable draft.",
+            ref("UblImportResponse")
+          )
+        }
+      })
+    },
+    "/invoices/export/cii": {
+      post: scopedApiKeyOperation({
+        tags: ["CII"],
+        summary: "Export a canonical invoice as technical CII XML",
+        description:
+          "Generates a technical UN/CEFACT CII-style XML export from a canonical invoice payload and stores safe export metadata. Draft-only lookup is not available to organization API keys. This endpoint supports canonical invoice mapping and syntax interoperability only; it is not official CII certification, EN 16931 certification, Peppol certification, legal/tax/accounting advice, official filing, or authority acceptance.",
+        scope: "invoices:export_cii",
+        requestBody: {
+          required: true,
+          content: jsonContent(ref("UblExportRequest"), {
+            ciiExport: {
+              value: {
+                invoice: exampleCanonicalInvoice,
+                validationRunId: "val_example"
+              }
+            }
+          })
+        },
+        responses: {
+          "200": {
+            description: "Generated technical CII XML and safe export metadata.",
+            headers: rateLimitHeaders,
+            content: jsonContent(ref("UblExportResponse"))
+          },
+          "422": response("CII export blocked by fatal findings.", {
+            type: "object",
+            properties: {
+              xml: {
+                type: "string",
+                example: ""
+              },
+              metadata: ref("UblExportMetadata"),
+              readinessStatus: {
+                type: "string",
+                example: "blocked"
+              },
+              totals: ref("InvoiceTotals"),
+              findings: {
+                type: "array",
+                items: ref("ValidationFinding")
+              },
+              disclaimer: {
+                type: "string"
+              }
+            }
+          })
+        }
+      })
+    },
+    "/invoices/parse/cii": {
+      post: scopedApiKeyOperation({
+        tags: ["CII"],
+        summary: "Parse CII XML into the Invoice Lantern canonical model",
+        description:
+          "Parses technical UN/CEFACT CII-style XML into the Invoice Lantern canonical invoice model and returns technical parser findings and warnings. The endpoint accepts raw XML with an XML content type or JSON with an xml string. Parsing is not official CII validation, not EN 16931 certification, not Peppol certification, not legal/tax/accounting advice, not official filing, and not authority acceptance.",
+        scope: "invoices:parse_cii",
+        requestBody: {
+          required: true,
+          content: {
+            ...jsonContent(ref("UblParseJsonRequest"), {
+              jsonXml: {
+                value: {
+                  xml: tinyCiiXml
+                }
+              }
+            }),
+            "application/xml": {
+              schema: {
+                type: "string"
+              },
+              example: tinyCiiXml
+            },
+            "text/xml": {
+              schema: {
+                type: "string"
+              },
+              example: tinyCiiXml
+            }
+          }
+        },
+        responses: {
+          "200": {
+            description: "Parsed technical CII XML.",
+            headers: rateLimitHeaders,
+            content: jsonContent(ref("UblParseResponse"))
+          },
+          "413": errorResponse("XML body is too large.", "XML_BODY_TOO_LARGE"),
+          "415": errorResponse(
+            "Use raw XML or JSON with an xml string for CII parsing.",
+            "UNSUPPORTED_MEDIA_TYPE"
+          ),
+          "422": response(
+            "CII XML parsed but could not produce a valid canonical invoice.",
+            ref("UblParseResponse")
+          )
+        }
+      })
+    },
+    "/invoices/import/cii": {
+      post: bearerOperation({
+        tags: ["CII"],
+        summary: "Import CII XML into an editable invoice draft",
+        description:
+          "Parses safe technical CII XML into the Invoice Lantern canonical model and creates an editable workspace invoice draft for a signed-in workspace user with an allowed draft-edit role. Organization API keys are intentionally rejected for editable draft creation in this step; use POST /invoices/parse/cii with the invoices:parse_cii scope for API-key parsing. The reserved invoices:import_cii scope documents access control intent but is not an active organization API-key draft creation route.",
+        requestBody: {
+          required: true,
+          content: {
+            ...jsonContent(ref("UblParseJsonRequest"), {
+              jsonXml: {
+                value: {
+                  xml: tinyCiiXml
+                }
+              }
+            }),
+            "application/xml": {
+              schema: {
+                type: "string"
+              },
+              example: tinyCiiXml
+            },
+            "text/xml": {
+              schema: {
+                type: "string"
+              },
+              example: tinyCiiXml
+            }
+          }
+        },
+        responses: {
+          "201": response(
+            "Editable draft created from parsed CII XML.",
+            ref("UblImportResponse")
+          ),
+          "413": errorResponse("XML body is too large.", "XML_BODY_TOO_LARGE"),
+          "415": errorResponse(
+            "Use raw XML or JSON with an xml string for CII draft import.",
+            "UNSUPPORTED_MEDIA_TYPE"
+          ),
+          "422": response(
+            "CII XML could not be safely represented as an editable draft.",
             ref("UblImportResponse")
           )
         }
@@ -6212,6 +6408,9 @@ const openApiDocument = {
           "invoices:export_ubl",
           "invoices:parse_ubl",
           "invoices:import_ubl",
+          "invoices:export_cii",
+          "invoices:parse_cii",
+          "invoices:import_cii",
           "xml:validation_jobs",
           "vat:validate_format",
           "vat:check_vies",
@@ -7866,7 +8065,13 @@ const openApiDocument = {
           },
           sourceType: {
             type: "string",
-            enum: ["uploaded_xml", "pasted_xml", "generated_ubl", "api_payload"],
+            enum: [
+              "uploaded_xml",
+              "pasted_xml",
+              "generated_ubl",
+              "generated_cii",
+              "api_payload"
+            ],
             default: "uploaded_xml"
           },
           requestedChecks: {
@@ -7876,6 +8081,7 @@ const openApiDocument = {
               enum: [
                 "worker_readiness",
                 "xsd_ubl",
+                "xsd_cii",
                 "schematron_peppol_placeholder",
                 "schematron_peppol",
                 "schematron_en16931"
@@ -9716,7 +9922,7 @@ const openApiDocument = {
       XmlValidationJobFinding: {
         type: "object",
         description:
-          "Structured technical sandbox finding. xsd_ubl findings are mapped from local XSD validator messages and may include sanitized technical detail, but never raw XML. schematron_peppol and schematron_en16931 findings are mapped from guarded local Schematron execution through schematron_result_mapper_v1 when explicit execute policy, xpath_engine, reviewed local artifacts, safe XML, and supported constructs all pass. schematron_peppol_placeholder remains a safe deprecated preflight alias. Optional Schematron fields are sanitized and never contain raw XML, Schematron file contents, full absolute local paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance.",
+          "Structured technical sandbox finding. xsd_ubl findings are mapped from local XSD validator messages and may include sanitized technical detail, but never raw XML. xsd_cii reports guarded local CII XSD configuration/readiness only and does not mark XML valid unless a real local adapter exists. schematron_peppol and schematron_en16931 findings are mapped from guarded local Schematron execution through schematron_result_mapper_v1 when explicit execute policy, xpath_engine, reviewed local artifacts, safe XML, and supported constructs all pass. schematron_peppol_placeholder remains a safe deprecated preflight alias. Optional Schematron fields are sanitized and never contain raw XML, Schematron file contents, full absolute local paths, certification, compliance or legal/tax/accounting guarantees, or authority acceptance.",
         required: [
           "code",
           "severity",
@@ -9742,6 +9948,7 @@ const openApiDocument = {
             enum: [
               "worker_readiness",
               "xsd_ubl",
+              "xsd_cii",
               "schematron_peppol_placeholder",
               "schematron_peppol",
               "schematron_en16931"
@@ -9889,6 +10096,7 @@ const openApiDocument = {
               enum: [
                 "worker_readiness",
                 "xsd_ubl",
+                "xsd_cii",
                 "schematron_peppol_placeholder",
                 "schematron_peppol",
                 "schematron_en16931"
@@ -9902,6 +10110,7 @@ const openApiDocument = {
               enum: [
                 "worker_readiness",
                 "xsd_ubl",
+                "xsd_cii",
                 "schematron_peppol_placeholder",
                 "schematron_peppol",
                 "schematron_en16931"
@@ -9915,6 +10124,7 @@ const openApiDocument = {
               enum: [
                 "worker_readiness",
                 "xsd_ubl",
+                "xsd_cii",
                 "schematron_peppol_placeholder",
                 "schematron_peppol",
                 "schematron_en16931"
@@ -9953,6 +10163,7 @@ const openApiDocument = {
               checkStatuses: {
                 worker_readiness: "completed",
                 xsd_ubl: "not_configured",
+                xsd_cii: "not_configured",
                 schematron_peppol_placeholder: "not_implemented",
                 schematron_peppol: "not_configured",
                 schematron_en16931: "not_configured"

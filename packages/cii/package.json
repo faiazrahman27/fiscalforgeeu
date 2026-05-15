@@ -1,0 +1,33 @@
+{
+  "name": "@invoice-lantern/cii",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "npm --prefix ../invoice-core run build",
+    "build": "tsc -p tsconfig.build.json",
+    "precheck": "npm --prefix ../invoice-core run build",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm --prefix ../invoice-core run build",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@invoice-lantern/invoice-core": "file:../invoice-core",
+    "fast-xml-parser": "^5.7.2",
+    "invoice-lantern-platform": "file:../..",
+    "xmlbuilder2": "^3.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}

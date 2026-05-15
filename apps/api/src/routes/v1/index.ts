@@ -6,11 +6,13 @@ import { apiRequestRoutes } from "./api-requests.js";
 import { apiUsageRoutes } from "./api-usage.js";
 import { adminRuleConsoleRoutes } from "./admin-rule-console.js";
 import { countryPackRoutes } from "./country-packs.js";
+import { importCiiRoutes } from "./import-cii.js";
 import { importUblRoutes } from "./import-ubl.js";
 import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { invoiceExportRoutes } from "./invoice-exports.js";
 import { invoiceRoutes } from "./invoices.js";
 import { legalDocumentRoutes } from "./legal-documents.js";
+import { parseCiiRoutes } from "./parse-cii.js";
 import { parseUblRoutes } from "./parse-ubl.js";
 import { securityReadinessRoutes } from "./security-readiness.js";
 import { transactionRoutes } from "./transactions.js";
@@ -87,6 +89,14 @@ export async function v1Routes(app: FastifyInstance) {
   });
 
   await app.register(importUblRoutes, {
+    prefix: "/invoices"
+  });
+
+  await app.register(parseCiiRoutes, {
+    prefix: "/invoices"
+  });
+
+  await app.register(importCiiRoutes, {
     prefix: "/invoices"
   });
 

@@ -30,7 +30,12 @@ export type XmlValidationJobRecord = {
   xmlReadinessReportId: string | null;
   invoiceDraftId: string | null;
   validationRunId: string | null;
-  sourceType: "uploaded_xml" | "pasted_xml" | "generated_ubl" | "api_payload";
+  sourceType:
+    | "uploaded_xml"
+    | "pasted_xml"
+    | "generated_ubl"
+    | "generated_cii"
+    | "api_payload";
   documentType: string | null;
   filename: string | null;
   xmlSha256: string;
@@ -255,6 +260,7 @@ function normalizeSourceType(value: string): XmlValidationJobRecord["sourceType"
   if (
     value === "pasted_xml" ||
     value === "generated_ubl" ||
+    value === "generated_cii" ||
     value === "api_payload"
   ) {
     return value;
@@ -270,6 +276,10 @@ function normalizeCheck(value: unknown): XmlValidationJobCheck | null {
 
   if (value === "xsd_ubl") {
     return "xsd_ubl";
+  }
+
+  if (value === "xsd_cii") {
+    return "xsd_cii";
   }
 
   if (value === "schematron_peppol") {

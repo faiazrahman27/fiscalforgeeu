@@ -891,6 +891,12 @@ function buildQueueFailureResult(input: {
         validationExecuted: false,
         markedValid: false
       },
+      xsdCii: {
+        requested: requestedChecks.includes("xsd_cii"),
+        configured: false,
+        validationExecuted: false,
+        markedValid: false
+      },
       schematronPeppol: {
         requested:
           requestedChecks.includes("schematron_peppol") ||

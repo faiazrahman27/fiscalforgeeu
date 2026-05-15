@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:packages": "npm --prefix ../../packages/tax-engine run build && npm --prefix ../../packages/invoice-core run build && npm --prefix ../../packages/ubl run build && npm --prefix ../../packages/country-packs run build && npm --prefix ../../packages/vida-simulator run build",
+    "build:packages": "npm --prefix ../../packages/tax-engine run build && npm --prefix ../../packages/invoice-core run build && npm --prefix ../../packages/ubl run build && npm --prefix ../../packages/cii run build && npm --prefix ../../packages/country-packs run build && npm --prefix ../../packages/vida-simulator run build",
     "predev": "npm run build:packages",
     "dev": "tsx watch src/server.ts",
     "prebuild": "npm run build:packages",
@@ -21,6 +21,7 @@
     "@fastify/helmet": "^13.0.2",
     "@fastify/rate-limit": "^10.3.0",
     "@invoice-lantern/country-packs": "file:../../packages/country-packs",
+    "@invoice-lantern/cii": "file:../../packages/cii",
     "@invoice-lantern/invoice-core": "file:../../packages/invoice-core",
     "@invoice-lantern/tax-engine": "file:../../packages/tax-engine",
     "@invoice-lantern/ubl": "file:../../packages/ubl",

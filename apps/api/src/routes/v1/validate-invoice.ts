@@ -6,6 +6,11 @@ import {
   type CanonicalInvoice,
   type ValidationFindingSeverity
 } from "@invoice-lantern/invoice-core";
+import {
+  CII_TECHNICAL_DISCLAIMER,
+  buildCiiExportFindings,
+  canonicalToCiiInvoiceXml
+} from "@invoice-lantern/cii";
 import { canonicalToUblInvoiceXml } from "@invoice-lantern/ubl";
 import { requireApiKeyRateLimitPolicy } from "../../middleware/require-api-rate-limit.js";
 import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
@@ -177,6 +182,18 @@ function sendUblExportStorageError(reply: FastifyReply, error: unknown) {
   });
 }
 
+function sendCiiExportStorageError(reply: FastifyReply, error: unknown) {
+  console.error("CII export storage error:", error);
+
+  return reply.status(500).send({
+    error: {
+      code: "CII_EXPORT_STORAGE_ERROR",
+      message: "Could not save the generated CII XML export record.",
+      details: error instanceof Error ? error.message : null
+    }
+  });
+}
+
 function hasBlockingFinding(findings: { severity: ValidationFindingSeverity }[]) {
   return findings.some(
     (finding) => finding.severity === "fatal" || finding.severity === "blocked"
@@ -195,10 +212,18 @@ function isCrossBorderInvoice(payload: CanonicalInvoice) {
   );
 }
 
-function buildSandboxDisclaimer(subject: "validation" | "ubl_export") {
-  return subject === "ubl_export"
-    ? "Invoice Lantern generated this UBL XML as an independent export readiness sandbox output. It is not official validation, certification, legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority approval."
-    : "This API response is a technical validation and readiness sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation.";
+function buildSandboxDisclaimer(
+  subject: "validation" | "ubl_export" | "cii_export"
+) {
+  if (subject === "ubl_export") {
+    return "Invoice Lantern generated this UBL XML as an independent export readiness sandbox output. It is not official validation, certification, legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority approval.";
+  }
+
+  if (subject === "cii_export") {
+    return CII_TECHNICAL_DISCLAIMER;
+  }
+
+  return "This API response is a technical validation and readiness sandbox result. It is not legal, tax, accounting, Peppol, EN 16931, ViDA, government, or authority validation.";
 }
 
 function sanitizeFilenamePart(value: string) {
@@ -707,6 +732,161 @@ export async function validateInvoiceRoutes(app: FastifyInstance) {
         });
       } catch (error) {
         return sendUblExportStorageError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/export/cii",
+    {
+      preHandler: [
+        requireApiKeyScopes(["invoices:export_cii"]),
+        requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceExporters, {
+          code: "INVOICE_EXPORT_ROLE_REQUIRED",
+          message:
+            "CII export requires an organization owner, admin, accountant, or developer role."
+        }),
+        requireApiKeyRateLimitPolicy("invoices_export_cii")
+      ]
+    },
+    async (request, reply) => {
+      let exportRequest: UblExportRequestPayload;
+
+      if (request.authenticatedApiKey && isDraftOnlyUblExportRequest(request)) {
+        return reply.status(403).send({
+          error: {
+            code: "API_KEY_DRAFT_EXPORT_UNSUPPORTED",
+            message:
+              "API-key CII export requests must include invoice payload data. Draft lookup stays limited to signed-in workspace users in this step.",
+            details: null
+          }
+        });
+      }
+
+      try {
+        exportRequest = await readInvoicePayloadForUblExport(request);
+      } catch (error) {
+        return sendStorageError(reply, error);
+      }
+
+      if (!exportRequest.invoiceInput) {
+        return reply.status(404).send({
+          error: {
+            code: "DRAFT_NOT_FOUND",
+            message: "Invoice draft was not found for CII export readiness.",
+            details: null
+          }
+        });
+      }
+
+      const parsedInvoice = validateCanonicalInvoice(exportRequest.invoiceInput);
+
+      if (!parsedInvoice.success) {
+        return reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Request body failed canonical invoice schema validation.",
+            details: formatZodError(parsedInvoice.error)
+          },
+          findings: parsedInvoice.findings,
+          disclaimer: buildSandboxDisclaimer("cii_export")
+        });
+      }
+
+      const invoice = parsedInvoice.invoice;
+      const findings = [
+        ...buildValidationFindings(invoice),
+        ...buildCiiExportFindings(invoice)
+      ];
+      const totals = calculateValidationTotals(invoice);
+      const hasBlocking = hasBlockingFinding(findings);
+      const hasWarning = hasWarningFinding(findings);
+      const disclaimer = buildSandboxDisclaimer("cii_export");
+      const suggestedFilename = `invoice-lantern-cii-${sanitizeFilenamePart(
+        invoice.document.number
+      )}.xml`;
+      const contentType = "application/xml; charset=utf-8";
+      const profile = invoice.document.profile.trim() || "CII export readiness";
+
+      const responseMetadata = {
+        contentType,
+        suggestedFilename,
+        readinessLabel: "CII export readiness"
+      };
+
+      if (hasBlocking) {
+        return reply.status(422).send({
+          xml: "",
+          metadata: responseMetadata,
+          readinessStatus: "blocked",
+          totals,
+          findings,
+          disclaimer
+        });
+      }
+
+      const xml = canonicalToCiiInvoiceXml(invoice);
+      const xmlSha256 = calculateXmlSha256(xml);
+      const xmlSizeBytes = Buffer.byteLength(xml, "utf8");
+
+      try {
+        const authenticatedContext = getAuthenticatedInvoiceExportContext(request);
+        const exportRecordInput = {
+          invoiceDraftId: exportRequest.invoiceDraftId,
+          validationRunId: exportRequest.validationRunId,
+          exportType: "cii_invoice" as const,
+          format: "xml" as const,
+          profile,
+          filename: suggestedFilename,
+          contentType,
+          xmlSha256,
+          xmlSizeBytes,
+          status: "generated" as const,
+          disclaimer
+        };
+
+        const exportRecord = request.authenticatedApiKey
+          ? await saveOrganizationInvoiceExportRecord(
+              {
+                organizationId: request.authenticatedApiKey.organizationId,
+                userId: request.authenticatedApiKey.createdBy
+              },
+              exportRecordInput
+            )
+          : authenticatedContext
+            ? await saveAuthenticatedInvoiceExportRecord(
+                authenticatedContext,
+                exportRecordInput
+              )
+            : await saveInvoiceExportRecord(exportRecordInput);
+
+        return reply.status(200).send({
+          xml,
+          metadata: {
+            ...responseMetadata,
+            exportId: exportRecord.id,
+            filename: exportRecord.filename,
+            xmlSha256: exportRecord.xmlSha256,
+            xmlSizeBytes: exportRecord.xmlSizeBytes,
+            createdAt: exportRecord.createdAt,
+            status: exportRecord.status,
+            profile: exportRecord.profile
+          },
+          exportId: exportRecord.id,
+          filename: exportRecord.filename,
+          contentType: exportRecord.contentType,
+          xmlSha256: exportRecord.xmlSha256,
+          xmlSizeBytes: exportRecord.xmlSizeBytes,
+          createdAt: exportRecord.createdAt,
+          status: exportRecord.status,
+          profile: exportRecord.profile,
+          readinessStatus: hasWarning ? "generated_with_warnings" : "generated",
+          totals,
+          findings,
+          disclaimer
+        });
+      } catch (error) {
+        return sendCiiExportStorageError(reply, error);
       }
     }
   );

@@ -43,6 +43,7 @@ export const XML_VALIDATION_JOB_QUEUE_MAX_ATTEMPTS = 3;
 export const XML_VALIDATION_JOB_CHECKS = [
   "worker_readiness",
   "xsd_ubl",
+  "xsd_cii",
   "schematron_peppol",
   "schematron_en16931",
   "schematron_peppol_placeholder"
@@ -102,6 +103,12 @@ export type XmlValidationJobCheckResult = {
   artifactInfo?: UblXsdArtifactInfo;
   findings: XmlValidationJobFinding[];
   summary?: Record<string, unknown>;
+};
+
+type CiiXsdArtifactConfigInput = {
+  rootDir?: string | undefined;
+  crossIndustryInvoiceXsdPath?: string | undefined;
+  artifactVersion?: string | undefined;
 };
 
 export type XmlValidationJobQueueLifecycle = {
@@ -748,6 +755,14 @@ function getDefaultUblXsdArtifactConfig(): UblXsdArtifactConfigInput {
   };
 }
 
+function getDefaultCiiXsdArtifactConfig(): CiiXsdArtifactConfigInput {
+  return {
+    rootDir: env.CII_XSD_ROOT_DIR,
+    crossIndustryInvoiceXsdPath: env.CII_CROSS_INDUSTRY_INVOICE_XSD_PATH,
+    artifactVersion: env.CII_XSD_ARTIFACT_VERSION
+  };
+}
+
 function getDefaultSchematronArtifactConfig(): SchematronArtifactConfigInput {
   return {
     rootDir: env.PEPPOL_SCHEMATRON_ROOT_DIR,
@@ -762,6 +777,103 @@ function getDefaultSchematronExecutionPolicyInput(): SchematronExecutionPolicyIn
     requestedMode: env.SCHEMATRON_EXECUTION_MODE,
     requestedEngine: env.SCHEMATRON_ENGINE,
     allowExperimentalExecution: env.SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION
+  };
+}
+
+function buildCiiXsdFinding(input: {
+  code: string;
+  status: XmlValidationJobCheckStatus;
+  message: string;
+  fixSuggestion: string;
+}): XmlValidationJobFinding {
+  return {
+    code: input.code,
+    severity: "warning",
+    checkType: "xsd_cii",
+    field: "xml",
+    message: input.message,
+    status: input.status,
+    legalConfidence: "technical",
+    fixSuggestion: input.fixSuggestion,
+    sourceLabels: [
+      "Invoice Lantern technical CII XSD configuration diagnostics"
+    ]
+  };
+}
+
+function buildCiiXsdResult(input: {
+  rootElement: string;
+  artifactConfig?: CiiXsdArtifactConfigInput;
+}): XmlValidationJobCheckResult {
+  const artifactConfig = input.artifactConfig ?? getDefaultCiiXsdArtifactConfig();
+  const configured = Boolean(
+    artifactConfig.rootDir?.trim() ||
+      artifactConfig.crossIndustryInvoiceXsdPath?.trim()
+  );
+  const rootLooksCii =
+    input.rootElement.trim().toLowerCase() === "crossindustryinvoice";
+
+  if (!configured) {
+    const finding = buildCiiXsdFinding({
+      code: "CII_XSD_NOT_CONFIGURED",
+      status: "not_configured",
+      message:
+        "CII XSD validation was requested, but reviewed local CII XSD artefacts are not configured in this environment.",
+      fixSuggestion:
+        "Configure server-side CII_XSD_ROOT_DIR and CII_CROSS_INDUSTRY_INVOICE_XSD_PATH only after reviewing local artefacts. Invoice Lantern never fetches CII schemas remotely."
+    });
+
+    return {
+      checkType: "xsd_cii",
+      status: "not_configured",
+      findings: [finding],
+      summary: {
+        configured: false,
+        usable: false,
+        validationExecuted: false,
+        markedValid: false,
+        rootLooksCii,
+        artifactVersion: artifactConfig.artifactVersion ?? null,
+        requiredEnvVars: [
+          "CII_XSD_ROOT_DIR",
+          "CII_CROSS_INDUSTRY_INVOICE_XSD_PATH",
+          "CII_XSD_ARTIFACT_VERSION"
+        ],
+        remoteFetching: false,
+        disclaimer:
+          "CII XSD support is a guarded local technical check only. not_configured is not success and does not imply official validation, certification, filing, or authority acceptance."
+      }
+    };
+  }
+
+  const finding = buildCiiXsdFinding({
+    code: "CII_XSD_LOCAL_VALIDATION_NOT_IMPLEMENTED",
+    status: "not_implemented",
+    message:
+      "Reviewed CII XSD artefact paths are configured, but a real local CII XSD validation adapter is not implemented in this worker/API step.",
+    fixSuggestion:
+      "Add a reviewed local CII XSD execution adapter before treating xsd_cii as executable. Do not infer validity from configuration alone."
+  });
+
+  return {
+    checkType: "xsd_cii",
+    status: "not_implemented",
+    findings: [finding],
+    summary: {
+      configured: true,
+      usable: false,
+      validationExecuted: false,
+      markedValid: false,
+      rootLooksCii,
+      artifactVersion: artifactConfig.artifactVersion ?? null,
+      rootDirConfigured: Boolean(artifactConfig.rootDir?.trim()),
+      crossIndustryInvoiceXsdPathConfigured: Boolean(
+        artifactConfig.crossIndustryInvoiceXsdPath?.trim()
+      ),
+      remoteFetching: false,
+      disclaimer:
+        "CII XSD support is a guarded local technical check only and is not official CII validation, certification, filing, or authority acceptance."
+    }
   };
 }
 
@@ -819,6 +931,10 @@ function isCompletedCheckResult(result: XmlValidationJobCheckResult) {
 
 function getXsdUblResult(checkResults: readonly XmlValidationJobCheckResult[]) {
   return checkResults.find((result) => result.checkType === "xsd_ubl");
+}
+
+function getXsdCiiResult(checkResults: readonly XmlValidationJobCheckResult[]) {
+  return checkResults.find((result) => result.checkType === "xsd_cii");
 }
 
 function getSchematronPeppolResult(
@@ -941,6 +1057,12 @@ export function buildXmlValidationJobQueueFailureCompletion(input: {
         validationExecuted: false,
         markedValid: false
       },
+      xsdCii: {
+        requested: input.requestedChecks.includes("xsd_cii"),
+        configured: false,
+        validationExecuted: false,
+        markedValid: false
+      },
       schematronPeppol: {
         requested:
           input.requestedChecks.includes("schematron_peppol") ||
@@ -1018,6 +1140,25 @@ export async function buildXmlValidationJobCompletion(input: {
       continue;
     }
 
+    if (check === "xsd_cii") {
+      const result = buildCiiXsdResult({
+        rootElement: input.rootElement
+      });
+
+      if (
+        isCompletedCheckResult(result) ||
+        result.status === "not_configured"
+      ) {
+        completedChecks.push(check);
+      } else {
+        failedChecks.push(check);
+      }
+
+      checkResults.push(result);
+      findings.push(...result.findings);
+      continue;
+    }
+
     if (check === "schematron_peppol_placeholder") {
       const result = await buildSchematronPlaceholderResult({
         xml: input.xml,
@@ -1065,6 +1206,8 @@ export async function buildXmlValidationJobCompletion(input: {
 
   const xsdUblResult = getXsdUblResult(checkResults);
   const xsdUblSummary = xsdUblResult?.summary;
+  const xsdCiiResult = getXsdCiiResult(checkResults);
+  const xsdCiiSummary = xsdCiiResult?.summary;
   const schematronPeppolResult = getSchematronPeppolResult(checkResults);
   const schematronPeppolSummary = schematronPeppolResult?.summary;
   const schematronEn16931Result = getSchematronEn16931Result(checkResults);
@@ -1101,7 +1244,9 @@ export async function buildXmlValidationJobCompletion(input: {
       checkResults,
       checkStatuses: summarizeCheckStatuses(checkResults),
       activeValidation: {
-        xsd: getBooleanSummaryValue(xsdUblSummary, "validationExecuted"),
+        xsd:
+          getBooleanSummaryValue(xsdUblSummary, "validationExecuted") ||
+          getBooleanSummaryValue(xsdCiiSummary, "validationExecuted"),
         schematron: isSchematronValidationExecuted([
           schematronPeppolSummary,
           schematronEn16931Summary
@@ -1127,6 +1272,20 @@ export async function buildXmlValidationJobCompletion(input: {
         ...(xsdUblResult?.artifactInfo
           ? { artifactInfo: xsdUblResult.artifactInfo }
           : {})
+      },
+      xsdCii: {
+        requested: input.requestedChecks.includes("xsd_cii"),
+        configured: getBooleanSummaryValue(xsdCiiSummary, "configured"),
+        validationExecuted: getBooleanSummaryValue(
+          xsdCiiSummary,
+          "validationExecuted"
+        ),
+        markedValid: getBooleanSummaryValue(xsdCiiSummary, "markedValid"),
+        ...(getStringSummaryValue(xsdCiiSummary, "disclaimer")
+          ? { disclaimer: getStringSummaryValue(xsdCiiSummary, "disclaimer") }
+          : {}),
+        ...(xsdCiiResult ? { status: xsdCiiResult.status } : {}),
+        ...(xsdCiiSummary ? { summary: xsdCiiSummary } : {})
       },
       schematronPeppol: {
         requested:
