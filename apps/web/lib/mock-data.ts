@@ -89,7 +89,7 @@ export const invoiceStages: InvoiceStage[] = [
     iconKey: "export",
     title: "Export preparation",
     description:
-      "Prepare the canonical invoice for validation, UBL XML generation, report creation, and later CII support."
+      "Prepare the canonical invoice for validation, UBL XML generation, technical CII XML export, and report creation."
   }
 ];
 

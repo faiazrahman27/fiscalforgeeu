@@ -12,7 +12,7 @@ import {
   inspectCiiXmlSafety
 } from "@invoice-lantern/cii";
 import { env } from "../../config/env.js";
-import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
+import { requireSupabaseUser } from "../../middleware/require-api-key.js";
 import {
   WORKSPACE_ROLE_SETS,
   requireWorkspaceRole
@@ -20,7 +20,6 @@ import {
 import {
   buildDraftSummary,
   createAuthenticatedInvoiceDraft,
-  createInvoiceDraft,
   hasAuthenticatedInvoiceDraftContext,
   type AuthenticatedInvoiceDraftContext
 } from "../../repositories/invoice-draft-repository.js";
@@ -458,7 +457,7 @@ export async function importCiiRoutes(app: FastifyInstance) {
     "/import/cii",
     {
       preHandler: [
-        requireApiKeyScopes(["invoices:import_cii"]),
+        requireSupabaseUser,
         requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceDraftEditors, {
           code: "CII_IMPORT_ROLE_REQUIRED",
           message:
@@ -467,21 +466,6 @@ export async function importCiiRoutes(app: FastifyInstance) {
       ]
     },
     async (request, reply) => {
-      if (request.authenticatedApiKey) {
-        return reply.status(403).send({
-          error: {
-            code: "API_KEY_CII_IMPORT_DRAFT_UNSUPPORTED",
-            message:
-              "Organization API keys can parse CII XML with the parse scope, but editable draft import requires a signed-in workspace user in this step.",
-            details: null
-          },
-          ...buildCreatedFalseResponse({
-            reason:
-              "Editable draft import requires a signed-in workspace user in this step."
-          })
-        });
-      }
-
       const parsedRequest = readXmlFromRequest(request);
 
       if (!parsedRequest.ok) {
@@ -605,12 +589,25 @@ export async function importCiiRoutes(app: FastifyInstance) {
       try {
         const authenticatedContext = getAuthenticatedInvoiceDraftContext(request);
 
-        const draft = authenticatedContext
-          ? await createAuthenticatedInvoiceDraft(
-              authenticatedContext,
-              draftPayload.payload
-            )
-          : await createInvoiceDraft(draftPayload.payload);
+        if (!authenticatedContext) {
+          return reply.status(401).send({
+            error: {
+              code: "AUTHENTICATED_USER_REQUIRED",
+              message:
+                "CII draft import requires a signed-in Supabase user session.",
+              details: null
+            },
+            ...buildCreatedFalseResponse({
+              reason:
+                "CII draft import requires a signed-in Supabase user session."
+            })
+          });
+        }
+
+        const draft = await createAuthenticatedInvoiceDraft(
+          authenticatedContext,
+          draftPayload.payload
+        );
 
         await recordImportActivity(request, {
           invoiceDraftId: draft.id,

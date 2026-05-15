@@ -41,7 +41,7 @@ minimal, targeted changes.
 - Do not present scaffolds, placeholders, or stubs as production-complete
   Schematron, Peppol, EN 16931, VIES, CII, country-pack, filing, monitoring,
   or legal-compliance functionality.
-- Keep structured invoice data, JSON API payloads, UBL XML, and future CII XML
+- Keep structured invoice data, JSON API payloads, UBL XML, and CII XML
   normalized through the canonical invoice model before validation/export.
 - Use decimal strings and Decimal/decimal.js behavior for invoice money logic;
   do not introduce JavaScript floating-point money calculations.

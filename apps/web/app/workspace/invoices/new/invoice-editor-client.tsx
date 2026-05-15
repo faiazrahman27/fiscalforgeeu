@@ -1846,7 +1846,7 @@ export function InvoiceEditorClient({
               disabled={isExportingCii}
             >
               <Code2 size={16} />
-              {isExportingCii ? "Generating..." : "Export CII XML"}
+              {isExportingCii ? "Generating..." : "Technical CII XML export"}
             </button>
 
             {ublExportResult?.xml ? (

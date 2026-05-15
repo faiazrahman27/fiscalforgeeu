@@ -18,6 +18,13 @@ export type AuthenticatedRequestUser = {
   role: "authenticated";
 };
 
+export type SupabaseAuthVerifierForTesting = (
+  token: string
+) =>
+  | AuthenticatedRequestUser
+  | null
+  | Promise<AuthenticatedRequestUser | null>;
+
 declare module "fastify" {
   interface FastifyRequest {
     authenticatedUser?: AuthenticatedRequestUser;
@@ -32,6 +39,22 @@ declare module "fastify" {
 }
 
 const EMPTY_API_KEY_SCOPES: readonly ApiKeyScope[] = [];
+
+let supabaseAuthVerifierForTesting: SupabaseAuthVerifierForTesting | null = null;
+
+export function setSupabaseAuthVerifierForTesting(
+  verifier: SupabaseAuthVerifierForTesting
+) {
+  supabaseAuthVerifierForTesting = verifier;
+}
+
+export function resetSupabaseAuthVerifierForTesting() {
+  supabaseAuthVerifierForTesting = null;
+}
+
+function hasSupabaseAuthVerifierForTesting() {
+  return env.APP_ENV === "test" && supabaseAuthVerifierForTesting !== null;
+}
 
 function safeCompare(left: string, right: string) {
   const leftBuffer = Buffer.from(left);
@@ -196,6 +219,23 @@ async function authenticateWithSupabaseBearerToken(
   request: FastifyRequest,
   reply: FastifyReply
 ) {
+  if (hasSupabaseAuthVerifierForTesting()) {
+    const user = await supabaseAuthVerifierForTesting?.(token);
+
+    if (!user) {
+      return sendUnauthorized(
+        reply,
+        "AUTH_TOKEN_INVALID",
+        "Invalid or expired authentication token."
+      );
+    }
+
+    request.authenticatedUser = user;
+    request.authenticatedAccessToken = token;
+    request.authenticationMode = "supabase_user";
+    return;
+  }
+
   const supabase = getSupabasePublicClient();
   const { data, error } = await supabase.auth.getUser(token);
 
@@ -238,7 +278,7 @@ export async function requireApiKey(
   if (
     bearerToken &&
     !looksLikeInvoiceLanternApiKey(bearerToken) &&
-    hasSupabaseJwtConfig()
+    (hasSupabaseJwtConfig() || hasSupabaseAuthVerifierForTesting())
   ) {
     return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
   }
@@ -276,7 +316,7 @@ export function requireApiKeyScopes(requiredScopes: readonly ApiKeyScope[]) {
     if (
       bearerToken &&
       !looksLikeInvoiceLanternApiKey(bearerToken) &&
-      hasSupabaseJwtConfig()
+      (hasSupabaseJwtConfig() || hasSupabaseAuthVerifierForTesting())
     ) {
       return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
     }
@@ -312,8 +352,17 @@ export async function requireSupabaseUser(
   reply: FastifyReply
 ) {
   const bearerToken = readBearerToken(request);
+  const xApiKey = readXApiKey(request);
 
   if (!bearerToken) {
+    if (xApiKey) {
+      return sendUnauthorized(
+        reply,
+        "AUTH_TOKEN_REQUIRED",
+        "API key authentication is not allowed for this endpoint. Use a Supabase bearer token."
+      );
+    }
+
     return sendUnauthorized(
       reply,
       "AUTH_TOKEN_REQUIRED",
@@ -325,11 +374,11 @@ export async function requireSupabaseUser(
     return sendUnauthorized(
       reply,
       "AUTH_TOKEN_REQUIRED",
-      "API key authentication is not allowed for this endpoint."
+      "API key authentication is not allowed for this endpoint. Use a Supabase bearer token."
     );
   }
 
-  if (!hasSupabaseJwtConfig()) {
+  if (!hasSupabaseJwtConfig() && !hasSupabaseAuthVerifierForTesting()) {
     return sendUnauthorized(
       reply,
       "AUTH_NOT_CONFIGURED",

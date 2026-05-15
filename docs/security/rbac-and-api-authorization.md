@@ -50,8 +50,12 @@ Current scopes are:
 - `invoices:validate`
 - `invoices:export_ubl`
 - `invoices:parse_ubl`
+- `invoices:export_cii`
+- `invoices:parse_cii`
 - `invoices:import_ubl` (reserved in the scope enum; editable draft import is
   currently signed-user-only and rejects organization API keys)
+- `invoices:import_cii` (reserved in the scope enum; editable draft import is
+  signed-user-only and rejects organization API keys)
 - `xml:validation_jobs`
 - `vat:validate_format`
 - `vat:check_vies`
@@ -98,9 +102,9 @@ certification.
 | API requests and usage | Signed-in user | `owner`, `admin`, or `developer`; request logs contain safe metadata only. |
 | Webhook simulator | Signed-in user | `owner`, `admin`, or `developer`; endpoint secrets are encrypted at rest, raw secrets are returned only on create/rotate, test deliveries are signed and bounded, logs are redacted, and organization API keys are rejected. |
 | Invoice validation | Signed-in user or scoped API key | Workspace validation roles or `invoices:validate`; organization API-key validation runs are organization-scoped. |
-| UBL export | Signed-in user or scoped API key | Workspace export roles or `invoices:export_ubl`; export metadata is safe and does not return stored XML. |
-| UBL parse | Signed-in user or scoped API key | Workspace validation roles or `invoices:parse_ubl`; XML safety checks stay in place. |
-| UBL import to editable draft | Signed-in user | Workspace draft editors only. Organization API keys can parse UBL but cannot create editable drafts in this step. |
+| UBL/CII export | Signed-in user or scoped API key | Workspace export roles or `invoices:export_ubl` / `invoices:export_cii`; export metadata is safe and does not return stored XML. |
+| UBL/CII parse | Signed-in user or scoped API key | Workspace validation roles or `invoices:parse_ubl` / `invoices:parse_cii`; XML safety checks stay in place. |
+| UBL/CII import to editable draft | Signed-in user | Workspace draft editors only. Organization API keys can parse UBL/CII but cannot create editable drafts. |
 | Invoice drafts | Signed-in user | Read roles may view; edit roles may create/update; only owner/admin delete. |
 | Production invoice lifecycle | Signed-in user | Read roles may view; `owner`, `admin`, `accountant`, and `reviewer` may create, update, convert from draft, or transition; `developer` and `viewer` are read-only by default; organization API keys are rejected in Step 5. Production invoice ViDA simulation is signed-user only, tenant-scoped by invoice id and organization id, persisted as a simulation run, and does not change lifecycle state. |
 | Validation runs and reports | Signed-in user or scoped API key | Report readers or `validation_runs:read`; object reads are organization-scoped. |
@@ -187,6 +191,7 @@ new migrations only.
 This document covers the authorization hardening, workspace member/invitation
 management rules, production invoice lifecycle route permissions, explicit VIES
 evidence workflow, legal/privacy/retention/deletion hardening, webhook
-simulator, platform-admin rule/source console, and workspace
-security/readiness/PWA cache boundary added so far. Later prompts may add CII
-and final production release-candidate hardening.
+simulator, platform-admin rule/source console, workspace
+security/readiness/PWA cache boundary, and signed-user-only UBL/CII editable
+draft import boundary added so far. Later prompts may add final production
+release-candidate hardening.

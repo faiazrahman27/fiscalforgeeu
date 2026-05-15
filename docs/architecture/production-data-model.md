@@ -11,8 +11,11 @@ accounting, filing, authority-acceptance, or certified compliance conclusions.
 Step 3 adds the persistent database foundation for production invoice records.
 Step 5 adds the canonical invoice lifecycle service and an additive lifecycle
 event table. These steps do not replace draft storage, implement a full editor,
-add CII, VIES, real Schematron, webhooks, country-pack expansion, admin tooling,
-or legal-document workflows.
+add VIES, real Schematron, webhooks, country-pack expansion, admin tooling, or
+legal-document workflows. Technical CII XML support is handled through the
+canonical invoice model by the later `packages/cii` layer and remains sandbox
+support only, not official validation, certification, filing, or legal, tax, or
+accounting advice.
 
 ## New Tables
 
@@ -136,6 +139,8 @@ Step 6 expands technical UBL 2.1 generation, parsing, import, export, warnings,
 and round-trip coverage on top of the production model and canonical lifecycle
 service without weakening RLS, draft preservation, decimal-string money logic,
 or legal disclaimers. It does not build the full invoice editor/studio UI.
-Later steps still need the real XML/XSD worker path, CII, VIES, real
-Schematron, reviewed country packs, webhooks, admin/source console,
-legal-document, monitoring, and reporting work.
+Later steps still need the real XML/XSD worker path, VIES, real Schematron,
+reviewed country packs, webhooks, admin/source console, legal-document,
+monitoring, and reporting work. CII support exists as technical canonical
+invoice export/import mapping only and does not create official CII validation,
+certification, filing, or authority acceptance.

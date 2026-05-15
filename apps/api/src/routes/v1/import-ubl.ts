@@ -11,7 +11,7 @@ import {
   ublInvoiceXmlToCanonicalInvoice
 } from "@invoice-lantern/ubl";
 import { env } from "../../config/env.js";
-import { requireApiKeyScopes } from "../../middleware/require-api-key.js";
+import { requireSupabaseUser } from "../../middleware/require-api-key.js";
 import {
   WORKSPACE_ROLE_SETS,
   requireWorkspaceRole
@@ -19,7 +19,6 @@ import {
 import {
   buildDraftSummary,
   createAuthenticatedInvoiceDraft,
-  createInvoiceDraft,
   hasAuthenticatedInvoiceDraftContext,
   type AuthenticatedInvoiceDraftContext
 } from "../../repositories/invoice-draft-repository.js";
@@ -457,7 +456,7 @@ export async function importUblRoutes(app: FastifyInstance) {
     "/import/ubl",
     {
       preHandler: [
-        requireApiKeyScopes(["invoices:import_ubl"]),
+        requireSupabaseUser,
         requireWorkspaceRole(WORKSPACE_ROLE_SETS.invoiceDraftEditors, {
           code: "UBL_IMPORT_ROLE_REQUIRED",
           message:
@@ -466,21 +465,6 @@ export async function importUblRoutes(app: FastifyInstance) {
       ]
     },
     async (request, reply) => {
-      if (request.authenticatedApiKey) {
-        return reply.status(403).send({
-          error: {
-            code: "API_KEY_UBL_IMPORT_DRAFT_UNSUPPORTED",
-            message:
-              "Organization API keys can parse UBL XML with the parse scope, but editable draft import requires a signed-in workspace user in this step.",
-            details: null
-          },
-          ...buildCreatedFalseResponse({
-            reason:
-              "Editable draft import requires a signed-in workspace user in this step."
-          })
-        });
-      }
-
       const parsedRequest = readXmlFromRequest(request);
 
       if (!parsedRequest.ok) {
@@ -604,12 +588,25 @@ export async function importUblRoutes(app: FastifyInstance) {
       try {
         const authenticatedContext = getAuthenticatedInvoiceDraftContext(request);
 
-        const draft = authenticatedContext
-          ? await createAuthenticatedInvoiceDraft(
-              authenticatedContext,
-              draftPayload.payload
-            )
-          : await createInvoiceDraft(draftPayload.payload);
+        if (!authenticatedContext) {
+          return reply.status(401).send({
+            error: {
+              code: "AUTHENTICATED_USER_REQUIRED",
+              message:
+                "UBL draft import requires a signed-in Supabase user session.",
+              details: null
+            },
+            ...buildCreatedFalseResponse({
+              reason:
+                "UBL draft import requires a signed-in Supabase user session."
+            })
+          });
+        }
+
+        const draft = await createAuthenticatedInvoiceDraft(
+          authenticatedContext,
+          draftPayload.payload
+        );
 
         await recordImportActivity(request, {
           invoiceDraftId: draft.id,

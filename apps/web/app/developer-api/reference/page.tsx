@@ -20,6 +20,9 @@ const scopeRows = [
   ["invoices:export_ubl", "POST /api/v1/invoices/export/ubl"],
   ["invoices:parse_ubl", "POST /api/v1/invoices/parse/ubl"],
   ["invoices:import_ubl", "Reserved; draft import is signed-user-only"],
+  ["invoices:export_cii", "POST /api/v1/invoices/export/cii"],
+  ["invoices:parse_cii", "POST /api/v1/invoices/parse/cii"],
+  ["invoices:import_cii", "Reserved; draft import is signed-user-only"],
   ["xml:validation_jobs", "POST/GET /api/v1/xml/validation-jobs"],
   ["vat:validate_format", "POST /api/v1/vat/validate-format"],
   ["vat:check_vies", "POST /api/v1/vat/check-vies"],
@@ -65,9 +68,9 @@ export default function DeveloperApiReferencePage() {
             <p className="subpage-lead">
               This reference documents the implemented Invoice Lantern
               Developer API surface. It covers sandbox technical validation,
-              UBL export and parsing, signed-user-only UBL draft import, XML
-              validation jobs, local VAT format checks, explicit VIES evidence,
-              ViDA-readiness simulations, country-pack catalogue reads,
+              UBL and CII export and parsing, signed-user-only UBL/CII draft
+              import, XML validation jobs, local VAT format checks, explicit
+              VIES evidence, ViDA-readiness simulations, country-pack catalogue reads,
               validation-rule metadata, validation-run list/detail reads, API key
               management, usage logs, and rate-limit policy views. It is not
               official filing, not authority submission, not tax, legal, or
@@ -218,10 +221,11 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
               </div>
 
               <p>
-                The reserved `invoices:import_ubl` scope can exist on keys, but
-                UBL draft import is documented as a signed-user-only workspace
-                route. Organization API keys can parse UBL XML; they cannot
-                create editable drafts in this step.
+                The reserved `invoices:import_ubl` and `invoices:import_cii`
+                scopes can exist on keys, but XML draft import is documented as
+                a signed-user-only workspace route. Organization API keys can
+                parse UBL/CII XML with the parse scopes; they cannot create
+                editable drafts.
               </p>
             </section>
           </Reveal>

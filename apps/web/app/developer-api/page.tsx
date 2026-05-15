@@ -30,7 +30,7 @@ const apiModules = [
     icon: <Braces size={22} />,
     title: "XML validation jobs",
     description:
-      "Create XML validation jobs for worker readiness, xsd_ubl, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; raw XML is not stored in job records."
+      "Create XML validation jobs for worker readiness, xsd_ubl, xsd_cii, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; raw XML is not stored in job records."
   },
   {
     icon: <ShieldCheck size={22} />,
@@ -261,7 +261,7 @@ curl -X POST http://localhost:4000/api/v1/transactions/simulate-vida \\
 
               <pre>{`# Create an XML validation job.
 # Job records store metadata and sanitized results, not raw XML.
-# UBL XSD and Schematron checks are guarded technical checks.
+# UBL/CII XSD and Schematron checks are guarded technical checks.
 # not_configured, disabled, unsupported, unsafe_input, and preflight_only are not success.
 
 curl -X POST http://localhost:4000/api/v1/xml/validation-jobs \\
@@ -274,6 +274,7 @@ curl -X POST http://localhost:4000/api/v1/xml/validation-jobs \\
     "requestedChecks": [
       "worker_readiness",
       "xsd_ubl",
+      "xsd_cii",
       "schematron_peppol",
       "schematron_en16931"
     ]
@@ -285,6 +286,7 @@ curl -X POST http://localhost:4000/api/v1/xml/validation-jobs \\
     "requestedChecks": [
       "worker_readiness",
       "xsd_ubl",
+      "xsd_cii",
       "schematron_peppol",
       "schematron_en16931"
     ],
@@ -400,6 +402,9 @@ curl -X POST http://localhost:4000/api/v1/webhooks/endpoints/<endpoint-id>/test 
 invoices:export_ubl        POST /api/v1/invoices/export/ubl
 invoices:parse_ubl         POST /api/v1/invoices/parse/ubl
 invoices:import_ubl        reserved; editable UBL draft import is signed-user-only
+invoices:export_cii        POST /api/v1/invoices/export/cii
+invoices:parse_cii         POST /api/v1/invoices/parse/cii
+invoices:import_cii        reserved; editable CII draft import is signed-user-only
 xml:validation_jobs        POST /api/v1/xml/validation-jobs
 xml:validation_jobs        GET  /api/v1/xml/validation-jobs
 xml:validation_jobs        GET  /api/v1/xml/validation-jobs/:id
@@ -416,8 +421,10 @@ GET    /api/v1/invoices/:id
 POST   /api/v1/invoices/from-draft
 POST   /api/v1/invoices/:id/transition
 POST   /api/v1/invoices/:id/export/ubl
+POST   /api/v1/invoices/:id/export/cii
 POST   /api/v1/invoices/:id/simulate-vida
 POST   /api/v1/invoices/import/ubl
+POST   /api/v1/invoices/import/cii
 
 Invoice Lantern API keys provide access to sandbox technical validation tools only.
 They are not official filing credentials and do not provide tax authority submission capability.
@@ -444,6 +451,8 @@ transactions:simulate_vida   30 requests per 15 minutes per API key
 invoices:validate            30 requests per 15 minutes per API key
 invoices:export_ubl          30 requests per 15 minutes per API key
 invoices:parse_ubl           30 requests per 15 minutes per API key
+invoices:export_cii          30 requests per 15 minutes per API key
+invoices:parse_cii           30 requests per 15 minutes per API key
 xml:validation_jobs          15 requests per 15 minutes per API key
 organization total           300 requests per 15 minutes
 

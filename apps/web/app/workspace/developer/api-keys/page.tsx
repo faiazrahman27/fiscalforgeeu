@@ -171,7 +171,7 @@ const scopeOptions: {
   },
   {
     value: "invoices:import_ubl",
-    label: "Import UBL",
+    label: "Import UBL (reserved)",
     description: "Reserved; editable draft import is signed-user-only"
   },
   {
@@ -186,7 +186,7 @@ const scopeOptions: {
   },
   {
     value: "invoices:import_cii",
-    label: "Import CII",
+    label: "Import CII (reserved)",
     description: "Reserved; editable draft import is signed-user-only"
   },
   {
@@ -495,6 +495,7 @@ const apiTestEndpoints: ApiTestEndpoint[] = [
       requestedChecks: [
         "worker_readiness",
         "xsd_ubl",
+        "xsd_cii",
         "schematron_peppol",
         "schematron_en16931"
       ]

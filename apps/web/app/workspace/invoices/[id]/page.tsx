@@ -806,7 +806,7 @@ export default function ExistingInvoiceDraftPage({
                 type="button"
               >
                 <FileText size={16} />
-                {isExportingCii ? "Exporting" : "Export CII XML"}
+                {isExportingCii ? "Exporting" : "Technical CII XML export"}
               </button>
             </div>
           </div>

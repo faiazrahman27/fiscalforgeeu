@@ -6,7 +6,10 @@ import {
   type CanonicalInvoice
 } from "@invoice-lantern/invoice-core";
 import type { InvoiceEditorDraftPayload } from "../schemas/invoice.js";
-import { getSupabaseUserClient } from "../lib/supabase/server-client.js";
+import {
+  getSupabaseUserClient,
+  hasSupabaseServerConfig
+} from "../lib/supabase/server-client.js";
 import { getCollectionStorageProvider } from "../storage/storage-provider.js";
 
 export type InvoiceDraftRecord = InvoiceEditorDraftPayload & {
@@ -700,6 +703,10 @@ export async function createAuthenticatedInvoiceDraft(
   context: AuthenticatedInvoiceDraftContext,
   payload: InvoiceEditorDraftPayload
 ): Promise<InvoiceDraftRecord> {
+  if (!hasSupabaseServerConfig()) {
+    return createInvoiceDraft(payload);
+  }
+
   const supabase = createAuthenticatedSupabaseClient(context);
   const workspace = await getWorkspaceForAuthenticatedUser(supabase);
   const currentDrafts = await listSupabaseInvoiceDrafts(

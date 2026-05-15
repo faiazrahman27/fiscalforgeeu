@@ -671,6 +671,10 @@ test("production invoice routes reject organization API keys as signed-user work
     },
     {
       method: "POST",
+      url: "/api/v1/invoices/00000000-0000-4000-8000-000000000001/export/cii"
+    },
+    {
+      method: "POST",
       url: "/api/v1/invoices/00000000-0000-4000-8000-000000000001/simulate-vida"
     }
   ] as const) {
@@ -686,7 +690,8 @@ test("production invoice routes reject organization API keys as signed-user work
     assert.equal(response.statusCode, 401);
     assert.deepEqual(body.error, {
       code: "AUTH_TOKEN_REQUIRED",
-      message: "API key authentication is not allowed for this endpoint.",
+      message:
+        "API key authentication is not allowed for this endpoint. Use a Supabase bearer token.",
       details: null
     });
   }

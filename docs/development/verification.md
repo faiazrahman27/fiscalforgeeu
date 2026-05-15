@@ -110,7 +110,9 @@ that blocks local `.data` storage in production or Supabase-backed environments.
 These items remain manual production setup or professional review requirements.
 They are not repository verification failures:
 
-- CII generation and parsing.
+- Reviewed local CII XSD artefacts and a real local validation adapter, if
+  enabled. Technical CII generation and parsing are covered by `packages/cii`;
+  `xsd_cii` returning `not_configured` is not success.
 - Professional legal/privacy review of the versioned legal document and
   GDPR-aware privacy-support policy text before production launch.
 - Provider-specific monitoring integration and alert routing.

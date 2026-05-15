@@ -10,8 +10,10 @@ legally valid, tax compliant, accounting advice, or accepted by any authority.
 Step 4 completes the organization member and invitation management layer needed
 before the canonical invoice lifecycle work begins. It does not add email
 delivery, billing, platform-admin tooling, full invoice lifecycle state
-transitions, UBL expansion, CII, VIES, real Schematron execution, expanded
-country packs, webhooks, monitoring, or official filing behavior.
+transitions, UBL expansion, VIES, real Schematron execution, expanded country
+packs, webhooks, monitoring, or official filing behavior. Technical CII XML
+support is added later through canonical invoice mapping and remains sandbox
+technical support only.
 
 ## Organization Model
 

@@ -2554,7 +2554,7 @@ const openApiDocument = {
         tags: ["UBL"],
         summary: "Import UBL XML into an editable invoice draft",
         description:
-          "Parses safe UBL XML into the Invoice Lantern canonical model and creates an editable workspace invoice draft for a signed-in workspace user with an allowed draft-edit role. Organization API keys are intentionally rejected for editable draft creation in this step; use POST /invoices/parse/ubl with the invoices:parse_ubl scope for API-key parsing. The reserved invoices:import_ubl scope documents future access control intent but is not an active organization API-key draft creation route.",
+          "Parses safe UBL XML into the Invoice Lantern canonical model and creates an editable workspace invoice draft for a signed-in workspace user with an allowed draft-edit role. Organization API keys are intentionally rejected for editable draft creation; use POST /invoices/parse/ubl with the invoices:parse_ubl scope for API-key parsing. The reserved invoices:import_ubl scope documents access control alignment but is not an active organization API-key draft creation route.",
         requestBody: {
           required: true,
           content: {
@@ -2699,7 +2699,7 @@ const openApiDocument = {
         tags: ["CII"],
         summary: "Import CII XML into an editable invoice draft",
         description:
-          "Parses safe technical CII XML into the Invoice Lantern canonical model and creates an editable workspace invoice draft for a signed-in workspace user with an allowed draft-edit role. Organization API keys are intentionally rejected for editable draft creation in this step; use POST /invoices/parse/cii with the invoices:parse_cii scope for API-key parsing. The reserved invoices:import_cii scope documents access control intent but is not an active organization API-key draft creation route.",
+          "Parses safe technical CII XML into the Invoice Lantern canonical model and creates an editable workspace invoice draft for a signed-in workspace user with an allowed draft-edit role. Organization API keys are intentionally rejected for editable draft creation; use POST /invoices/parse/cii with the invoices:parse_cii scope for API-key parsing. The reserved invoices:import_cii scope documents access control alignment but is not an active organization API-key draft creation route.",
         requestBody: {
           required: true,
           content: {
@@ -2782,7 +2782,7 @@ const openApiDocument = {
         tags: ["XML Validation Jobs"],
         summary: "Create an XML validation job",
         description:
-          "Creates an XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, the deprecated schematron_peppol_placeholder preflight alias, and guarded local Schematron execution checks schematron_peppol or schematron_en16931. UBL XSD returns not_configured when local XSD artifacts are unavailable and passed or failed only after real local XSD validation executes. Schematron execution is disabled unless PEPPOL_SCHEMATRON_ROOT_DIR, PEPPOL_BIS_SCHEMATRON_PATH or EN16931_SCHEMATRON_PATH, SCHEMATRON_ARTIFACT_VERSION, SCHEMATRON_EXECUTION_MODE=execute, SCHEMATRON_ENGINE=xpath_engine, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION=true/1/yes are configured safely. The executor uses reviewed local artifacts only, performs no remote fetching, rejects unsafe XML and unsupported Schematron/XPath constructs, and maps supported failed assertions and successful reports to sanitized findings. markedValid=true means only the configured technical Schematron check executed fully and produced no failed assertions or fatal/error findings. Public responses do not include raw XML, Schematron contents, file contents, full absolute Schematron paths, certification, compliance or legal/tax/accounting guarantees, filing, or authority acceptance.",
+          "Creates an XML validation job. The request may ask for worker readiness, configuration-gated local UBL XSD, guarded local CII XSD readiness, the deprecated schematron_peppol_placeholder preflight alias, and guarded local Schematron execution checks schematron_peppol or schematron_en16931. UBL XSD returns not_configured when local XSD artifacts are unavailable and passed or failed only after real local XSD validation executes. xsd_cii returns not_configured or not_implemented until reviewed local CII artefacts and a real local adapter exist. Schematron execution is disabled unless PEPPOL_SCHEMATRON_ROOT_DIR, PEPPOL_BIS_SCHEMATRON_PATH or EN16931_SCHEMATRON_PATH, SCHEMATRON_ARTIFACT_VERSION, SCHEMATRON_EXECUTION_MODE=execute, SCHEMATRON_ENGINE=xpath_engine, and SCHEMATRON_ALLOW_EXPERIMENTAL_EXECUTION=true/1/yes are configured safely. The executor uses reviewed local artifacts only, performs no remote fetching, rejects unsafe XML and unsupported Schematron/XPath constructs, and maps supported failed assertions and successful reports to sanitized findings. markedValid=true means only the configured technical Schematron check executed fully and produced no failed assertions or fatal/error findings. xsd_cii is separate guarded local technical support and not_configured is not success. Public responses do not include raw XML, Schematron contents, file contents, full absolute local paths, certification, compliance or legal/tax/accounting guarantees, filing, or authority acceptance.",
         scope: "xml:validation_jobs",
         requestBody: {
           required: true,
@@ -2795,6 +2795,7 @@ const openApiDocument = {
                 requestedChecks: [
                   "worker_readiness",
                   "xsd_ubl",
+                  "xsd_cii",
                   "schematron_peppol_placeholder",
                   "schematron_peppol",
                   "schematron_en16931"

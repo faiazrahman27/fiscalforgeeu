@@ -100,5 +100,13 @@ validation result only. It is not official validation, Peppol or EN 16931
 certification, legal/tax/accounting advice, official filing, authority
 acceptance, or a compliance guarantee.
 
-Schematron execution, EN 16931/Peppol rule execution, VIES, CII, country-pack
+`packages/cii` provides UN/CEFACT CII-style XML support through the same
+canonical invoice model: canonical invoice to CII mapping, CII to canonical
+invoice parsing, XML safety checks, and parser findings. CII XSD checks remain
+guarded local technical checks and return `not_configured` when reviewed local
+artefacts are not configured. CII support is not official validation,
+certification, filing, authority acceptance, or legal, tax, or accounting
+advice.
+
+Schematron execution, EN 16931/Peppol rule execution, VIES, country-pack
 expansion, webhooks, and admin consoles remain out of scope for this step.

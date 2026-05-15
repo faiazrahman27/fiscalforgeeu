@@ -77,7 +77,40 @@ const fallbackRows: EndpointRow[] = [
     tag: "UBL",
     summary: "Import UBL into editable draft",
     description:
-      "Signed-user-only workspace route. Organization API keys can parse UBL but cannot create editable drafts in this step.",
+      "Signed-user-only workspace route. Organization API keys can parse UBL but cannot create editable drafts.",
+    scope: "No API-key scope",
+    auth: "Bearer user token",
+    responses: ["201", "400", "401", "403", "413", "415", "422", "500"]
+  },
+  {
+    method: "POST",
+    path: "/api/v1/invoices/export/cii",
+    tag: "CII",
+    summary: "Export technical CII XML",
+    description:
+      "Generates UN/CEFACT CII-style XML from canonical invoice JSON and returns safe export metadata. This is technical sandbox XML support only.",
+    scope: "invoices:export_cii",
+    auth: "X-API-Key",
+    responses: ["200", "400", "401", "403", "422", "429", "500"]
+  },
+  {
+    method: "POST",
+    path: "/api/v1/invoices/parse/cii",
+    tag: "CII",
+    summary: "Parse CII XML",
+    description:
+      "Parses safe raw XML or JSON with an xml string into the canonical invoice shape with technical findings.",
+    scope: "invoices:parse_cii",
+    auth: "X-API-Key",
+    responses: ["200", "400", "401", "403", "413", "415", "422", "429", "500"]
+  },
+  {
+    method: "POST",
+    path: "/api/v1/invoices/import/cii",
+    tag: "CII",
+    summary: "Import CII into editable draft",
+    description:
+      "Signed-user-only workspace route. Organization API keys can parse CII but cannot create editable drafts.",
     scope: "No API-key scope",
     auth: "Bearer user token",
     responses: ["201", "400", "401", "403", "413", "415", "422", "500"]
@@ -85,10 +118,10 @@ const fallbackRows: EndpointRow[] = [
   {
     method: "GET",
     path: "/api/v1/invoices/exports",
-    tag: "UBL",
-    summary: "List UBL export metadata",
+    tag: "UBL/CII",
+    summary: "List XML export metadata",
     description:
-      "Signed-user-only workspace route for safe UBL export metadata. XML bodies, full keys, and key hashes are not returned.",
+      "Signed-user-only workspace route for safe UBL/CII export metadata. XML bodies, full keys, and key hashes are not returned.",
     scope: "No API-key scope",
     auth: "Bearer user token",
     responses: ["200", "400", "401", "403", "500"]
@@ -99,7 +132,7 @@ const fallbackRows: EndpointRow[] = [
     tag: "XML Validation Jobs",
     summary: "Create an XML validation job",
     description:
-      "Creates an XML validation job with sanitized metadata and results. Supported checks include xsd_ubl, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; not_configured, disabled, unsupported, unsafe_input, and preflight_only are not success.",
+      "Creates an XML validation job with sanitized metadata and results. Supported checks include xsd_ubl, xsd_cii, schematron_peppol, and schematron_en16931. XSD and Schematron are guarded technical checks; not_configured, disabled, unsupported, unsafe_input, and preflight_only are not success.",
     scope: "xml:validation_jobs",
     auth: "X-API-Key",
     responses: ["200", "400", "401", "403", "413", "429", "500"]

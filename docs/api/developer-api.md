@@ -3,8 +3,8 @@
 Invoice Lantern exposes a sandbox developer API for independent, educational,
 technical e-invoice validation and ViDA-readiness simulation. It validates and
 normalizes data through the canonical invoice model, supports technical UBL
-export and parsing, runs guarded XML validation jobs, records explicit VIES
-time-of-check evidence, exposes source-linked EU country-pack context, and
+and CII export and parsing, runs guarded XML validation jobs, records explicit
+VIES time-of-check evidence, exposes source-linked EU country-pack context, and
 simulates ViDA readiness.
 
 The API is not official EU, national tax authority, OpenPeppol, Peppol
@@ -89,6 +89,8 @@ workspace owner/admin roles alone are rejected.
 | Validate canonical invoice | `POST /api/v1/invoices/validate` | `invoices:validate` |
 | Export canonical invoice to UBL | `POST /api/v1/invoices/export/ubl` | `invoices:export_ubl` |
 | Parse UBL to canonical invoice | `POST /api/v1/invoices/parse/ubl` | `invoices:parse_ubl` |
+| Export canonical invoice to CII | `POST /api/v1/invoices/export/cii` | `invoices:export_cii` |
+| Parse CII to canonical invoice | `POST /api/v1/invoices/parse/cii` | `invoices:parse_cii` |
 | Create/list/read XML validation jobs | `POST /api/v1/xml/validation-jobs`, `GET /api/v1/xml/validation-jobs`, `GET /api/v1/xml/validation-jobs/{id}` | `xml:validation_jobs` |
 | Local VAT format check | `POST /api/v1/vat/validate-format` | `vat:validate_format` |
 | Explicit VIES evidence check | `POST /api/v1/vat/check-vies` | `vat:check_vies` |
@@ -114,10 +116,11 @@ list contains a reserved future scope.
 | Manage API keys | `GET /api/v1/api-keys`, `POST /api/v1/api-keys`, `POST /api/v1/api-keys/{id}/revoke` |
 | Review API request logs and usage | `GET /api/v1/api-requests`, `GET /api/v1/api-requests/summary`, `GET /api/v1/api-usage/current`, `GET /api/v1/api-usage/policies` |
 | Import UBL into editable draft | `POST /api/v1/invoices/import/ubl` |
-| List technical UBL export metadata | `GET /api/v1/invoices/exports` |
+| Import CII into editable draft | `POST /api/v1/invoices/import/cii` |
+| List technical UBL/CII export metadata | `GET /api/v1/invoices/exports` |
 | Inspect XML readiness uploads | `POST /api/v1/xml/inspect`, `GET /api/v1/xml/uploads`, `GET /api/v1/xml/uploads/{id}`, `DELETE /api/v1/xml/uploads/{id}` |
 | List saved local VAT checks | `GET /api/v1/vat/checks` |
-| Production invoice lifecycle | `GET /api/v1/invoices`, `POST /api/v1/invoices`, `POST /api/v1/invoices/from-draft`, `GET /api/v1/invoices/{id}`, `PATCH /api/v1/invoices/{id}`, `POST /api/v1/invoices/{id}/transition`, `GET /api/v1/invoices/{id}/lifecycle-events`, `POST /api/v1/invoices/{id}/export/ubl`, `POST /api/v1/invoices/{id}/simulate-vida` |
+| Production invoice lifecycle | `GET /api/v1/invoices`, `POST /api/v1/invoices`, `POST /api/v1/invoices/from-draft`, `GET /api/v1/invoices/{id}`, `PATCH /api/v1/invoices/{id}`, `POST /api/v1/invoices/{id}/transition`, `GET /api/v1/invoices/{id}/lifecycle-events`, `POST /api/v1/invoices/{id}/export/ubl`, `POST /api/v1/invoices/{id}/export/cii`, `POST /api/v1/invoices/{id}/simulate-vida` |
 | Saved ViDA simulation history | `GET /api/v1/transactions/vida-simulations`, `GET /api/v1/transactions/vida-simulations/{id}` |
 | Webhook simulator endpoint management | `GET /api/v1/webhooks/endpoints`, `POST /api/v1/webhooks/endpoints`, `GET /api/v1/webhooks/endpoints/{id}`, `PATCH /api/v1/webhooks/endpoints/{id}`, `DELETE /api/v1/webhooks/endpoints/{id}`, `POST /api/v1/webhooks/endpoints/{id}/rotate-secret` |
 | Signed webhook test events and logs | `POST /api/v1/webhooks/endpoints/{id}/test`, `GET /api/v1/webhooks/deliveries`, `GET /api/v1/webhooks/deliveries/{id}`, `POST /api/v1/webhooks/deliveries/{id}/retry` |
@@ -200,9 +203,10 @@ certainty.
 | Manage source references | `GET /api/v1/admin/sources`, `POST /api/v1/admin/sources`, `GET /api/v1/admin/sources/{id}`, `PATCH /api/v1/admin/sources/{id}`, `POST /api/v1/admin/sources/{id}/deprecate` |
 | Manage country-pack review overlays | `GET /api/v1/admin/country-packs`, `GET /api/v1/admin/country-packs/{countryCode}`, `PATCH /api/v1/admin/country-packs/{countryCode}/review`, `POST /api/v1/admin/country-packs/{countryCode}/sources`, `DELETE /api/v1/admin/country-packs/{countryCode}/sources/{sourceId}` |
 
-`invoices:import_ubl` is reserved in the API-key scope enum for future access
-control alignment. It is not an active organization API-key draft creation path.
-Use `POST /api/v1/invoices/parse/ubl` for API-key UBL parsing.
+`invoices:import_ubl` and `invoices:import_cii` are reserved in the API-key
+scope enum for access-control alignment. They are not active organization
+API-key draft creation paths. Use `POST /api/v1/invoices/parse/ubl` or
+`POST /api/v1/invoices/parse/cii` for API-key XML parsing.
 
 ## Web Auth, Legal Acceptance, And Cookies
 
@@ -219,9 +223,16 @@ analytics or marketing provider is enabled by this release candidate.
 
 ## Interpretation Boundaries
 
-- UBL export and parsing are technical interoperability tools only.
+- UBL and CII export and parsing are technical interoperability tools only.
+- CII support maps canonical invoices to UN/CEFACT CII-style XML and parses
+  safe CII XML back through the canonical invoice model. It is sandbox
+  technical XML support only, not official CII validation, certification,
+  filing, authority acceptance, or legal, tax, or accounting advice.
 - XSD pass means a configured local XSD check completed without schema errors; it
   is not legal, tax, accounting, Peppol, EN 16931, filing, or authority advice.
+- `xsd_cii` remains guarded local technical support and returns
+  `not_configured` when reviewed local CII XSD artefacts and a real adapter are
+  unavailable. `not_configured` is not success.
 - Schematron checks execute only through guarded local configuration. Pass or
   fail states are technical only.
 - `not_configured`, `preflight_only`, `unsupported`, `unsafe_input`, and

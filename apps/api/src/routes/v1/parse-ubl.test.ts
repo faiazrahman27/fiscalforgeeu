@@ -4,6 +4,11 @@ import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { buildApp } from "../../app.js";
 import { env } from "../../config/env.js";
+import {
+  installSignedUserAndApiKeyTestAuth,
+  resetSignedUserAndApiKeyTestAuth,
+  testBearerToken
+} from "../../test/auth-test-helpers.js";
 
 const invoiceDraftDataPath = join(process.cwd(), ".data", "invoice-drafts.json");
 const xmlUploadDataPath = join(process.cwd(), ".data", "xml-uploads.json");
@@ -90,6 +95,7 @@ const importableUblInvoiceXml = simpleUblInvoiceXml.replace(
 );
 
 before(async () => {
+  installSignedUserAndApiKeyTestAuth();
   originalInvoiceDraftData = await readOptionalFile(invoiceDraftDataPath);
 
   await rm(invoiceDraftDataPath, {
@@ -98,6 +104,8 @@ before(async () => {
 });
 
 after(async () => {
+  resetSignedUserAndApiKeyTestAuth();
+
   if (originalInvoiceDraftData === null) {
     await rm(invoiceDraftDataPath, {
       force: true
@@ -361,7 +369,7 @@ test("UBL import endpoint creates an editable draft from a valid simple invoice"
     method: "POST",
     url: "/api/v1/invoices/import/ubl",
     headers: {
-      "x-api-key": env.DEV_API_KEY,
+      authorization: `Bearer ${testBearerToken}`,
       "content-type": "application/xml"
     },
     payload: importableUblInvoiceXml
@@ -432,7 +440,7 @@ test("UBL import endpoint rejects unsafe XML and does not create a draft", async
     method: "POST",
     url: "/api/v1/invoices/import/ubl",
     headers: {
-      "x-api-key": env.DEV_API_KEY,
+      authorization: `Bearer ${testBearerToken}`,
       "content-type": "application/xml"
     },
     payload: `<?xml version="1.0" encoding="UTF-8"?>
@@ -468,7 +476,7 @@ test("UBL import endpoint does not create a draft when parsing fails", async (t)
     method: "POST",
     url: "/api/v1/invoices/import/ubl",
     headers: {
-      "x-api-key": env.DEV_API_KEY,
+      authorization: `Bearer ${testBearerToken}`,
       "content-type": "application/xml"
     },
     payload: `<?xml version="1.0" encoding="UTF-8"?>
@@ -503,7 +511,7 @@ test("UBL import endpoint does not create a draft for unsupported CreditNote XML
     method: "POST",
     url: "/api/v1/invoices/import/ubl",
     headers: {
-      "x-api-key": env.DEV_API_KEY,
+      authorization: `Bearer ${testBearerToken}`,
       "content-type": "application/xml"
     },
     payload: `<?xml version="1.0" encoding="UTF-8"?>
@@ -541,7 +549,7 @@ test("UBL import endpoint returns findings when required fields are missing", as
     method: "POST",
     url: "/api/v1/invoices/import/ubl",
     headers: {
-      "x-api-key": env.DEV_API_KEY,
+      authorization: `Bearer ${testBearerToken}`,
       "content-type": "application/json"
     },
     payload: JSON.stringify({

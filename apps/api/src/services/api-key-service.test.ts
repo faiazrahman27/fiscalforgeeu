@@ -1004,28 +1004,46 @@ test("organization API keys cannot use signed-user workspace draft routes", asyn
   assert.doesNotMatch(response.body, /keyHash|key_hash/);
 });
 
-test("organization API keys cannot create editable drafts through UBL import", async (t) => {
-  const created = await createKey(["invoices:import_ubl"]);
+test("organization API keys cannot create editable drafts through XML import", async (t) => {
+  const ublKey = await createKey(["invoices:import_ubl"]);
+  const ciiKey = await createKey(["invoices:import_cii"]);
   const app = await buildApp();
 
   t.after(async () => {
     await app.close();
   });
 
-  const response = await app.inject({
-    method: "POST",
-    url: "/api/v1/invoices/import/ubl",
-    headers: {
-      "x-api-key": created.secret,
-      "content-type": "application/xml"
-    },
-    payload: "<Invoice />"
-  });
+  const responses = await Promise.all([
+    app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/import/ubl",
+      headers: {
+        "x-api-key": ublKey.secret,
+        "content-type": "application/xml"
+      },
+      payload: "<Invoice />"
+    }),
+    app.inject({
+      method: "POST",
+      url: "/api/v1/invoices/import/cii",
+      headers: {
+        "x-api-key": ciiKey.secret,
+        "content-type": "application/xml"
+      },
+      payload:
+        '<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" />'
+    })
+  ]);
 
-  assert.equal(response.statusCode, 403);
-  assert.match(response.body, /API_KEY_UBL_IMPORT_DRAFT_UNSUPPORTED/);
-  assert.equal(response.body.includes(created.secret), false);
-  assert.doesNotMatch(response.body, /keyHash|key_hash/);
+  for (const response of responses) {
+    assert.equal(response.statusCode, 401);
+    assert.match(response.body, /API key authentication is not allowed/);
+    assert.equal(
+      response.body.includes(ublKey.secret) || response.body.includes(ciiKey.secret),
+      false
+    );
+    assert.doesNotMatch(response.body, /keyHash|key_hash/);
+  }
 });
 
 test("valid API key can call a scoped developer endpoint", async (t) => {
@@ -1216,9 +1234,11 @@ test("API-key limiter skips signed-in Supabase and development-key request modes
   assert.equal(devKeyResult.body, undefined);
 });
 
-test("invoice validation and UBL export use their documented scopes", async (t) => {
+test("invoice validation and XML export/parse use their documented scopes", async (t) => {
   const validationKey = await createKey(["invoices:validate"]);
   const exportKey = await createKey(["invoices:export_ubl"]);
+  const ciiExportKey = await createKey(["invoices:export_cii"]);
+  const ciiParseKey = await createKey(["invoices:parse_cii"]);
   const app = await buildApp();
 
   t.after(async () => {
@@ -1247,6 +1267,36 @@ test("invoice validation and UBL export use their documented scopes", async (t) 
 
   assert.equal(exportResponse.statusCode, 200);
   assert.equal(typeof exportResponse.json().xml, "string");
+
+  const ciiExportResponse = await app.inject({
+    method: "POST",
+    url: "/api/v1/invoices/export/cii",
+    headers: {
+      "x-api-key": ciiExportKey.secret
+    },
+    payload: invoicePayload
+  });
+
+  assert.equal(ciiExportResponse.statusCode, 200);
+
+  const ciiXml = ciiExportResponse.json().xml;
+
+  assert.equal(typeof ciiXml, "string");
+  assert.match(ciiXml, /CrossIndustryInvoice/);
+
+  const ciiParseResponse = await app.inject({
+    method: "POST",
+    url: "/api/v1/invoices/parse/cii",
+    headers: {
+      "x-api-key": ciiParseKey.secret
+    },
+    payload: {
+      xml: ciiXml
+    }
+  });
+
+  assert.equal(ciiParseResponse.statusCode, 200);
+  assert.equal(ciiParseResponse.json().canonicalInvoice.document.number, "INV-API-KEY-001");
 });
 
 test("API-key request logging records method path and status without bodies or full keys", async (t) => {

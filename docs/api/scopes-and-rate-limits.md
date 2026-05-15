@@ -12,8 +12,11 @@ configuration, or rate limits.
 | `invoices:validate` | Validate canonical invoice JSON and create an organization-scoped validation run. |
 | `invoices:export_ubl` | Export a supplied canonical invoice payload as technical UBL XML and store safe export metadata. |
 | `invoices:parse_ubl` | Parse safe UBL XML into the canonical invoice model with parser findings. |
-| `invoices:import_ubl` | Reserved for future draft-import access control. Current editable draft import remains signed-user-only. |
-| `xml:validation_jobs` | Create, list, and read XML validation jobs for worker readiness, local UBL XSD, and guarded local Schematron checks. |
+| `invoices:import_ubl` | Reserved for draft-import access control alignment. Editable UBL draft import remains signed-user-only and rejects organization API keys. |
+| `invoices:export_cii` | Export a supplied canonical invoice payload as technical CII XML and store safe export metadata. |
+| `invoices:parse_cii` | Parse safe CII XML into the canonical invoice model with parser findings. |
+| `invoices:import_cii` | Reserved for draft-import access control alignment. Editable CII draft import remains signed-user-only and rejects organization API keys. |
+| `xml:validation_jobs` | Create, list, and read XML validation jobs for worker readiness, local UBL/CII XSD checks, and guarded local Schematron checks. |
 | `vat:validate_format` | Run local VAT ID format checks. API-key calls cannot persist workspace evidence records. |
 | `vat:check_vies` | Run explicit VIES evidence checks when server-side configuration allows it. |
 | `transactions:simulate_vida` | Run direct ViDA-readiness transaction simulations. API-key calls cannot persist workspace history. |
@@ -22,11 +25,11 @@ configuration, or rate limits.
 
 Country-pack catalogue endpoints are public read-only endpoints at this stage.
 API request logs, usage summaries, API-key management, VAT check history, XML
-upload history, editable UBL draft import, saved ViDA history, and production
-invoice lifecycle routes require a signed-in workspace user. Webhook simulator
-endpoint management, signing secret rotation, test delivery, delivery logs, and
-retry actions are also signed-user-only; no `webhooks:*` API-key scope is active
-in this step.
+upload history, editable UBL/CII draft import, saved ViDA history, and
+production invoice lifecycle routes require a signed-in workspace user. Webhook
+simulator endpoint management, signing secret rotation, test delivery, delivery
+logs, and retry actions are also signed-user-only; no `webhooks:*` API-key scope
+is active for organization API keys.
 
 Workspace security/readiness diagnostics at
 `GET /api/v1/workspace/security/readiness` are also signed-user-only and visible
@@ -54,6 +57,8 @@ Current default policies are per API key unless otherwise noted:
 | `invoices_validate` | `invoices:validate` | 30 requests per 15 minutes |
 | `invoices_export_ubl` | `invoices:export_ubl` | 30 requests per 15 minutes |
 | `invoices_parse_ubl` | `invoices:parse_ubl` | 30 requests per 15 minutes |
+| `invoices_export_cii` | `invoices:export_cii` | 30 requests per 15 minutes |
+| `invoices_parse_cii` | `invoices:parse_cii` | 30 requests per 15 minutes |
 | `xml_validation_jobs` | `xml:validation_jobs` | 15 requests per 15 minutes |
 | `organization_total` | all scoped API-key traffic for an organization | 300 requests per 15 minutes |
 
@@ -99,6 +104,9 @@ invoice, XML file, VAT number, or simulation result is valid or invalid.
   hashes.
 - XML endpoints enforce body-size limits and safety checks against DTDs,
   external entities, unsafe paths, remote fetching, and excessive input.
+- CII export and parse endpoints are technical sandbox XML support only.
+  `xsd_cii` requires reviewed local CII XSD artefacts and a real local adapter;
+  `not_configured` is not success.
 - VIES checks are explicit, rate-limited, and safe-fail. Unavailable VIES is not
   treated as invalid VAT.
 - Rotate and revoke keys regularly. Use narrower scopes for production-like
