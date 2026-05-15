@@ -192,10 +192,10 @@ export const TAX_ENGINE_RULE_VERSION = "2026.05.2";
 export const TAX_ENGINE_RULE_SET_CODE = "INVOICE_LANTERN_TAX_ENGINE";
 
 export const VAT_FORMAT_DISCLAIMER =
-  "This is a local VAT ID format check only. It does not confirm that the VAT number exists, is active, belongs to a party, is registered for VAT, is VIES-valid, or is accepted by any authority. Use VIES or a competent authority for official confirmation.";
+  "This is a local VAT ID format check only. It does not confirm that the VAT number exists, is active, belongs to a party, is registered for VAT, has been validated through VIES, or is accepted by any authority. Use VIES or a competent authority for official confirmation.";
 
 export const VIES_EVIDENCE_DISCLAIMER =
-  "VIES evidence, when requested and available, is time-of-check evidence only. VIES unavailable is not the same as invalid. VIES valid is not legal, tax, accounting, filing, or transaction compliance proof.";
+  "VIES evidence, when requested and available, is time-of-check evidence only. VIES unavailable is not the same as invalid. A positive VIES response is not legal, tax, accounting, filing, or transaction compliance proof.";
 
 export const TRANSACTION_SIMULATION_DISCLAIMER =
   "Transaction classification and reverse-charge indicators in Invoice Lantern are educational technical simulations only. They are not legal, tax, accounting, VAT-return, filing, authority, or compliance conclusions. Qualified professional review is required before real-world reliance.";
@@ -207,7 +207,7 @@ const TECHNICAL_ONLY_WARNING =
   "Format checks are technical only and do not determine VAT registration status.";
 
 const VIES_NOT_CHECKED_WARNING =
-  "Local VAT format checks are separate from VIES evidence. No VIES validity is inferred from local format status.";
+  "Local VAT format checks are separate from VIES evidence. No VIES evidence result is inferred from local format status.";
 
 const EU_MEMBER_STATE_COUNTRY_CODES = new Set([
   "AT",
@@ -691,7 +691,7 @@ export function classifyTransaction(
         category: "VIES",
         fieldPath: "buyerViesStatus",
         message:
-          "Buyer VIES evidence is not checked. Local VAT format status is not VIES validity.",
+          "Buyer VIES evidence is not checked. Local VAT format status is not VIES evidence.",
         fixSuggestion:
           "Run an optional VIES evidence check where appropriate and available. Treat VIES evidence as time-of-check evidence only.",
         legalConfidence: "educational_simulation",
@@ -709,7 +709,7 @@ export function classifyTransaction(
         category: "VIES",
         fieldPath: "sellerViesStatus",
         message:
-          "Seller VIES evidence is not checked. Local VAT format status is not VIES validity.",
+          "Seller VIES evidence is not checked. Local VAT format status is not VIES evidence.",
         fixSuggestion:
           "Run an optional VIES evidence check where appropriate and available. Treat VIES evidence as time-of-check evidence only.",
         legalConfidence: "educational_simulation",

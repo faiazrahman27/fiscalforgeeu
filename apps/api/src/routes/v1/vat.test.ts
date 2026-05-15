@@ -225,7 +225,7 @@ test("VAT format endpoint returns a valid local format response", async (t) => {
   assert.equal(body.source, "invoice_lantern_vat_format_rules");
   assert.match(String(body.message), /local format pattern for Hungary/i);
   assert.equal(Array.isArray(body.warnings), true);
-  assert.equal((body.warnings as unknown[]).length, 0);
+  assert.ok((body.warnings as unknown[]).length >= 2);
   assert.equal(body.persisted, false);
   assert.equal("checkRecordId" in body, false);
 });

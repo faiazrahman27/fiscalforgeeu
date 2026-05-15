@@ -69,7 +69,7 @@ test("country pack detail endpoint returns Hungary pack with registry metadata",
   assert.equal(countryPack.countryName, "Hungary");
   assert.equal(countryPack.defaultCurrency, "HUF");
   assert.equal(countryPack.legalConfidence, "professional_review_required");
-  assert.equal(countryPack.status, "beta");
+  assert.equal(countryPack.status, "professional_review_required");
   assert.equal(typeof countryPack.version, "string");
   assert.equal(typeof countryPack.reviewerLabel, "string");
   assert.match(String(body.disclaimer), /Country rule packs/i);

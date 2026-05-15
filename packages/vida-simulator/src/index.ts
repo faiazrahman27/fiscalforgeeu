@@ -1137,7 +1137,7 @@ function buildEvidenceSummary(
       checkedAt: normalizeText(input.vatEvidence.checkedAt),
       sourceLabel: normalizeText(input.vatEvidence.sourceLabel),
       note:
-        "VIES evidence is time-of-check evidence only. Format-valid is not VIES-valid, and VIES unavailable is not treated as invalid."
+        "VIES evidence is time-of-check evidence only. Local format evidence is not VIES evidence, and VIES unavailable is not treated as invalid."
     },
     structuredInvoiceEvidence: {
       hasCanonicalInvoice: input.structuredInvoiceSignals.hasCanonicalInvoice,

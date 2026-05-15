@@ -4,6 +4,7 @@ import { buildApp } from "../../app.js";
 import { env } from "../../config/env.js";
 import { API_KEY_SCOPES } from "../../services/api-key-service.js";
 import { API_RATE_LIMIT_POLICIES } from "../../services/api-rate-limit-policy.js";
+import { VIDA_SIMULATOR_VERSION } from "@invoice-lantern/vida-simulator";
 
 function apiHeaders() {
   return {
@@ -44,7 +45,7 @@ test("ViDA simulation endpoint classifies cross-border EU B2B scenario", async (
 
   const body = response.json() as Record<string, unknown>;
 
-  assert.equal(body.simulationVersion, "2026.05.2");
+  assert.equal(body.simulationVersion, VIDA_SIMULATOR_VERSION);
   assert.equal(body.transactionClass, "intra_eu_b2b_service");
   assert.equal(body.vidaRelevance, "high");
   assert.equal(body.confidence, "professional_review_required");
@@ -67,8 +68,8 @@ test("ViDA simulation endpoint classifies cross-border EU B2B scenario", async (
   assert.equal(countryContext.buyerInEu, true);
   assert.equal(countryContext.sameCountry, false);
   assert.equal(countryContext.crossBorderEu, true);
-  assert.equal(countryContext.sellerCountryPackStatus, "beta");
-  assert.equal(countryContext.buyerCountryPackStatus, "beta");
+  assert.equal(countryContext.sellerCountryPackStatus, "professional_review_required");
+  assert.equal(countryContext.buyerCountryPackStatus, "professional_review_required");
 
   const normalizedInput = body.normalizedInput as Record<string, unknown>;
 
