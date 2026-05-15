@@ -535,7 +535,7 @@ const openApiDocument = {
     {
       name: "XML Validation Jobs",
       description:
-        "XML validation job endpoints for worker readiness, configuration-gated local UBL/CII XSD checks, and guarded local Schematron execution. schematron_peppol and schematron_en16931 execute only when explicit policy, xpath_engine, reviewed local artefacts, safe XML, and supported Schematron/XPath gates pass. xsd_cii returns not_configured or not_implemented until reviewed local CII artefacts and a real local adapter exist. schematron_peppol_placeholder remains a deprecated preflight metadata alias. These endpoints return sanitized technical summaries and findings only; they do not provide official validation, certification, filing, authority acceptance, legal/tax/accounting advice, or compliance guarantees."
+        "XML validation job endpoints for worker readiness, configuration-gated local UBL XSD validation, guarded local CII XSD readiness checks, and guarded local Schematron execution. schematron_peppol and schematron_en16931 execute only when explicit policy, xpath_engine, reviewed local artefacts, safe XML, and supported Schematron/XPath gates pass. xsd_cii returns not_configured or not_implemented until reviewed local CII artefacts and a real local adapter exists. schematron_peppol_placeholder remains a deprecated preflight metadata alias. These endpoints return sanitized technical summaries and findings only; they do not provide official validation, certification, filing, authority acceptance, legal/tax/accounting advice, or compliance guarantees."
     },
     {
       name: "VAT",
@@ -7320,7 +7320,7 @@ const openApiDocument = {
           canonicalInvoice: ref("CanonicalInvoice"),
           source: {
             type: "string",
-            enum: ["manual", "api", "ubl_import"],
+            enum: ["manual", "api", "ubl_import", "cii_import"],
             default: "manual"
           },
           draftId: {
@@ -7349,7 +7349,7 @@ const openApiDocument = {
           },
           source: {
             type: "string",
-            enum: ["manual", "api", "ubl_import"],
+            enum: ["manual", "api", "ubl_import", "cii_import"],
             default: "manual"
           }
         }

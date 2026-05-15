@@ -44,7 +44,11 @@ import {
   hasSupabaseServerConfig
 } from "../lib/supabase/server-client.js";
 
-export type ProductionInvoiceSource = "manual" | "api" | "ubl_import";
+export type ProductionInvoiceSource =
+  | "manual"
+  | "api"
+  | "ubl_import"
+  | "cii_import";
 
 export type ProductionInvoiceValidationSummary = {
   status: "ready" | "blocked";
