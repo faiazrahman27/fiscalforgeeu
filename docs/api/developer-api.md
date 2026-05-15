@@ -204,6 +204,19 @@ certainty.
 control alignment. It is not an active organization API-key draft creation path.
 Use `POST /api/v1/invoices/parse/ubl` for API-key UBL parsing.
 
+## Web Auth, Legal Acceptance, And Cookies
+
+The public web sign-up flow requires explicit acknowledgement of current Terms,
+Privacy Policy, Cookie Policy, Acceptable Use Policy, and the Disclaimer / No Tax
+Advice / No Official Filing boundary. Server-side legal acceptance records are
+signed-user-only through Supabase bearer sessions. Organization API keys cannot
+accept legal documents or manage web-user legal acceptance state.
+
+Cookie preferences are browser-local public preferences only. The preference
+flow stores version, timestamp, and category choices; it does not store raw XML,
+invoice data, API keys, webhook secrets, VIES data, or workspace data. No
+analytics or marketing provider is enabled by this release candidate.
+
 ## Interpretation Boundaries
 
 - UBL export and parsing are technical interoperability tools only.

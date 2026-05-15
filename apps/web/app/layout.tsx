@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { AnimatedBackground } from "../components/animated-background";
+import { CookieConsentBanner } from "../components/cookie-consent-banner";
 import { NetworkStatus } from "../components/network-status";
 import { PwaInstallPrompt } from "../components/pwa-install-prompt";
 import { ScrollProgress } from "../components/scroll-progress";
@@ -50,6 +51,7 @@ export default function RootLayout({
         <ServiceWorkerRegister />
         <NetworkStatus />
         <PwaInstallPrompt />
+        <CookieConsentBanner />
         {children}
       </body>
     </html>

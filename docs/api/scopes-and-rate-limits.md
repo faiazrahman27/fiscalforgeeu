@@ -106,3 +106,6 @@ invoice, XML file, VAT number, or simulation result is valid or invalid.
 - Rotate webhook signing secrets when receiver ownership changes. Webhook
   secrets are shown only on creation or rotation, encrypted at rest, and never
   returned by list/detail endpoints.
+- Legal document acceptance and cookie preference management are web-user flows.
+  API keys cannot accept legal documents, manage cookie preferences, or bypass
+  signed-user workspace terms gates.

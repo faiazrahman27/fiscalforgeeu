@@ -364,3 +364,7 @@ Webhook URL blocked:
   }
 }
 ```
+
+Web-user legal acceptance and cookie preferences are intentionally absent from
+API-key examples. Legal acceptance requires a signed-in Supabase user session,
+and cookie preferences are stored only as browser-local public preferences.

@@ -77,7 +77,11 @@ tax/accounting advice, or compliance guarantee.
 
 ## Final Release-Candidate Hardening
 
-Still required in the final hardening step:
+Repository-level release-candidate hardening includes public cookie preferences,
+mandatory web-user legal acknowledgement, footer legal links, About/Contact
+pages, PWA cache safety, security headers, privacy workflows, and API/RBAC
+boundaries. The remaining items are deployment-specific or professional-review
+requirements:
 
 - production CSP nonce strategy review
 - provider-specific monitoring integration if selected
@@ -85,3 +89,7 @@ Still required in the final hardening step:
 - incident contact ownership
 - external security/legal/privacy review
 - deployment-specific secret rotation and backup/restore checks
+- Supabase production setup, migrations, auth callback URLs, domains,
+  API/web/XML worker hosting, XSD/Schematron artifact configuration, optional
+  VIES enablement, platform admin allow-list, webhook encryption key, and smoke
+  tests described in `docs/deployment/`

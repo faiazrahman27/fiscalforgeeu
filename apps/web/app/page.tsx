@@ -16,6 +16,7 @@ import {
 import { DocumentTheatre } from "../components/document-theatre";
 import { MagneticButton } from "../components/magnetic-button";
 import { Reveal } from "../components/reveal";
+import { SiteFooter } from "../components/site-footer";
 import { SiteHeader } from "../components/site-header";
 import {
   audiences,
@@ -450,6 +451,8 @@ export default function HomePage() {
           </div>
         </Reveal>
       </section>
+
+      <SiteFooter />
     </main>
   );
 }

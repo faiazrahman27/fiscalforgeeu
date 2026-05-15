@@ -105,9 +105,10 @@ before app imports. This keeps tests deterministic even when a local
 `apps/api/.env` contains Supabase credentials, while preserving the runtime guard
 that blocks local `.data` storage in production or Supabase-backed environments.
 
-## Current Known Non-Production Gaps
+## Current Known Production Setup Required
 
-These are intentionally not completed before final release-candidate hardening:
+These items remain manual production setup or professional review requirements.
+They are not repository verification failures:
 
 - CII generation and parsing.
 - Professional legal/privacy review of the versioned legal document and
@@ -116,3 +117,7 @@ These are intentionally not completed before final release-candidate hardening:
 - Final production CSP nonce strategy and service-worker release policy review.
 - Production deployment hardening, secret rotation, backup/restore, and
   operational owner assignment.
+- Supabase production project setup, migrations, Auth callback URLs, domains,
+  API/web/XML worker hosting, XSD/Schematron artifact configuration, optional
+  VIES enablement, platform admin allow-list, webhook encryption key, and smoke
+  tests described in `docs/deployment/`.

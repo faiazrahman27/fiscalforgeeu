@@ -8,6 +8,7 @@ import {
   Layers3
 } from "lucide-react";
 import { Reveal } from "../../components/reveal";
+import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { validationLayers } from "../../lib/constants";
 import "./validation.css";
@@ -112,6 +113,8 @@ export default function ValidationPage() {
           </div>
         </div>
       </section>
+
+      <SiteFooter />
     </main>
   );
 }

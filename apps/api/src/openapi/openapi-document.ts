@@ -3369,7 +3369,7 @@ const openApiDocument = {
         properties: {
           documentKey: {
             type: "string",
-            example: "terms-of-service"
+            example: "terms"
           },
           title: {
             type: "string",

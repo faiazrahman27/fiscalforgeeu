@@ -8,6 +8,7 @@ import {
   Scale
 } from "lucide-react";
 import { Reveal } from "../../components/reveal";
+import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { legalBoundaries } from "../../lib/constants";
 import "./boundaries.css";
@@ -104,6 +105,8 @@ export default function BoundariesPage() {
           </div>
         </div>
       </section>
+
+      <SiteFooter />
     </main>
   );
 }

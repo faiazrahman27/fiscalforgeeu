@@ -18,9 +18,60 @@ export type PublicLegalDocument = {
 const LEGAL_SAFE_NOTICE =
   "This platform policy text is informational product copy for Invoice Lantern. It is not legal, tax, accounting, privacy, financial, professional, official filing, authority, OpenPeppol, Peppol authority, European Commission, EU, or standards-body advice or certification. Professional legal and privacy review is required before production reliance.";
 
+export const LEGAL_DOCUMENT_ALIASES: Record<string, string> = {
+  "terms-of-service": "terms",
+  "privacy-policy": "privacy",
+  "cookie-policy": "cookies",
+  "data-processing-addendum": "dpa",
+  "acceptable-use-policy": "acceptable-use",
+  "security-policy": "security",
+  "disclaimer-no-tax-advice": "disclaimer",
+  "subprocessor-list": "subprocessors",
+  "data-retention-policy": "retention",
+  "incident-response-policy": "incident-response",
+  "vulnerability-disclosure-policy": "vulnerability-disclosure",
+  "trademark-brand-disclaimer": "trademark",
+  "webhook-simulator-terms": "webhook-simulator-notice",
+  "xml-xsd-schematron-validation-notice": "xml-xsd-schematron-notice"
+};
+
+export const ACCOUNT_LEGAL_DOCUMENT_KEYS = [
+  "terms",
+  "privacy",
+  "cookies",
+  "acceptable-use",
+  "disclaimer"
+] as const;
+
+export type AccountLegalDocumentKey =
+  (typeof ACCOUNT_LEGAL_DOCUMENT_KEYS)[number];
+
+export const ACCOUNT_LEGAL_DOCUMENT_LABELS: Record<
+  AccountLegalDocumentKey,
+  string
+> = {
+  terms: "Terms of Service",
+  privacy: "Privacy Policy",
+  cookies: "Cookie Policy",
+  "acceptable-use": "Acceptable Use Policy",
+  disclaimer: "Disclaimer / No Tax Advice / No Official Filing boundary"
+};
+
+export const ACCOUNT_LEGAL_DOCUMENT_VERSION = "2026.05.14";
+
+export function canonicalizeLegalDocumentKey(documentKey: string) {
+  const cleanDocumentKey = documentKey.trim();
+
+  return LEGAL_DOCUMENT_ALIASES[cleanDocumentKey] ?? cleanDocumentKey;
+}
+
+export function getLegalDocumentHref(documentKey: string) {
+  return `/legal/${encodeURIComponent(canonicalizeLegalDocumentKey(documentKey))}`;
+}
+
 const fallbackLegalDocuments: PublicLegalDocument[] = [
   {
-    documentKey: "terms-of-service",
+    documentKey: "terms",
     title: "Terms of Service",
     category: "platform",
     audience: "public",
@@ -37,7 +88,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial public terms notice."
   },
   {
-    documentKey: "privacy-policy",
+    documentKey: "privacy",
     title: "Privacy Policy",
     category: "privacy",
     audience: "public",
@@ -54,7 +105,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial privacy policy notice."
   },
   {
-    documentKey: "cookie-policy",
+    documentKey: "cookies",
     title: "Cookie Policy",
     category: "privacy",
     audience: "public",
@@ -71,7 +122,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial cookie notice."
   },
   {
-    documentKey: "data-processing-addendum",
+    documentKey: "dpa",
     title: "Data Processing Addendum",
     category: "privacy",
     audience: "workspace",
@@ -88,7 +139,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial DPA notice."
   },
   {
-    documentKey: "acceptable-use-policy",
+    documentKey: "acceptable-use",
     title: "Acceptable Use Policy",
     category: "security",
     audience: "public",
@@ -105,7 +156,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial acceptable-use notice."
   },
   {
-    documentKey: "security-policy",
+    documentKey: "security",
     title: "Security Policy",
     category: "security",
     audience: "public",
@@ -122,7 +173,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial security notice."
   },
   {
-    documentKey: "disclaimer-no-tax-advice",
+    documentKey: "disclaimer",
     title: "Disclaimer / No Tax Advice Notice",
     category: "disclaimer",
     audience: "public",
@@ -139,7 +190,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial disclaimer notice."
   },
   {
-    documentKey: "subprocessor-list",
+    documentKey: "subprocessors",
     title: "Subprocessor List",
     category: "privacy",
     audience: "public",
@@ -156,7 +207,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial subprocessor notice."
   },
   {
-    documentKey: "data-retention-policy",
+    documentKey: "retention",
     title: "Data Retention Policy",
     category: "privacy",
     audience: "workspace",
@@ -173,7 +224,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial retention notice."
   },
   {
-    documentKey: "incident-response-policy",
+    documentKey: "incident-response",
     title: "Incident Response Policy",
     category: "security",
     audience: "workspace",
@@ -190,7 +241,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial incident response notice."
   },
   {
-    documentKey: "vulnerability-disclosure-policy",
+    documentKey: "vulnerability-disclosure",
     title: "Vulnerability Disclosure Policy",
     category: "security",
     audience: "public",
@@ -207,7 +258,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial vulnerability disclosure notice."
   },
   {
-    documentKey: "trademark-brand-disclaimer",
+    documentKey: "trademark",
     title: "Trademark / Brand Disclaimer",
     category: "disclaimer",
     audience: "public",
@@ -258,7 +309,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial country rule-pack notice."
   },
   {
-    documentKey: "webhook-simulator-terms",
+    documentKey: "webhook-simulator-notice",
     title: "Webhook Simulator Terms / Integration Notice",
     category: "developer",
     audience: "developer",
@@ -309,7 +360,7 @@ const fallbackLegalDocuments: PublicLegalDocument[] = [
     changeNotes: "Initial VIES evidence notice."
   },
   {
-    documentKey: "xml-xsd-schematron-validation-notice",
+    documentKey: "xml-xsd-schematron-notice",
     title: "XML/XSD/Schematron Technical Validation Notice",
     category: "technical",
     audience: "developer",
@@ -421,7 +472,7 @@ export async function listPublicLegalDocuments() {
 }
 
 export async function getPublicLegalDocument(documentKey: string) {
-  const cleanDocumentKey = documentKey.trim();
+  const cleanDocumentKey = canonicalizeLegalDocumentKey(documentKey);
   const baseUrl = apiBaseUrl();
 
   if (baseUrl) {

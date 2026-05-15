@@ -12,6 +12,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { Reveal } from "../../components/reveal";
+import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { listPublicLegalDocuments } from "../../lib/legal-documents";
 
@@ -67,10 +68,10 @@ export default async function LegalIndexPage() {
   ).length;
 
   const featuredDocumentKeys = [
-    "terms-of-service",
-    "privacy-policy",
-    "data-processing-addendum",
-    "disclaimer-no-tax-advice"
+    "terms",
+    "privacy",
+    "dpa",
+    "disclaimer"
   ];
 
   const featuredDocuments = documents.filter((document) =>
@@ -353,6 +354,8 @@ export default async function LegalIndexPage() {
           </Reveal>
         </div>
       </section>
+
+      <SiteFooter />
     </main>
   );
 }

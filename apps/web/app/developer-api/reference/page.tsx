@@ -10,6 +10,7 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { Reveal } from "../../../components/reveal";
+import { SiteFooter } from "../../../components/site-footer";
 import { SiteHeader } from "../../../components/site-header";
 import { OpenApiReference } from "./openapi-reference";
 import "../developer-api.css";
@@ -294,6 +295,8 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
           </div>
         </div>
       </section>
+
+      <SiteFooter />
     </main>
   );
 }

@@ -1,9 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, LogIn, ShieldAlert } from "lucide-react";
+import { SiteFooter } from "../../../components/site-footer";
+import { getLegalDocumentHref } from "../../../lib/legal-documents";
 import { createSupabaseBrowserClient } from "../../../lib/supabase/client";
 import styles from "../auth.module.css";
 
@@ -97,6 +100,7 @@ export default function SignInPage() {
   }
 
   return (
+    <>
     <main className={styles.authShell}>
       <section className={styles.authCard}>
         <Link href="/" className={styles.authBackLink}>
@@ -104,13 +108,31 @@ export default function SignInPage() {
           Home
         </Link>
 
+        <div className={styles.authBrand}>
+          <Image
+            src="/brand/invoice-lantern.png"
+            alt="Invoice Lantern"
+            width={72}
+            height={72}
+            priority
+          />
+          <span>Invoice Lantern</span>
+        </div>
+
         <p className={styles.authKicker}>Secure access</p>
         <h1 className={styles.authTitle}>Sign in</h1>
 
         <p className={styles.authLead}>
           Access your Invoice Lantern workspace with a verified account. The
-          platform will use Supabase Auth sessions before API and database access.
+          platform uses Supabase Auth sessions before private workspace, API,
+          and database access.
         </p>
+
+        <div className={styles.authBoundaryList}>
+          <span>Independent sandbox</span>
+          <span>Not official filing</span>
+          <span>Professional review required</span>
+        </div>
 
         <form className={styles.authForm} onSubmit={handleSignIn}>
           <label className={styles.authField}>
@@ -159,6 +181,13 @@ export default function SignInPage() {
           .
         </p>
 
+        <div className={styles.authLegalLinks} aria-label="Legal links">
+          <Link href={getLegalDocumentHref("terms")}>Terms</Link>
+          <Link href={getLegalDocumentHref("privacy")}>Privacy</Link>
+          <Link href={getLegalDocumentHref("cookies")}>Cookies</Link>
+          <Link href="/boundaries">Boundaries</Link>
+        </div>
+
         <p className={styles.authNotice}>
           Email verification must be enabled in Supabase Auth before production
           access. Resend SMTP can deliver the verification email from your own
@@ -166,5 +195,7 @@ export default function SignInPage() {
         </p>
       </section>
     </main>
+    <SiteFooter compact />
+    </>
   );
 }

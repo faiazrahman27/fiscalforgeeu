@@ -17,8 +17,8 @@ export function SiteHeader() {
           <Image
             src="/brand/invoice-lantern.png"
             alt="Invoice Lantern"
-            width={46}
-            height={46}
+            width={72}
+            height={72}
             className="brand-logo-image"
             priority
           />

@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   UsersRound
 } from "lucide-react";
+import { LegalAcceptanceGate } from "../../components/legal-acceptance-gate";
 import { createSupabaseServerClient } from "../../lib/supabase/server";
 import "./workspace.css";
 
@@ -323,16 +324,20 @@ export default async function WorkspaceLayout({
   return (
     <main className="workspace-shell">
       <aside className="workspace-sidebar">
-        <Link href="/" className="workspace-logo" aria-label="Invoice Lantern home">
-          <span>
-            <Image
-              src="/brand/invoice-lantern.png"
-              alt=""
-              width={30}
-              height={30}
-              priority
-            />
-          </span>
+        <Link
+          href="/"
+          className="workspace-logo"
+          aria-label="Invoice Lantern home"
+        >
+          <Image
+            src="/brand/invoice-lantern.png"
+            alt="Invoice Lantern"
+            width={64}
+            height={64}
+            className="workspace-logo-image"
+            priority
+          />
+
           <strong>Invoice Lantern</strong>
         </Link>
 
@@ -361,6 +366,8 @@ export default async function WorkspaceLayout({
       </aside>
 
       <section className="workspace-main">
+        <LegalAcceptanceGate />
+
         <header className="workspace-topbar">
           <div>
             <p>Independent readiness sandbox</p>

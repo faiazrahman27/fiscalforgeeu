@@ -8,6 +8,7 @@ import {
   WandSparkles
 } from "lucide-react";
 import { Reveal } from "../../components/reveal";
+import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import { workflowSteps } from "../../lib/constants";
 import "./studio.css";
@@ -108,6 +109,8 @@ export default function StudioPage() {
           </div>
         </div>
       </section>
+
+      <SiteFooter />
     </main>
   );
 }

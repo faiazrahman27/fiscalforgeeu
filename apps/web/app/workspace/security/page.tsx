@@ -76,7 +76,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function formatLabel(value: string) {
-  return value.replaceAll("_", " ");
+  return value
+    .replaceAll("_", " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function getStatusTone(status: ReadinessStatus) {
@@ -99,7 +104,9 @@ function normalizeChecklistItem(value: unknown): ChecklistItem | null {
   const key = typeof value.key === "string" ? value.key : "";
   const label = typeof value.label === "string" ? value.label : key;
   const status =
-    typeof value.status === "string" ? (value.status as ReadinessStatus) : "review_required";
+    typeof value.status === "string"
+      ? (value.status as ReadinessStatus)
+      : "review_required";
   const summary = typeof value.summary === "string" ? value.summary : "";
 
   if (!key || !label || !summary) {
@@ -131,10 +138,13 @@ function normalizeReadiness(value: unknown): SecurityReadinessResponse | null {
           | "critical",
         summary: String(item.summary ?? ""),
         evidence: Array.isArray(item.evidence)
-          ? item.evidence.filter((evidence): evidence is string => typeof evidence === "string")
+          ? item.evidence.filter(
+              (evidence): evidence is string => typeof evidence === "string"
+            )
           : []
       }))
     : [];
+
   const monitoringMetrics = Array.isArray(value.monitoringMetrics)
     ? value.monitoringMetrics.filter(isRecord).map((item) => ({
         key: String(item.key ?? ""),
@@ -144,6 +154,7 @@ function normalizeReadiness(value: unknown): SecurityReadinessResponse | null {
         privacyNote: String(item.privacyNote ?? "")
       }))
     : [];
+
   const contacts = isRecord(value.contacts) ? value.contacts : {};
 
   return {
@@ -165,13 +176,19 @@ function normalizeReadiness(value: unknown): SecurityReadinessResponse | null {
     checks,
     monitoringMetrics,
     incidentChecklist: Array.isArray(value.incidentChecklist)
-      ? value.incidentChecklist.map(normalizeChecklistItem).filter((item): item is ChecklistItem => item !== null)
+      ? value.incidentChecklist
+          .map(normalizeChecklistItem)
+          .filter((item): item is ChecklistItem => item !== null)
       : [],
     operationalChecklist: Array.isArray(value.operationalChecklist)
-      ? value.operationalChecklist.map(normalizeChecklistItem).filter((item): item is ChecklistItem => item !== null)
+      ? value.operationalChecklist
+          .map(normalizeChecklistItem)
+          .filter((item): item is ChecklistItem => item !== null)
       : [],
     offlineCapabilityBoundaries: Array.isArray(value.offlineCapabilityBoundaries)
-      ? value.offlineCapabilityBoundaries.map(normalizeChecklistItem).filter((item): item is ChecklistItem => item !== null)
+      ? value.offlineCapabilityBoundaries
+          .map(normalizeChecklistItem)
+          .filter((item): item is ChecklistItem => item !== null)
       : [],
     rateLimitPolicies: Array.isArray(value.rateLimitPolicies)
       ? value.rateLimitPolicies.filter(isRecord).map((policy) => ({
@@ -203,6 +220,7 @@ export default function WorkspaceSecurityReadinessPage() {
       ).length ?? 0,
     [readiness]
   );
+
   const reviewCount = useMemo(
     () =>
       readiness?.checks.filter((check) => check.status === "review_required")
@@ -223,7 +241,9 @@ export default function WorkspaceSecurityReadinessPage() {
 
       if (!response.ok) {
         const fallbackMessage =
-          isRecord(data) && isRecord(data.error) && typeof data.error.message === "string"
+          isRecord(data) &&
+          isRecord(data.error) &&
+          typeof data.error.message === "string"
             ? data.error.message
             : "Security readiness could not be loaded.";
 
@@ -248,9 +268,9 @@ export default function WorkspaceSecurityReadinessPage() {
   }, []);
 
   return (
-    <div className="workspace-page">
-      <section className="workspace-page-head">
-        <p className="workspace-kicker">Security Readiness</p>
+    <div className="workspace-page workspace-security-page">
+      <section className="workspace-page-head workspace-security-head">
+        <p className="workspace-kicker">Security readiness</p>
         <h2>Review PWA, monitoring, and incident readiness.</h2>
         <p>
           This page shows safe readiness state for workspace operators. It does
@@ -259,7 +279,7 @@ export default function WorkspaceSecurityReadinessPage() {
         </p>
       </section>
 
-      <section className="workspace-stat-strip">
+      <section className="workspace-stat-strip workspace-security-stats">
         <div className="workspace-stat">
           <p>Status</p>
           <strong>{readiness ? formatLabel(readiness.status) : "Loading"}</strong>
@@ -285,8 +305,8 @@ export default function WorkspaceSecurityReadinessPage() {
         </div>
       </section>
 
-      <section className="developer-console">
-        <div className="developer-console-head">
+      <section className="developer-console workspace-security-panel">
+        <div className="developer-console-head workspace-security-panel-head">
           <div>
             <p>Diagnostics</p>
             <h3>Readiness source</h3>
@@ -299,7 +319,7 @@ export default function WorkspaceSecurityReadinessPage() {
         </div>
 
         {message ? (
-          <div className="alert-item">
+          <div className="workspace-security-message">
             <span />
             <p>{message}</p>
           </div>
@@ -325,14 +345,15 @@ export default function WorkspaceSecurityReadinessPage() {
             key: check.key,
             label: check.label,
             status: check.status,
-            summary: `${check.summary} ${check.evidence.join(" ")}`
+            summary: check.summary,
+            evidence: check.evidence
           })) ?? []
         }
         emptyLabel="No security checks loaded yet."
       />
 
-      <section className="developer-console">
-        <div className="developer-console-head">
+      <section className="developer-console workspace-security-panel">
+        <div className="developer-console-head workspace-security-panel-head">
           <div>
             <p>Monitoring</p>
             <h3>Metrics inventory</h3>
@@ -342,16 +363,17 @@ export default function WorkspaceSecurityReadinessPage() {
         </div>
 
         {readiness?.monitoringMetrics.length ? (
-          <div className="workspace-table-shell">
+          <div className="workspace-security-card-grid">
             {readiness.monitoringMetrics.map((metric) => (
-              <div className="workspace-table-row" key={metric.key}>
+              <article className="workspace-security-card" key={metric.key}>
                 <div>
                   <strong>{metric.label}</strong>
-                  <span>{metric.source}</span>
-                  <span>{metric.privacyNote}</span>
+                  <p>{metric.source}</p>
+                  <p>{metric.privacyNote}</p>
                 </div>
+
                 <StatusPill status={metric.status} />
-              </div>
+              </article>
             ))}
           </div>
         ) : (
@@ -397,8 +419,8 @@ export default function WorkspaceSecurityReadinessPage() {
         emptyLabel="No PWA/offline boundaries loaded yet."
       />
 
-      <section className="developer-console">
-        <div className="developer-console-head">
+      <section className="developer-console workspace-security-panel">
+        <div className="developer-console-head workspace-security-panel-head">
           <div>
             <p>API safety</p>
             <h3>Rate-limit policy summary</h3>
@@ -408,19 +430,22 @@ export default function WorkspaceSecurityReadinessPage() {
         </div>
 
         {readiness?.rateLimitPolicies.length ? (
-          <div className="workspace-table-shell">
+          <div className="workspace-security-card-grid">
             {readiness.rateLimitPolicies.map((policy) => (
-              <div className="workspace-table-row" key={policy.policyKey}>
+              <article className="workspace-security-card" key={policy.policyKey}>
                 <div>
                   <strong>{policy.policyKey}</strong>
-                  <span>
+                  <p>
                     {policy.scope} · {policy.appliesTo}
-                  </span>
+                  </p>
+                  <p>
+                    {policy.maxRequests} requests per{" "}
+                    {Math.round(policy.windowSeconds / 60)} minutes
+                  </p>
                 </div>
-                <span>
-                  {policy.maxRequests} / {Math.round(policy.windowSeconds / 60)}m
-                </span>
-              </div>
+
+                <StatusPill status="configured" />
+              </article>
             ))}
           </div>
         ) : (
@@ -431,8 +456,8 @@ export default function WorkspaceSecurityReadinessPage() {
         )}
       </section>
 
-      <section className="developer-console">
-        <div className="developer-console-head">
+      <section className="developer-console workspace-security-panel">
+        <div className="developer-console-head workspace-security-panel-head">
           <div>
             <p>Contacts</p>
             <h3>Configuration state</h3>
@@ -468,12 +493,12 @@ function ReadinessSection({
 }: {
   title: string;
   icon: ReactNode;
-  items: ChecklistItem[];
+  items: Array<ChecklistItem & { evidence?: string[] }>;
   emptyLabel: string;
 }) {
   return (
-    <section className="developer-console">
-      <div className="developer-console-head">
+    <section className="developer-console workspace-security-panel">
+      <div className="developer-console-head workspace-security-panel-head">
         <div>
           <p>Checklist</p>
           <h3>{title}</h3>
@@ -489,7 +514,16 @@ function ReadinessSection({
               <div>
                 <strong>{item.label}</strong>
                 <p>{item.summary}</p>
+
+                {item.evidence?.length ? (
+                  <ul className="workspace-security-evidence">
+                    {item.evidence.map((evidence) => (
+                      <li key={evidence}>{evidence}</li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
+
               <StatusPill status={item.status} />
             </article>
           ))}

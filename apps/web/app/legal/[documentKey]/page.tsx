@@ -14,6 +14,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { Reveal } from "../../../components/reveal";
+import { SiteFooter } from "../../../components/site-footer";
 import { SiteHeader } from "../../../components/site-header";
 import {
   getPublicLegalDocument,
@@ -403,6 +404,8 @@ export default async function LegalDocumentPage({
           </div>
         </div>
       </section>
+
+      <SiteFooter />
     </main>
   );
 }

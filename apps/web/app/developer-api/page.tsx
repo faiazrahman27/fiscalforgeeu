@@ -9,6 +9,7 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { Reveal } from "../../components/reveal";
+import { SiteFooter } from "../../components/site-footer";
 import { SiteHeader } from "../../components/site-header";
 import "./developer-api.css";
 
@@ -456,7 +457,7 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
 
           <div className="next-page-row">
             <Link
-              href="/legal/webhook-simulator-terms"
+              href="/legal/webhook-simulator-notice"
               className="text-link-button"
             >
               Webhook notice
@@ -464,7 +465,7 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
             </Link>
 
             <Link
-              href="/legal/disclaimer-no-tax-advice"
+              href="/legal/disclaimer"
               className="text-link-button"
             >
               Disclaimer
@@ -478,6 +479,8 @@ X-RateLimit-Reset: 2026-05-01T12:15:00.000Z
           </div>
         </div>
       </section>
+
+      <SiteFooter />
     </main>
   );
 }
