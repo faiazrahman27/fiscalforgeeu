@@ -1,96 +1,390 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { env } from "../../config/env.js";
+import { timingSafeEqual } from "node:crypto";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import { env } from "../config/env.js";
+import {
+  getSupabasePublicClient,
+  hasSupabaseJwtConfig
+} from "../lib/supabase/server-client.js";
+import {
+  looksLikeInvoiceLanternApiKey,
+  verifyApiKey,
+  type ApiKeyMetadata,
+  type ApiKeyScope
+} from "../services/api-key-service.js";
 
-let cachedServiceRoleClient: SupabaseClient | null = null;
-let cachedPublicClient: SupabaseClient | null = null;
+export type AuthenticatedRequestUser = {
+  id: string;
+  email: string;
+  role: "authenticated";
+};
 
-export function hasSupabaseServerConfig() {
-  return Boolean(
-    env.SUPABASE_URL &&
-      env.SUPABASE_PUBLISHABLE_KEY &&
-      env.SUPABASE_SERVICE_ROLE_KEY
-  );
+export type SupabaseAuthVerifierForTesting = (
+  token: string
+) =>
+  | AuthenticatedRequestUser
+  | null
+  | Promise<AuthenticatedRequestUser | null>;
+
+declare module "fastify" {
+  interface FastifyRequest {
+    authenticatedUser?: AuthenticatedRequestUser;
+    authenticatedAccessToken?: string;
+    authenticatedApiKey?: ApiKeyMetadata;
+    authenticationMode?:
+      | "dev_api_key"
+      | "supabase_user"
+      | "organization_api_key";
+    apiKeyRequestStartedAt?: number;
+  }
 }
 
-export function hasSupabaseJwtConfig() {
-  return Boolean(env.SUPABASE_URL && env.SUPABASE_PUBLISHABLE_KEY);
+const EMPTY_API_KEY_SCOPES: readonly ApiKeyScope[] = [];
+
+let supabaseAuthVerifierForTesting: SupabaseAuthVerifierForTesting | null = null;
+
+export function setSupabaseAuthVerifierForTesting(
+  verifier: SupabaseAuthVerifierForTesting
+) {
+  supabaseAuthVerifierForTesting = verifier;
 }
 
-export function getSupabasePublicClient() {
-  if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
-    throw new Error(
-      "Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY in apps/api/.env."
-    );
-  }
-
-  if (!cachedPublicClient) {
-    cachedPublicClient = createClient(
-      env.SUPABASE_URL,
-      env.SUPABASE_PUBLISHABLE_KEY,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
-  }
-
-  return cachedPublicClient;
+export function resetSupabaseAuthVerifierForTesting() {
+  supabaseAuthVerifierForTesting = null;
 }
 
-export function getSupabaseUserClient(accessToken: string) {
-  const safeAccessToken = accessToken.trim();
+function hasSupabaseAuthVerifierForTesting() {
+  return env.APP_ENV === "test" && supabaseAuthVerifierForTesting !== null;
+}
 
-  if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
-    throw new Error(
-      "Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY in apps/api/.env."
-    );
+function safeCompare(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
   }
 
-  if (!safeAccessToken) {
-    throw new Error("Missing Supabase user access token.");
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isDevelopmentApiKeyEnabled() {
+  return env.APP_ENV !== "production" && env.DEV_API_KEY.trim().length > 0;
+}
+
+function isValidDevelopmentApiKey(rawApiKey: string) {
+  return isDevelopmentApiKeyEnabled() && safeCompare(rawApiKey, env.DEV_API_KEY);
+}
+
+function readBearerToken(request: FastifyRequest) {
+  const rawAuthorizationHeader = request.headers.authorization;
+
+  if (
+    Array.isArray(rawAuthorizationHeader) ||
+    typeof rawAuthorizationHeader !== "string"
+  ) {
+    return "";
   }
 
-  /*
-   * User-scoped Supabase client.
-   *
-   * This client uses the publishable key plus the signed-in user's access token.
-   * Database queries made through this client should be evaluated by Supabase RLS
-   * as the authenticated user, not as the service role.
-   */
-  return createClient(env.SUPABASE_URL, env.SUPABASE_PUBLISHABLE_KEY, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    },
-    global: {
-      headers: {
-        Authorization: `Bearer ${safeAccessToken}`
-      }
+  const trimmedHeader = rawAuthorizationHeader.trim();
+
+  if (!trimmedHeader.toLowerCase().startsWith("bearer ")) {
+    return "";
+  }
+
+  return trimmedHeader.slice("bearer ".length).trim();
+}
+
+function readHeaderString(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0]?.trim() ?? "";
+  }
+
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readXApiKey(request: FastifyRequest) {
+  return readHeaderString(request.headers["x-api-key"]);
+}
+
+function sendUnauthorized(
+  reply: FastifyReply,
+  code: string,
+  message: string,
+  details: unknown = null
+) {
+  return reply.status(401).send({
+    error: {
+      code,
+      message,
+      details
     }
   });
 }
 
-export function getSupabaseServiceRoleClient() {
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
-      "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in apps/api/.env."
-    );
-  }
+function sendAuthenticationError(
+  reply: FastifyReply,
+  statusCode: 401 | 403,
+  code: string,
+  message: string,
+  details: unknown = null
+) {
+  return reply.status(statusCode).send({
+    error: {
+      code,
+      message,
+      details
+    }
+  });
+}
 
-  if (!cachedServiceRoleClient) {
-    cachedServiceRoleClient = createClient(
-      env.SUPABASE_URL,
-      env.SUPABASE_SERVICE_ROLE_KEY,
+async function authenticateWithOrganizationApiKey(
+  rawApiKey: string,
+  requiredScopes: readonly ApiKeyScope[],
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const verification = await verifyApiKey(rawApiKey, requiredScopes, {
+    ipAddress: request.ip
+  }).catch((error) => {
+    request.log.error(
       {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
+        error
+      },
+      "Organization API key authentication failed before verification"
+    );
+
+    return null;
+  });
+
+  if (!verification) {
+    return reply.status(503).send({
+      error: {
+        code: "API_KEY_AUTH_NOT_CONFIGURED",
+        message:
+          "Organization API key authentication is not available for this API service.",
+        details: null
       }
+    });
+  }
+
+  if (!verification.ok) {
+    return sendAuthenticationError(
+      reply,
+      verification.statusCode,
+      verification.code,
+      verification.message
     );
   }
 
-  return cachedServiceRoleClient;
+  request.authenticatedApiKey = verification.apiKey;
+  request.authenticationMode = "organization_api_key";
+  request.apiKeyRequestStartedAt = Date.now();
+}
+
+async function authenticateWithApiKeyValue(
+  rawApiKey: string,
+  requiredScopes: readonly ApiKeyScope[],
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  if (!rawApiKey) {
+    return sendUnauthorized(
+      reply,
+      "API_KEY_REQUIRED",
+      "Missing x-api-key header."
+    );
+  }
+
+  /*
+   * Development API keys are explicitly disabled in production.
+   * Production API-key access must go through database-backed organization
+   * API keys so hashing, scoping, revocation, rate limits, and request logs
+   * remain enforceable.
+   */
+  if (isValidDevelopmentApiKey(rawApiKey)) {
+    request.authenticationMode = "dev_api_key";
+    return;
+  }
+
+  return authenticateWithOrganizationApiKey(
+    rawApiKey,
+    requiredScopes,
+    request,
+    reply
+  );
+}
+
+async function authenticateWithSupabaseBearerToken(
+  token: string,
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  if (hasSupabaseAuthVerifierForTesting()) {
+    const user = await supabaseAuthVerifierForTesting?.(token);
+
+    if (!user) {
+      return sendUnauthorized(
+        reply,
+        "AUTH_TOKEN_INVALID",
+        "Invalid or expired authentication token."
+      );
+    }
+
+    request.authenticatedUser = user;
+    request.authenticatedAccessToken = token;
+    request.authenticationMode = "supabase_user";
+    return;
+  }
+
+  const supabase = getSupabasePublicClient();
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data.user) {
+    return sendUnauthorized(
+      reply,
+      "AUTH_TOKEN_INVALID",
+      "Invalid or expired authentication token."
+    );
+  }
+
+  request.authenticatedUser = {
+    id: data.user.id,
+    email: data.user.email ?? "",
+    role: "authenticated"
+  };
+
+  /*
+   * Keep the bearer token available only inside the API request lifecycle.
+   * Repository functions can use it to create a user-scoped Supabase client,
+   * so database reads/writes are evaluated by RLS as the signed-in user.
+   */
+  request.authenticatedAccessToken = token;
+  request.authenticationMode = "supabase_user";
+}
+
+export async function requireApiKey(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const bearerToken = readBearerToken(request);
+  const xApiKey = readXApiKey(request);
+
+  /*
+   * Signed-in workspace requests should resolve as Supabase-user requests when
+   * Supabase auth is configured. The local web proxy may also send x-api-key;
+   * bearer auth is intentionally preferred so RLS-backed repositories can run
+   * as the authenticated user.
+   */
+  if (
+    bearerToken &&
+    !looksLikeInvoiceLanternApiKey(bearerToken) &&
+    (hasSupabaseJwtConfig() || hasSupabaseAuthVerifierForTesting())
+  ) {
+    return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
+  }
+
+  if (xApiKey) {
+    return authenticateWithApiKeyValue(
+      xApiKey,
+      EMPTY_API_KEY_SCOPES,
+      request,
+      reply
+    );
+  }
+
+  if (bearerToken && looksLikeInvoiceLanternApiKey(bearerToken)) {
+    return authenticateWithOrganizationApiKey(
+      bearerToken,
+      EMPTY_API_KEY_SCOPES,
+      request,
+      reply
+    );
+  }
+
+  return sendUnauthorized(
+    reply,
+    "API_KEY_REQUIRED",
+    "Missing x-api-key header."
+  );
+}
+
+export function requireApiKeyScopes(requiredScopes: readonly ApiKeyScope[]) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const bearerToken = readBearerToken(request);
+    const xApiKey = readXApiKey(request);
+
+    if (
+      bearerToken &&
+      !looksLikeInvoiceLanternApiKey(bearerToken) &&
+      (hasSupabaseJwtConfig() || hasSupabaseAuthVerifierForTesting())
+    ) {
+      return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
+    }
+
+    if (xApiKey) {
+      return authenticateWithApiKeyValue(
+        xApiKey,
+        requiredScopes,
+        request,
+        reply
+      );
+    }
+
+    if (bearerToken && looksLikeInvoiceLanternApiKey(bearerToken)) {
+      return authenticateWithOrganizationApiKey(
+        bearerToken,
+        requiredScopes,
+        request,
+        reply
+      );
+    }
+
+    return sendUnauthorized(
+      reply,
+      "API_KEY_REQUIRED",
+      "Missing x-api-key header."
+    );
+  };
+}
+
+export async function requireSupabaseUser(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const bearerToken = readBearerToken(request);
+  const xApiKey = readXApiKey(request);
+
+  if (!bearerToken) {
+    if (xApiKey) {
+      return sendUnauthorized(
+        reply,
+        "AUTH_TOKEN_REQUIRED",
+        "API key authentication is not allowed for this endpoint. Use a Supabase bearer token."
+      );
+    }
+
+    return sendUnauthorized(
+      reply,
+      "AUTH_TOKEN_REQUIRED",
+      "Missing Supabase bearer token."
+    );
+  }
+
+  if (looksLikeInvoiceLanternApiKey(bearerToken)) {
+    return sendUnauthorized(
+      reply,
+      "AUTH_TOKEN_REQUIRED",
+      "API key authentication is not allowed for this endpoint. Use a Supabase bearer token."
+    );
+  }
+
+  if (!hasSupabaseJwtConfig() && !hasSupabaseAuthVerifierForTesting()) {
+    return sendUnauthorized(
+      reply,
+      "AUTH_NOT_CONFIGURED",
+      "Supabase authentication is not configured for this API service."
+    );
+  }
+
+  return authenticateWithSupabaseBearerToken(bearerToken, request, reply);
 }

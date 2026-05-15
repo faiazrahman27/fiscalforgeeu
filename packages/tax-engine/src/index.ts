@@ -1639,3 +1639,5 @@ function dedupeFindings(
 function uniqueStrings(values: string[]) {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
 }
+
+export * from "./learning-scenarios.js";

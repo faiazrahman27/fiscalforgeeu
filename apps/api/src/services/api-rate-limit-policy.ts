@@ -42,6 +42,15 @@ export const API_RATE_LIMIT_POLICIES = {
     appliesTo: "api_key",
     requestPathPrefix: "/api/v1/vat/check-vies"
   },
+  transactions_classify: {
+    policyKey: "transactions_classify",
+    windowSeconds: 15 * 60,
+    maxRequests: 60,
+    scope: "transactions:classify",
+    description: "Sandbox transaction classification API limit.",
+    appliesTo: "api_key",
+    requestPathPrefix: "/api/v1/transactions/classify"
+  },
   transactions_simulate_vida: {
     policyKey: "transactions_simulate_vida",
     windowSeconds: 15 * 60,
@@ -50,6 +59,15 @@ export const API_RATE_LIMIT_POLICIES = {
     description: "Sandbox ViDA-readiness simulation API limit.",
     appliesTo: "api_key",
     requestPathPrefix: "/api/v1/transactions/simulate-vida"
+  },
+  learning_scenarios_read: {
+    policyKey: "learning_scenarios_read",
+    windowSeconds: 15 * 60,
+    maxRequests: 120,
+    scope: "learning_scenarios:read",
+    description: "Sandbox learning scenario catalog and preview API limit.",
+    appliesTo: "api_key",
+    requestPathPrefix: "/api/v1/learning/scenarios"
   },
   invoices_validate: {
     policyKey: "invoices_validate",
@@ -162,8 +180,16 @@ export function getSandboxRateLimitMessage(policy: ApiRateLimitPolicy) {
     return "This API key exceeded the sandbox rate limit for VIES evidence checks.";
   }
 
+  if (policy.policyKey === "transactions_classify") {
+    return "This API key exceeded the sandbox rate limit for transaction classification.";
+  }
+
   if (policy.policyKey === "transactions_simulate_vida") {
     return "This API key exceeded the sandbox rate limit for ViDA-readiness simulations.";
+  }
+
+  if (policy.policyKey === "learning_scenarios_read") {
+    return "This API key exceeded the sandbox rate limit for learning scenarios.";
   }
 
   if (policy.policyKey === "validation_rules_catalog") {

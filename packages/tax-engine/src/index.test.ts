@@ -5,12 +5,16 @@ import {
   TRANSACTION_SIMULATION_DISCLAIMER,
   VAT_FORMAT_DISCLAIMER,
   VIES_EVIDENCE_DISCLAIMER,
+  LEARNING_SCENARIO_DISCLAIMER,
   classifyTransaction,
   extractVatCountry,
+  getLearningScenario,
   getVatFormatCountryName,
   isEuMemberState,
+  listLearningScenarios,
   normalizeJurisdictionCountryCode,
   normalizeVatId,
+  previewLearningScenario,
   validateVatFormat
 } from "./index.js";
 
@@ -749,4 +753,46 @@ test("transaction simulation avoids legal, tax, filing, and authority guarantee 
   assert.doesNotMatch(resultText, /accepted by authority/);
   assert.doesNotMatch(resultText, /guaranteed/);
   assert.doesNotMatch(resultText, /confirmed by vies/);
+});
+
+test("learning scenarios are unique, legal-safe, and preview-only", () => {
+  const scenarios = listLearningScenarios();
+  const scenarioIds = scenarios.map((scenario) => scenario.scenarioId);
+
+  assert.equal(scenarios.length >= 10, true);
+  assert.equal(new Set(scenarioIds).size, scenarioIds.length);
+
+  for (const summary of scenarios) {
+    const scenario = getLearningScenario(summary.scenarioId);
+
+    assert.ok(scenario);
+    assert.equal(scenario?.notForProductionUse, true);
+    assert.equal(scenario?.disclaimer, LEARNING_SCENARIO_DISCLAIMER);
+    assert.ok(scenario?.learningGoals.length);
+    assert.ok(scenario?.expectedFindings.length);
+
+    const serializedScenario = JSON.stringify(scenario);
+
+    assert.doesNotMatch(serializedScenario, /\b[A-Z]{2}\d{8,12}\b/);
+    assert.doesNotMatch(serializedScenario, /legally compliant/i);
+    assert.doesNotMatch(serializedScenario, /tax compliant/i);
+    assert.doesNotMatch(serializedScenario, /reverse charge applies/i);
+    assert.doesNotMatch(serializedScenario, /authority accepted/i);
+  }
+
+  const preview = previewLearningScenario("intra-eu-b2b-services");
+
+  assert.ok(preview);
+  assert.equal(preview?.notForProductionUse, true);
+  assert.equal(
+    preview?.transactionSimulation.transactionClass,
+    "intra_eu_b2b_services"
+  );
+  assert.ok(
+    preview?.transactionSimulation.findings.some(
+      (finding) => finding.code === "POSSIBLE_INTRA_EU_B2B_REVERSE_CHARGE_CONTEXT"
+    )
+  );
+  assert.match(preview?.disclaimer ?? "", /educational templates/i);
+  assert.doesNotMatch(JSON.stringify(preview), /reverse charge applies/i);
 });

@@ -444,3 +444,94 @@ test("ViDA simulation endpoint has a dedicated API-key rate-limit policy", () =>
   assert.equal(policy.windowSeconds, 15 * 60);
   assert.equal(policy.maxRequests, 30);
 });
+
+test("transaction classify endpoint returns legal-safe reverse-charge context", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/transactions/classify",
+    headers: apiHeaders(),
+    payload: JSON.stringify({
+      sellerCountry: "DE",
+      buyerCountry: "HU",
+      buyerType: "business",
+      transactionType: "services",
+      buyerViesStatus: "not_checked",
+      sellerViesStatus: "not_checked",
+      structuredInvoiceSignals: {
+        hasCanonicalInvoice: true,
+        hasUblXml: true,
+        xsdUblStatus: "passed"
+      }
+    })
+  });
+
+  assert.equal(response.statusCode, 200);
+
+  const body = response.json() as Record<string, unknown>;
+  const reverseChargeSimulation = body.reverseChargeSimulation as Record<
+    string,
+    unknown
+  >;
+  const euContext = body.euContext as Record<string, unknown>;
+  const findings = body.findings as Record<string, unknown>[];
+
+  assert.equal(body.transactionClass, "intra_eu_b2b_services");
+  assert.equal(euContext.crossBorderEu, true);
+  assert.equal(reverseChargeSimulation.relevance, "possible");
+  assert.equal(reverseChargeSimulation.professionalReviewRequired, true);
+  assert.equal(body.legalConfidence, "professional_review_required");
+  assert.equal(body.persisted, false);
+  assert.ok(
+    findings.some(
+      (finding) =>
+        finding.code === "POSSIBLE_INTRA_EU_B2B_REVERSE_CHARGE_CONTEXT"
+    )
+  );
+  assert.match(String(body.disclaimer), /educational technical simulations/i);
+  assert.doesNotMatch(response.body, /reverse charge applies/i);
+  assert.doesNotMatch(response.body, /tax compliant/i);
+  assert.doesNotMatch(response.body, /authority accepted/i);
+});
+
+test("transaction classify endpoint rejects unexpected fields", async (t) => {
+  const app = await buildApp();
+
+  t.after(async () => {
+    await app.close();
+  });
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/transactions/classify",
+    headers: apiHeaders(),
+    payload: JSON.stringify({
+      sellerCountry: "DE",
+      buyerCountry: "HU",
+      buyerType: "business",
+      transactionType: "services",
+      officialVatTreatment: "reverse charge applies"
+    })
+  });
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.body, /TRANSACTION_CLASSIFICATION_REQUEST_INVALID/);
+});
+
+test("transaction classify API key scope and rate limit policy are registered", () => {
+  assert.ok(
+    (API_KEY_SCOPES as readonly string[]).includes("transactions:classify")
+  );
+
+  const policy = API_RATE_LIMIT_POLICIES.transactions_classify;
+
+  assert.equal(policy.policyKey, "transactions_classify");
+  assert.equal(policy.scope, "transactions:classify");
+  assert.equal(policy.appliesTo, "api_key");
+  assert.equal(policy.requestPathPrefix, "/api/v1/transactions/classify");
+});

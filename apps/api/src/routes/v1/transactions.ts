@@ -1,4 +1,11 @@
 import {
+  classifyTransaction,
+  type TransactionBuyerType,
+  type TransactionClassifierInput,
+  type TransactionType,
+  type ViesEvidenceStatus
+} from "@invoice-lantern/tax-engine";
+import {
   simulateVidaReadiness,
   type VidaReadinessSimulationInput
 } from "@invoice-lantern/vida-simulator";
@@ -124,6 +131,8 @@ const vidaStructuredInvoiceSignalsSchema = z
     hasUblXml: z.boolean().optional(),
     hasCiiXml: z.boolean().optional(),
     xsdStatus: vidaTechnicalCheckStatusSchema.optional(),
+    xsdUblStatus: vidaTechnicalCheckStatusSchema.optional(),
+    xsdCiiStatus: vidaTechnicalCheckStatusSchema.optional(),
     schematronPeppolStatus: vidaTechnicalCheckStatusSchema.optional(),
     schematronEn16931Status: vidaTechnicalCheckStatusSchema.optional(),
     validationSummary: vidaValidationSummarySchema.optional()
@@ -165,6 +174,65 @@ const vidaTransactionClassSchema = z.enum([
   "non_eu_or_unsupported",
   "insufficient_data"
 ]);
+
+const transactionBuyerTypeSchema = vidaBuyerTypeSchema;
+const transactionTypeSchema = z.enum([
+  "goods",
+  "services",
+  "digital_service",
+  "digital_services",
+  "mixed",
+  "unknown"
+]);
+const transactionViesStatusSchema = z.enum([
+  "valid",
+  "invalid",
+  "unavailable",
+  "error",
+  "not_checked",
+  "unsupported",
+  "rate_limited",
+  "unknown"
+]);
+
+const transactionStructuredInvoiceSignalsSchema = z
+  .object({
+    hasCanonicalInvoice: z.boolean().optional(),
+    hasUblXml: z.boolean().optional(),
+    hasCiiXml: z.boolean().optional(),
+    xsdStatus: vidaTechnicalCheckStatusSchema.optional(),
+    xsdUblStatus: vidaTechnicalCheckStatusSchema.optional(),
+    xsdCiiStatus: vidaTechnicalCheckStatusSchema.optional(),
+    schematronPeppolStatus: vidaTechnicalCheckStatusSchema.optional(),
+    schematronEn16931Status: vidaTechnicalCheckStatusSchema.optional()
+  })
+  .strict();
+
+const transactionClassificationRequestSchema = z
+  .object({
+    sellerCountry: z.string().trim().min(1).max(8).optional(),
+    buyerCountry: z.string().trim().min(1).max(8).optional(),
+    sellerVatId: z.string().trim().max(64).optional(),
+    buyerVatId: z.string().trim().max(64).optional(),
+    sellerVatCountry: z.string().trim().min(1).max(8).optional(),
+    buyerVatCountry: z.string().trim().min(1).max(8).optional(),
+    buyerType: transactionBuyerTypeSchema.optional(),
+    transactionType: transactionTypeSchema.optional(),
+    invoiceDate: z.string().trim().max(32).optional(),
+    currency: z.string().trim().max(8).optional(),
+    amount: z.string().trim().max(80).optional(),
+    hasViesEvidence: z.boolean().optional(),
+    buyerViesStatus: transactionViesStatusSchema.optional(),
+    sellerViesStatus: transactionViesStatusSchema.optional(),
+    countryPackVersions: z
+      .record(z.string().trim().min(1).max(8), z.string().trim().min(1).max(80))
+      .optional(),
+    countryPackStatuses: z
+      .record(z.string().trim().min(1).max(8), z.string().trim().min(1).max(80))
+      .optional(),
+    structuredInvoiceSignals: transactionStructuredInvoiceSignalsSchema.optional()
+  })
+  .strict();
 
 const vidaSimulationRequestSchema = z
   .object({
@@ -275,6 +343,82 @@ function sendVidaSimulationStorageError(reply: FastifyReply, error: unknown) {
       details: message || null
     }
   });
+}
+
+function buildTransactionClassifierInput(
+  data: z.infer<typeof transactionClassificationRequestSchema>
+): TransactionClassifierInput {
+  const input: TransactionClassifierInput = {};
+
+  if (data.sellerCountry !== undefined) {
+    input.sellerCountry = data.sellerCountry;
+  }
+
+  if (data.buyerCountry !== undefined) {
+    input.buyerCountry = data.buyerCountry;
+  }
+
+  if (data.sellerVatId !== undefined) {
+    input.sellerVatId = data.sellerVatId;
+  }
+
+  if (data.buyerVatId !== undefined) {
+    input.buyerVatId = data.buyerVatId;
+  }
+
+  if (data.sellerVatCountry !== undefined) {
+    input.sellerVatCountry = data.sellerVatCountry;
+  }
+
+  if (data.buyerVatCountry !== undefined) {
+    input.buyerVatCountry = data.buyerVatCountry;
+  }
+
+  if (data.buyerType !== undefined) {
+    input.buyerType = data.buyerType as TransactionBuyerType;
+  }
+
+  if (data.transactionType !== undefined) {
+    input.transactionType = data.transactionType as TransactionType;
+  }
+
+  if (data.invoiceDate !== undefined) {
+    input.invoiceDate = data.invoiceDate;
+  }
+
+  if (data.currency !== undefined) {
+    input.currency = data.currency;
+  }
+
+  if (data.amount !== undefined) {
+    input.amount = data.amount;
+  }
+
+  if (data.hasViesEvidence !== undefined) {
+    input.hasViesEvidence = data.hasViesEvidence;
+  }
+
+  if (data.buyerViesStatus !== undefined) {
+    input.buyerViesStatus = data.buyerViesStatus as ViesEvidenceStatus;
+  }
+
+  if (data.sellerViesStatus !== undefined) {
+    input.sellerViesStatus = data.sellerViesStatus as ViesEvidenceStatus;
+  }
+
+  if (data.countryPackVersions !== undefined) {
+    input.countryPackVersions = data.countryPackVersions;
+  }
+
+  if (data.countryPackStatuses !== undefined) {
+    input.countryPackStatuses = data.countryPackStatuses;
+  }
+
+  if (data.structuredInvoiceSignals !== undefined) {
+    input.structuredInvoiceSignals = data.structuredInvoiceSignals;
+  }
+
+  return input;
 }
 
 function buildVidaSimulationInput(
@@ -425,6 +569,41 @@ function buildVidaSimulationRunDetail(record: VidaSimulationRunRecord) {
 }
 
 export async function transactionRoutes(app: FastifyInstance) {
+  app.post(
+    "/classify",
+    {
+      preHandler: [
+        requireApiKeyScopes(["transactions:classify"]),
+        requireApiKeyRateLimitPolicy("transactions_classify")
+      ]
+    },
+    async (request, reply) => {
+      const parsedBody = transactionClassificationRequestSchema.safeParse(
+        request.body
+      );
+
+      if (!parsedBody.success) {
+        return reply.status(400).send({
+          error: {
+            code: "TRANSACTION_CLASSIFICATION_REQUEST_INVALID",
+            message:
+              "Request body failed transaction classification validation.",
+            details: formatZodError(parsedBody.error)
+          }
+        });
+      }
+
+      const result = classifyTransaction(
+        buildTransactionClassifierInput(parsedBody.data)
+      );
+
+      return {
+        ...result,
+        persisted: false
+      };
+    }
+  );
+
   app.post(
     "/simulate-vida",
     {

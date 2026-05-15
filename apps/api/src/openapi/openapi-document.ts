@@ -6415,7 +6415,9 @@ const openApiDocument = {
           "xml:validation_jobs",
           "vat:validate_format",
           "vat:check_vies",
+          "transactions:classify",
           "transactions:simulate_vida",
+          "learning_scenarios:read",
           "validation_runs:read",
           "rules:read"
         ]

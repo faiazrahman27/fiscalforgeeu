@@ -12,6 +12,7 @@ import { invoiceDraftRoutes } from "./invoice-drafts.js";
 import { invoiceExportRoutes } from "./invoice-exports.js";
 import { invoiceRoutes } from "./invoices.js";
 import { legalDocumentRoutes } from "./legal-documents.js";
+import { learningScenarioRoutes } from "./learning-scenarios.js";
 import { parseCiiRoutes } from "./parse-cii.js";
 import { parseUblRoutes } from "./parse-ubl.js";
 import { securityReadinessRoutes } from "./security-readiness.js";
@@ -62,6 +63,10 @@ export async function v1Routes(app: FastifyInstance) {
 
   await app.register(legalDocumentRoutes, {
     prefix: "/legal"
+  });
+
+  await app.register(learningScenarioRoutes, {
+    prefix: "/learning"
   });
 
   await app.register(countryPackRoutes, {
